@@ -30,6 +30,7 @@ nota-codec      = { git = "https://github.com/LiGoldragon/nota-codec.git", branc
 nota-config     = { git = "https://github.com/LiGoldragon/nota-config.git", branch = "main" }
 rkyv            = "0.8"
 signal-core     = { git = "https://github.com/LiGoldragon/signal-core.git" }
+signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
 signal-persona  = { git = "https://github.com/LiGoldragon/signal-persona.git" }
 signal-persona-auth = { git = "https://github.com/LiGoldragon/signal-persona-auth.git" }
 signal-persona-message = { git = "https://github.com/LiGoldragon/signal-persona-message.git" }

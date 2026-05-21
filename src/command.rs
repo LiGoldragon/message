@@ -6,9 +6,11 @@ use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode, NotaRecord};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use signal_persona_message::{
     InboxQuery as SignalInboxQuery, MessageBody as SignalMessageBody,
-    MessageKind as SignalMessageKind, MessageRecipient as SignalMessageRecipient, MessageReply,
-    MessageRequest, MessageRequestUnimplemented as SignalMessageRequestUnimplemented,
-    MessageSubmission, SubmissionRejectionReason as SignalSubmissionRejectionReason,
+    MessageKind as SignalMessageKind, MessageOperationKind as SignalMessageOperationKind,
+    MessageRecipient as SignalMessageRecipient, MessageReply, MessageRequest,
+    MessageRequestUnimplemented as SignalMessageRequestUnimplemented, MessageSubmission,
+    MessageUnimplementedReason as SignalMessageUnimplementedReason,
+    SubmissionRejectionReason as SignalSubmissionRejectionReason,
 };
 
 use crate::error::{Error, Result};
@@ -78,8 +80,17 @@ impl Inbox {
 impl NotaEncode for Input {
     fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
         match self {
-            Self::Send(input) => input.encode(encoder),
-            Self::Inbox(input) => input.encode(encoder),
+            Self::Send(input) => {
+                encoder.start_record("Send")?;
+                input.recipient.encode(encoder)?;
+                input.body.encode(encoder)?;
+                encoder.end_record()
+            }
+            Self::Inbox(input) => {
+                encoder.start_record("Inbox")?;
+                input.recipient.encode(encoder)?;
+                encoder.end_record()
+            }
         }
     }
 }
@@ -88,10 +99,23 @@ impl NotaDecode for Input {
     fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
         let head = decoder.peek_record_head()?;
         match head.as_str() {
-            "Send" => Ok(Self::Send(Send::decode(decoder)?)),
-            "Inbox" => Ok(Self::Inbox(Inbox::decode(decoder)?)),
-            other => Err(nota_codec::Error::UnknownKindForVerb {
-                verb: "Input",
+            "Send" => {
+                decoder.expect_record_head("Send")?;
+                let recipient = RecipientName::decode(decoder)?;
+                let body = String::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let input = Send { recipient, body };
+                Ok(Self::Send(input))
+            }
+            "Inbox" => {
+                decoder.expect_record_head("Inbox")?;
+                let recipient = RecipientName::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let input = Inbox { recipient };
+                Ok(Self::Inbox(input))
+            }
+            other => Err(nota_codec::Error::UnknownVariant {
+                enum_name: "Input",
                 got: other.to_string(),
             }),
         }
@@ -179,10 +203,27 @@ impl Output {
 impl NotaEncode for Output {
     fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
         match self {
-            Self::SubmissionAccepted(output) => output.encode(encoder),
-            Self::SubmissionRejected(output) => output.encode(encoder),
-            Self::RouterInboxListing(output) => output.encode(encoder),
-            Self::MessageRequestUnimplemented(output) => output.encode(encoder),
+            Self::SubmissionAccepted(output) => {
+                encoder.start_record("SubmissionAccepted")?;
+                output.message_slot.encode(encoder)?;
+                encoder.end_record()
+            }
+            Self::SubmissionRejected(output) => {
+                encoder.start_record("SubmissionRejected")?;
+                output.reason.encode(encoder)?;
+                encoder.end_record()
+            }
+            Self::RouterInboxListing(output) => {
+                encoder.start_record("RouterInboxListing")?;
+                output.messages.encode(encoder)?;
+                encoder.end_record()
+            }
+            Self::MessageRequestUnimplemented(output) => {
+                encoder.start_record("MessageRequestUnimplemented")?;
+                output.operation.encode(encoder)?;
+                output.reason.encode(encoder)?;
+                encoder.end_record()
+            }
         }
     }
 }
@@ -191,20 +232,37 @@ impl NotaDecode for Output {
     fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
         let head = decoder.peek_record_head()?;
         match head.as_str() {
-            "SubmissionAccepted" => Ok(Self::SubmissionAccepted(SubmissionAccepted::decode(
-                decoder,
-            )?)),
-            "SubmissionRejected" => Ok(Self::SubmissionRejected(SubmissionRejected::decode(
-                decoder,
-            )?)),
-            "RouterInboxListing" => Ok(Self::RouterInboxListing(RouterInboxListing::decode(
-                decoder,
-            )?)),
-            "MessageRequestUnimplemented" => Ok(Self::MessageRequestUnimplemented(
-                SignalMessageRequestUnimplemented::decode(decoder)?,
-            )),
-            other => Err(nota_codec::Error::UnknownKindForVerb {
-                verb: "Output",
+            "SubmissionAccepted" => {
+                decoder.expect_record_head("SubmissionAccepted")?;
+                let message_slot = u64::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let output = SubmissionAccepted { message_slot };
+                Ok(Self::SubmissionAccepted(output))
+            }
+            "SubmissionRejected" => {
+                decoder.expect_record_head("SubmissionRejected")?;
+                let reason = SubmissionRejectionReason::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let output = SubmissionRejected { reason };
+                Ok(Self::SubmissionRejected(output))
+            }
+            "RouterInboxListing" => {
+                decoder.expect_record_head("RouterInboxListing")?;
+                let messages = Vec::<RouterInboxEntry>::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let output = RouterInboxListing { messages };
+                Ok(Self::RouterInboxListing(output))
+            }
+            "MessageRequestUnimplemented" => {
+                decoder.expect_record_head("MessageRequestUnimplemented")?;
+                let operation = SignalMessageOperationKind::decode(decoder)?;
+                let reason = SignalMessageUnimplementedReason::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let output = SignalMessageRequestUnimplemented { operation, reason };
+                Ok(Self::MessageRequestUnimplemented(output))
+            }
+            other => Err(nota_codec::Error::UnknownVariant {
+                enum_name: "Output",
                 got: other.to_string(),
             }),
         }
@@ -234,8 +292,8 @@ impl NotaDecode for SubmissionRejectionReason {
         match String::decode(decoder)?.as_str() {
             "StoreRejected" => Ok(Self::StoreRejected),
             "RecipientNotFound" => Ok(Self::RecipientNotFound),
-            other => Err(nota_codec::Error::UnknownKindForVerb {
-                verb: "SubmissionRejectionReason",
+            other => Err(nota_codec::Error::UnknownVariant {
+                enum_name: "SubmissionRejectionReason",
                 got: other.to_string(),
             }),
         }

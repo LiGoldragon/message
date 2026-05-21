@@ -14,10 +14,16 @@ use signal_core::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Operation, Request, RequestPayload,
     RequestRejectionReason, SessionEpoch, SignalVerb,
 };
+use signal_frame::{
+    ExchangeIdentifier as FrameExchangeIdentifier, ExchangeLane as FrameExchangeLane,
+    LaneSequence as FrameLaneSequence, Request as FrameRequest, SessionEpoch as FrameSessionEpoch,
+};
+use signal_persona::engine_management::{
+    Frame as SupervisionFrame, FrameBody as SupervisionFrameBody, Operation as SupervisionRequest,
+    Query as SupervisionQuery, Reply as SupervisionReply,
+};
 use signal_persona::{
-    ComponentHealth, ComponentHealthQuery, ComponentHello, ComponentKind, ComponentName,
-    ComponentReadinessQuery, GracefulStopRequest, SupervisionFrame, SupervisionFrameBody,
-    SupervisionProtocolVersion, SupervisionReply, SupervisionRequest,
+    ComponentHealth, ComponentKind, ComponentName, EngineManagementProtocolVersion, Presence,
 };
 use signal_persona_auth::{
     ComponentInstanceName, ComponentName as ProvenanceComponentName, ConnectionClass,
@@ -384,40 +390,40 @@ fn message_daemon_answers_component_supervision_relation() {
 
     send_supervision_request(
         &mut stream,
-        SupervisionRequest::ComponentHello(ComponentHello {
+        SupervisionRequest::Announce(Presence {
             expected_component: ComponentName::new("persona-message"),
             expected_kind: ComponentKind::Message,
-            supervision_protocol_version: SupervisionProtocolVersion::new(1),
+            engine_management_protocol_version: EngineManagementProtocolVersion::new(1),
         }),
     );
     let identity = codec.read_reply(&mut stream).expect("identity reply");
     assert!(matches!(
         identity,
-        SupervisionReply::ComponentIdentity(identity)
+        SupervisionReply::Identified(identity)
             if identity.name.as_str() == "persona-message"
                 && identity.kind == ComponentKind::Message
     ));
 
     send_supervision_request(
         &mut stream,
-        SupervisionRequest::ComponentReadinessQuery(ComponentReadinessQuery {
-            component: ComponentName::new("persona-message"),
-        }),
+        SupervisionRequest::Query(SupervisionQuery::ReadinessStatus(ComponentName::new(
+            "persona-message",
+        ))),
     );
     assert!(matches!(
         codec.read_reply(&mut stream).expect("readiness reply"),
-        SupervisionReply::ComponentReady(_)
+        SupervisionReply::Ready(_)
     ));
 
     send_supervision_request(
         &mut stream,
-        SupervisionRequest::ComponentHealthQuery(ComponentHealthQuery {
-            component: ComponentName::new("persona-message"),
-        }),
+        SupervisionRequest::Query(SupervisionQuery::HealthStatus(ComponentName::new(
+            "persona-message",
+        ))),
     );
     assert!(matches!(
         codec.read_reply(&mut stream).expect("health reply"),
-        SupervisionReply::ComponentHealthReport(report)
+        SupervisionReply::HealthReport(report)
             if report.health == ComponentHealth::Running
     ));
 }
@@ -445,15 +451,13 @@ fn persona_message_daemon_graceful_stop_releases_message_socket_and_rejects_ingr
         let codec = SupervisionFrameCodec::new(1024 * 1024);
         send_supervision_request(
             &mut supervision,
-            SupervisionRequest::GracefulStopRequest(GracefulStopRequest {
-                component: ComponentName::new("persona-message"),
-            }),
+            SupervisionRequest::Stop(ComponentName::new("persona-message")),
         );
         assert!(matches!(
             codec
                 .read_reply(&mut supervision)
                 .expect("graceful stop acknowledgement reads"),
-            SupervisionReply::GracefulStopAcknowledgement(_)
+            SupervisionReply::StopAcknowledged(_)
         ));
     }
 
@@ -774,8 +778,8 @@ fn input_rejects_unknown_record_heads() {
     let error = Input::from_nota("(Bead)").expect_err("unknown input is rejected");
 
     match error {
-        persona_message::Error::Nota(Error::UnknownKindForVerb { verb, got }) => {
-            assert_eq!(verb, "Input");
+        persona_message::Error::Nota(Error::UnknownVariant { enum_name, got }) => {
+            assert_eq!(enum_name, "Input");
             assert_eq!(got, "Bead");
         }
         other => panic!("expected unknown input kind, got {other:?}"),
@@ -784,8 +788,8 @@ fn input_rejects_unknown_record_heads() {
 
 fn send_supervision_request(stream: &mut UnixStream, request: SupervisionRequest) {
     let frame = SupervisionFrame::new(SupervisionFrameBody::Request {
-        exchange: test_exchange(),
-        request: Request::from_payload(request),
+        exchange: test_frame_exchange(),
+        request: FrameRequest::from_payload(request),
     });
     std::io::Write::write_all(
         stream,
@@ -795,6 +799,14 @@ fn send_supervision_request(stream: &mut UnixStream, request: SupervisionRequest
             .as_slice(),
     )
     .expect("supervision request writes");
+}
+
+fn test_frame_exchange() -> FrameExchangeIdentifier {
+    FrameExchangeIdentifier::new(
+        FrameSessionEpoch::new(0),
+        FrameExchangeLane::Connector,
+        FrameLaneSequence::first(),
+    )
 }
 
 fn wait_for_path(path: &Path, label: &str) {
