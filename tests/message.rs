@@ -32,7 +32,7 @@ use signal_persona_message::{
 };
 use signal_persona_origin::{
     ComponentInstanceName, ComponentName as ProvenanceComponentName, ConnectionClass,
-    InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserId,
+    InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserIdentifier,
 };
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -240,7 +240,9 @@ fn message_daemon_applies_configured_socket_mode() {
         supervision_socket_path,
         supervision_socket_mode: SupervisionSocketMode::from_octal(0o600),
         component_ingresses: Vec::new(),
-        owner_identity: OwnerIdentity::UnixUser(UnixUserId::new(unsafe { libc::geteuid() })),
+        owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(unsafe {
+            libc::geteuid()
+        })),
     });
 
     let _listener = daemon
@@ -286,7 +288,7 @@ fn message_frame_codec_rejects_mismatched_signal_verb() {
 fn message_daemon_root_stamps_owner_identity_from_configuration() {
     let root = MessageDaemonRoot::new(MessageDaemonRootInput {
         router_socket: SignalRouterSocket::from_path(PathBuf::from("/tmp/unused-router.sock")),
-        owner_identity: OwnerIdentity::UnixUser(UnixUserId::new(7000)),
+        owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(7000)),
     });
     let request = MessageRequest::MessageSubmission(signal_persona_message::MessageSubmission {
         recipient: MessageRecipient::new("router"),
@@ -297,9 +299,9 @@ fn message_daemon_root_stamps_owner_identity_from_configuration() {
     let decision = root
         .stamp_request(
             request,
-            MessageIngressContext::external_peer(PeerCredentials::from_user_id(UnixUserId::new(
-                7001,
-            ))),
+            MessageIngressContext::external_peer(PeerCredentials::from_user_id(
+                UnixUserIdentifier::new(7001),
+            )),
         )
         .expect("message request stamps");
 
@@ -309,7 +311,7 @@ fn message_daemon_root_stamps_owner_identity_from_configuration() {
     };
     assert_eq!(
         stamped.origin,
-        MessageOrigin::External(ConnectionClass::NonOwnerUser(UnixUserId::new(7001)))
+        MessageOrigin::External(ConnectionClass::NonOwnerUser(UnixUserIdentifier::new(7001)))
     );
 }
 
@@ -317,7 +319,7 @@ fn message_daemon_root_stamps_owner_identity_from_configuration() {
 fn message_daemon_root_stamps_component_instance_origin_from_ingress() {
     let root = MessageDaemonRoot::new(MessageDaemonRootInput {
         router_socket: SignalRouterSocket::from_path(PathBuf::from("/tmp/unused-router.sock")),
-        owner_identity: OwnerIdentity::UnixUser(UnixUserId::new(7000)),
+        owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(7000)),
     });
     let origin = InternalComponentInstanceOrigin::new(
         ProvenanceComponentName::Harness,
@@ -334,7 +336,7 @@ fn message_daemon_root_stamps_component_instance_origin_from_ingress() {
             request,
             MessageIngressContext::internal_component_instance(
                 origin.clone(),
-                PeerCredentials::from_user_id(UnixUserId::new(7000)),
+                PeerCredentials::from_user_id(UnixUserIdentifier::new(7000)),
             ),
         )
         .expect("message request stamps");
@@ -354,7 +356,7 @@ fn message_daemon_root_shutdown_returns_terminal_outcome() {
     let runtime = tokio::runtime::Runtime::new().expect("test runtime starts");
     let root = runtime.block_on(MessageDaemonRoot::start_root(MessageDaemonRootInput {
         router_socket: SignalRouterSocket::from_path(PathBuf::from("/tmp/unused-router.sock")),
-        owner_identity: OwnerIdentity::UnixUser(UnixUserId::new(7000)),
+        owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(7000)),
     }));
 
     let outcome = runtime
@@ -437,7 +439,7 @@ fn persona_message_daemon_graceful_stop_releases_message_socket_and_rejects_ingr
     let start_path = fixture.start_path();
     let _router_listener = UnixListener::bind(&router_socket_path).expect("router socket binds");
     let configuration_path = fixture.write_message_daemon_configuration(OwnerIdentity::UnixUser(
-        UnixUserId::new(unsafe { libc::geteuid() }),
+        UnixUserIdentifier::new(unsafe { libc::geteuid() }),
     ));
     let daemon = fixture
         .spawn_daemon_after_router_start_with_configuration(&start_path, &configuration_path);
@@ -659,7 +661,7 @@ fn persona_message_daemon_forwards_cli_signal_frame_to_router_socket() {
     let fake_router =
         FakeRouter::bind(&router_socket_path, start_path.clone()).serve(RouterReply::accepted(11));
     let configuration_path = fixture.write_message_daemon_configuration(OwnerIdentity::UnixUser(
-        UnixUserId::new(unsafe { libc::geteuid() }),
+        UnixUserIdentifier::new(unsafe { libc::geteuid() }),
     ));
     let _ = (&message_socket_path, &router_socket_path);
     let mut daemon = fixture
@@ -714,7 +716,7 @@ fn persona_message_daemon_forwards_component_ingress_as_internal_component_insta
         ComponentInstanceName::new("initiator"),
     );
     let configuration_path = fixture.write_message_daemon_configuration_with_ingresses(
-        OwnerIdentity::UnixUser(UnixUserId::new(unsafe { libc::geteuid() })),
+        OwnerIdentity::UnixUser(UnixUserIdentifier::new(unsafe { libc::geteuid() })),
         vec![ComponentMessageIngress {
             origin: origin.clone(),
             socket_path: signal_persona::WirePath::new(message_socket_path.display().to_string()),

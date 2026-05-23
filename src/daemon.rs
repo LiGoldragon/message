@@ -18,7 +18,8 @@ use signal_persona_message::{
     StampedMessageSubmission,
 };
 use signal_persona_origin::{
-    ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserId,
+    ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity,
+    UnixUserIdentifier,
 };
 
 use crate::error::{Error, Result};
@@ -543,11 +544,11 @@ impl MessageIngressAuthority {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PeerCredentials {
-    user_id: UnixUserId,
+    user_id: UnixUserIdentifier,
 }
 
 impl PeerCredentials {
-    pub fn from_user_id(user_id: UnixUserId) -> Self {
+    pub fn from_user_id(user_id: UnixUserIdentifier) -> Self {
         Self { user_id }
     }
 
@@ -571,7 +572,7 @@ impl PeerCredentials {
             return Err(Error::PeerCredentials);
         }
         Ok(Self {
-            user_id: UnixUserId::new(credentials.uid),
+            user_id: UnixUserIdentifier::new(credentials.uid),
         })
     }
 }
