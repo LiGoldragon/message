@@ -12,13 +12,13 @@ use kameo::actor::{
 use kameo::error::{Infallible, SendError};
 use kameo::message::{Context, Message};
 use signal_persona::TimestampNanos;
-use signal_persona_auth::{
-    ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserId,
-};
 use signal_persona_message::{
     ComponentMessageIngress, MessageDaemonConfiguration, MessageOperationKind, MessageReply,
     MessageRequest, MessageRequestUnimplemented, MessageUnimplementedReason,
     StampedMessageSubmission,
+};
+use signal_persona_origin::{
+    ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserId,
 };
 
 use crate::error::{Error, Result};

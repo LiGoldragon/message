@@ -25,14 +25,14 @@ use signal_persona::engine_management::{
 use signal_persona::{
     ComponentHealth, ComponentKind, ComponentName, EngineManagementProtocolVersion, Presence,
 };
-use signal_persona_auth::{
-    ComponentInstanceName, ComponentName as ProvenanceComponentName, ConnectionClass,
-    InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserId,
-};
 use signal_persona_message::{
     ComponentMessageIngress, Frame, FrameBody as MessageFrameBody, InboxEntry, InboxListing,
     MessageBody, MessageKind, MessageRecipient, MessageReply, MessageRequest, MessageSender,
     MessageSlot, SubmissionAcceptance,
+};
+use signal_persona_origin::{
+    ComponentInstanceName, ComponentName as ProvenanceComponentName, ConnectionClass,
+    InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity, UnixUserId,
 };
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
