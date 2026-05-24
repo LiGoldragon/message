@@ -21,10 +21,10 @@ The supported input records are:
 
 ```sh
 MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
-  message '(Send designer "Need a layout pass.")'
+  message "(Send designer [Need a layout pass.])"
 
 MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
-  message '(Inbox designer)'
+  message "(Inbox designer)"
 ```
 
 The message component does not construct in-band proof material, read a local
