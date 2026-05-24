@@ -1,19 +1,19 @@
-# persona-message — architecture
+# message — architecture
 
 *Engine message ingress / text boundary. Owns the
-`message` CLI and the `persona-message` daemon (binary:
-`persona-message-daemon`), the supervised first-stack
+`message` CLI and the `message` daemon (binary:
+`message-daemon`), the supervised first-stack
 component.*
 
-`persona-message` owns two binaries:
+`message` owns two binaries:
 
 - The `message` CLI — one NOTA in, one NOTA out. Validates a
   user-typed NOTA record through Rust types, projects to a
-  `signal-persona-message` frame, sends it to `persona-message`
+  `signal-message` frame, sends it to `message`
   on the engine's user-writable socket (`message.sock`, mode
   0660), reads one reply frame, prints the NOTA reply.
-- The `persona-message` daemon (binary file:
-  `persona-message-daemon`) — a small Kameo daemon supervised
+- The `message` daemon (binary file:
+  `message-daemon`) — a small Kameo daemon supervised
   by `persona-daemon` as the engine's message ingress
   component. Reads a typed `MessageDaemonConfiguration` record
   passed by argv via `nota-config`; binds `message.sock` at the
@@ -24,12 +24,12 @@ component.*
   `persona-router`'s internal socket (`router.sock`, 0600).
 
 There is no `MessageProxy` component here. The supervised
-first-stack component is named `persona-message`; the long-lived
-binary is `persona-message-daemon`.
+first-stack component is named `message`; the long-lived
+binary is `message-daemon`.
 
 > **Scope.** Any "sema" reference in this doc means today's `sema`
 > library (rename pending → `sema-db`). The eventual `Sema` is broader; today's
-> persona-message is a realization step. See `~/primary/ESSENCE.md` §"Today and
+> message is a realization step. See `~/primary/ESSENCE.md` §"Today and
 > eventually".
 
 ---
@@ -45,21 +45,21 @@ authority remain in `persona-router`.
 ```mermaid
 flowchart LR
     "human or harness" -->|"one NOTA Send or Inbox"| "message CLI"
-    "message CLI" -->|"length-prefixed signal-persona-message frame"| "persona-message"
-    "persona-message" -->|"StampedMessageSubmission"| "persona-router"
-    "persona-router" -->|"length-prefixed reply frame"| "persona-message"
-    "persona-message" -->|"length-prefixed reply frame"| "message CLI"
+    "message CLI" -->|"length-prefixed signal-message frame"| "message"
+    "message" -->|"StampedMessageSubmission"| "persona-router"
+    "persona-router" -->|"length-prefixed reply frame"| "message"
+    "message" -->|"length-prefixed reply frame"| "message CLI"
     "message CLI" -->|"one NOTA reply"| "human or harness"
 ```
 
 ## 1 · Component Surface
 
-`persona-message` exposes:
+`message` exposes:
 
 - a `message` binary;
-- a `persona-message-daemon` binary;
+- a `message-daemon` binary;
 - NOTA `Send` and `Inbox` input records;
-- one length-prefixed `signal-persona-message` request frame per CLI invocation;
+- one length-prefixed `signal-message` request frame per CLI invocation;
 - one daemon-bound `message.sock` for owner ingress;
 - one router client path to internal `router.sock`;
 - one NOTA reply projection per invocation;
@@ -95,7 +95,7 @@ affordance, never reached on the supervised production path.
 ## 2 · State and Ownership
 
 The message component owns no durable message state. The CLI requires
-`PERSONA_MESSAGE_SOCKET` or `PERSONA_SOCKET_PATH` and exits if the message
+`MESSAGE_SOCKET` or `PERSONA_SOCKET_PATH` and exits if the message
 daemon socket is absent. The daemon requires a typed `MessageDaemonConfiguration`
 on argv whose `router_socket_path` names the router's internal socket; it
 exits at decode time if the configuration is missing or malformed.
@@ -126,8 +126,8 @@ state.
 This repo owns:
 
 - NOTA parsing for the `message` command;
-- projection from NOTA `Send` / `Inbox` to `signal-persona-message`;
-- projection from `signal-persona-message` replies back to NOTA;
+- projection from NOTA `Send` / `Inbox` to `signal-message`;
+- projection from `signal-message` replies back to NOTA;
 - length-prefixed Signal frame transport from CLI to `message.sock`;
 - frame-level exchange echoing for the current one-operation request/reply
   path;
@@ -157,7 +157,7 @@ This repo does not own:
   traffic.
 - The daemon reads its typed `MessageDaemonConfiguration` from argv before
   accepting message ingress, and `External(Owner)` is derived from the
-  configured `owner_identity` rather than `persona-message-daemon`'s own
+  configured `owner_identity` rather than `message-daemon`'s own
   uid.
 - CLI and daemon outbound traffic are length-prefixed rkyv Signal frames.
 - Request/reply matching is frame-level: every request frame carries an
@@ -186,7 +186,7 @@ This repo does not own:
 
 ```text
 src/main.rs                    message CLI entry
-src/bin/persona_message_daemon.rs daemon entry
+src/bin/message_daemon.rs daemon entry
 src/bin/message_validate_output.rs test/debug validator for message CLI NOTA replies
 src/command.rs                 NOTA input/output projection
 src/daemon.rs                  daemon listener and data-bearing Kameo root
@@ -205,12 +205,12 @@ tests/                         ingress and architectural-truth tests
 | Inbox reads come from the router, not a local ledger. | `nix build .#checks.x86_64-linux.message-cli-inbox-uses-router-signal-not-local-ledger` |
 | The message daemon socket is mandatory for the CLI. | `nix build .#checks.x86_64-linux.message-cli-requires-message-socket` |
 | The daemon applies the configured socket mode. | `nix build .#checks.x86_64-linux.message-daemon-applies-configured-socket-mode` |
-| The daemon stamps and forwards CLI Signal frames to the router socket. | `nix build .#checks.x86_64-linux.persona-message-daemon-forwards-cli-signal-frame-to-router-socket` |
+| The daemon stamps and forwards CLI Signal frames to the router socket. | `nix build .#checks.x86_64-linux.message-daemon-forwards-cli-signal-frame-to-router-socket` |
 | The daemon root stamps owner identity from the typed configuration, not the CLI payload. | `nix build .#checks.x86_64-linux.message-daemon-root-stamps-owner-identity-from-configuration` |
 | The component uses the stable Persona Kameo lifecycle reference. | `nix build .#checks.x86_64-linux.message-component-uses-stable-kameo-lifecycle-reference` |
 | The daemon root shutdown returns a terminal outcome. | `nix build .#checks.x86_64-linux.message-daemon-root-shutdown-returns-terminal-outcome` |
-| Graceful daemon stop releases `message.sock` and rejects later ingress. | `nix build .#checks.x86_64-linux.persona-message-daemon-graceful-stop-releases-message-socket-and-rejects-ingress` |
-| The production daemon reads no environment variables for control-plane configuration. | `nix build .#checks.x86_64-linux.persona-message-daemon-reads-no-control-plane-environment-variables` |
+| Graceful daemon stop releases `message.sock` and rejects later ingress. | `nix build .#checks.x86_64-linux.message-daemon-graceful-stop-releases-message-socket-and-rejects-ingress` |
+| The production daemon reads no environment variables for control-plane configuration. | `nix build .#checks.x86_64-linux.message-daemon-reads-no-control-plane-environment-variables` |
 | Mismatched Signal verb/payload pairs are rejected by typed Signal reason. | `nix build .#checks.x86_64-linux.message-frame-codec-rejects-mismatched-signal-verb` |
 | The component does not construct in-band proof material. | `nix build .#checks.x86_64-linux.message-component-cannot-own-local-ledger` |
 | Retired terminal-brand vocabulary cannot return. | `nix build .#checks.x86_64-linux.message-runtime-cannot-reference-retired-terminal-brand` |
@@ -218,6 +218,6 @@ tests/                         ingress and architectural-truth tests
 
 ## See Also
 
-- `../signal-persona-message/ARCHITECTURE.md`
+- `../signal-message/ARCHITECTURE.md`
 - `../persona-router/ARCHITECTURE.md`
 - `../signal-persona/ARCHITECTURE.md`

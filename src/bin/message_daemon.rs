@@ -1,7 +1,7 @@
+use message::Result;
+use message::daemon::MessageDaemon;
 use nota_config::ConfigurationSource;
-use persona_message::Result;
-use persona_message::daemon::MessageDaemon;
-use signal_persona_message::MessageDaemonConfiguration;
+use signal_message::MessageDaemonConfiguration;
 
 fn main() -> Result<()> {
     let configuration: MessageDaemonConfiguration = ConfigurationSource::from_argv()?.decode()?;

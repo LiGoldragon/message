@@ -1,16 +1,16 @@
-# Persona Message
+# Message
 
-`persona-message` is the engine's message-ingress component. It owns the
-`message` CLI and the `persona-message` daemon (binary:
-`persona-message-daemon`), the supervised first-stack component.
+`message` is the engine's message-ingress component. It owns the
+`message` CLI and the `message` daemon (binary:
+`message-daemon`), the supervised first-stack component.
 
 The `message` binary accepts exactly one NOTA input record, validates it
-through Rust types, sends one length-prefixed `signal-persona-message` frame
-to `persona-message` on the engine's user-writable socket
+through Rust types, sends one length-prefixed `signal-message` frame
+to `message` on the engine's user-writable socket
 (`message.sock`, mode 0660), reads one typed reply frame, and prints one
 NOTA reply.
 
-The `persona-message` daemon (binary file `persona-message-daemon`) is the
+The `message` daemon (binary file `message-daemon`) is the
 engine's user-writable ingress boundary: it binds `message.sock` (mode 0660,
 engine-owner group), stamps `MessageSubmission` frames with SO_PEERCRED-
 derived origin and ingress time, then forwards `StampedMessageSubmission`
@@ -20,10 +20,10 @@ state; no local message ledger.
 The supported input records are:
 
 ```sh
-PERSONA_MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
+MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
   message '(Send designer "Need a layout pass.")'
 
-PERSONA_MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
+MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
   message '(Inbox designer)'
 ```
 

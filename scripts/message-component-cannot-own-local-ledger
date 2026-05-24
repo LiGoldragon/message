@@ -11,9 +11,9 @@ if rg --line-number \
   --glob 'tests/**' \
   --glob '!tests/actor_runtime_truth.rs' \
   --glob '!scripts/message-component-cannot-own-local-ledger' \
-  'messages[.]nota[.]log|pending[.]nota[.]log|actors[.]nota|PERSONA_MESSAGE_ACTORS|PERSONA_MESSAGE_STORE|MessageStore|StorePath|DeliveryGate|DeliveryOutcome|DeliveryDeferral|EndpointTransport|EndpointKind|PtySocket|Register|Agents|Flush|Tail|AuthProof|LocalOperatorProof|with_auth' \
+  'messages[.]nota[.]log|pending[.]nota[.]log|actors[.]nota|MESSAGE_ACTORS|MESSAGE_STORE|MessageStore|StorePath|DeliveryGate|DeliveryOutcome|DeliveryDeferral|EndpointTransport|EndpointKind|PtySocket|Register|Agents|Flush|Tail|AuthProof|LocalOperatorProof|with_auth' \
   "$source_root"
 then
-  echo "persona-message still owns retired local ledger, actor index, in-band proof, or endpoint surface" >&2
+  echo "message still owns retired local ledger, actor index, in-band proof, or endpoint surface" >&2
   exit 1
 fi

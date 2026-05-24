@@ -6,7 +6,7 @@ use signal_core::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply as SignalReply, Request,
     SessionEpoch, SignalVerb, SubReply,
 };
-use signal_persona_message::{Frame, FrameBody, MessageReply, MessageRequest};
+use signal_message::{Frame, FrameBody, MessageReply, MessageRequest};
 
 use crate::error::{Error, Result};
 
@@ -32,7 +32,7 @@ pub struct SignalMessageSocket {
 
 impl SignalMessageSocket {
     pub fn from_environment() -> Option<Self> {
-        std::env::var_os("PERSONA_MESSAGE_SOCKET")
+        std::env::var_os("MESSAGE_SOCKET")
             .or_else(|| std::env::var_os("PERSONA_SOCKET_PATH"))
             .map(Self::from_path)
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo="${PERSONA_MESSAGE_REPO:-$PWD}"
+repo="${MESSAGE_REPO:-$PWD}"
 cd "$repo"
 
 cargo fmt --all

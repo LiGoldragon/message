@@ -1,16 +1,16 @@
-# persona-message skill
+# message skill
 
-Work here when the change concerns the `message` CLI, `persona-message-daemon`,
+Work here when the change concerns the `message` CLI, `message-daemon`,
 NOTA message projection, message ingress, or real harness message tests.
 
 Rules for work here:
 
 - Keep the repo at the human/harness text boundary. Message binary records
-  belong in `signal-persona-message`.
+  belong in `signal-message`.
 - `message` sends length-prefixed rkyv Signal frames to
-  `persona-message-daemon` through `PERSONA_MESSAGE_SOCKET` and prints one NOTA
+  `message-daemon` through `MESSAGE_SOCKET` and prints one NOTA
   reply projection.
-- `persona-message-daemon` binds the supervised `message.sock`, stamps
+- `message-daemon` binds the supervised `message.sock`, stamps
   `MessageSubmission` frames into `StampedMessageSubmission`, forwards typed
   frames to `persona-router`, and owns no durable message state.
 - The component must not write local message ledgers, pending logs, or

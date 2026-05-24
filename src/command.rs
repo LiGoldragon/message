@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode, NotaRecord};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use signal_persona_message::{
+use signal_message::{
     InboxQuery as SignalInboxQuery, MessageBody as SignalMessageBody,
     MessageKind as SignalMessageKind, MessageOperationKind as SignalMessageOperationKind,
     MessageRecipient as SignalMessageRecipient, MessageReply, MessageRequest,
@@ -301,7 +301,7 @@ impl NotaDecode for SubmissionRejectionReason {
 }
 
 impl RouterInboxEntry {
-    fn from_signal(entry: signal_persona_message::InboxEntry) -> Self {
+    fn from_signal(entry: signal_message::InboxEntry) -> Self {
         Self {
             message_slot: entry.message_slot.into_u64(),
             sender: RecipientName::new(entry.sender.as_str()),

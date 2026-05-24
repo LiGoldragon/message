@@ -29,7 +29,7 @@ pub enum Error {
     #[error("message output validation failed: {detail}")]
     OutputValidation { detail: String },
 
-    #[error("message daemon socket is not configured; set PERSONA_MESSAGE_SOCKET")]
+    #[error("message daemon socket is not configured; set MESSAGE_SOCKET")]
     SignalMessageSocketMissing,
 
     #[error("signal frame is too large: {bytes} bytes")]

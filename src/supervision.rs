@@ -30,7 +30,7 @@ pub struct SupervisionProfile {
 impl SupervisionProfile {
     pub fn message() -> Self {
         Self {
-            name: ComponentName::new("persona-message"),
+            name: ComponentName::new("message"),
             kind: ComponentKind::Message,
             health: ComponentHealth::Running,
         }

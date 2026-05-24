@@ -1,15 +1,15 @@
-use nota_codec::{Encoder, Error, NotaEncode};
-use persona_message::command::{CommandLine, Input};
-use persona_message::daemon::{
+use message::command::{CommandLine, Input};
+use message::daemon::{
     ForwardDecision, MessageDaemon, MessageDaemonInput, MessageDaemonRoot, MessageDaemonRootInput,
     MessageIngressContext, PeerCredentials, SocketMode,
 };
-use persona_message::output_validator::OutputValidatorCommandLine;
-use persona_message::router::SignalRouterFrameCodec;
-use persona_message::router::{SignalMessageSocket, SignalRouterSocket};
-use persona_message::supervision::{
+use message::output_validator::OutputValidatorCommandLine;
+use message::router::SignalRouterFrameCodec;
+use message::router::{SignalMessageSocket, SignalRouterSocket};
+use message::supervision::{
     SupervisionFrameCodec, SupervisionListener, SupervisionProfile, SupervisionSocketMode,
 };
+use nota_codec::{Encoder, Error, NotaEncode};
 use signal_core::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Operation, Request, RequestPayload,
     RequestRejectionReason, SessionEpoch, SignalVerb,
@@ -18,17 +18,17 @@ use signal_frame::{
     ExchangeIdentifier as FrameExchangeIdentifier, ExchangeLane as FrameExchangeLane,
     LaneSequence as FrameLaneSequence, Request as FrameRequest, SessionEpoch as FrameSessionEpoch,
 };
+use signal_message::{
+    ComponentMessageIngress, Frame, FrameBody as MessageFrameBody, InboxEntry, InboxListing,
+    MessageBody, MessageKind, MessageRecipient, MessageReply, MessageRequest, MessageSender,
+    MessageSlot, SubmissionAcceptance,
+};
 use signal_persona::engine_management::{
     Frame as SupervisionFrame, FrameBody as SupervisionFrameBody, Operation as SupervisionRequest,
     Query as SupervisionQuery, Reply as SupervisionReply,
 };
 use signal_persona::{
     ComponentHealth, ComponentKind, ComponentName, EngineManagementProtocolVersion, Presence,
-};
-use signal_persona_message::{
-    ComponentMessageIngress, Frame, FrameBody as MessageFrameBody, InboxEntry, InboxListing,
-    MessageBody, MessageKind, MessageRecipient, MessageReply, MessageRequest, MessageSender,
-    MessageSlot, SubmissionAcceptance,
 };
 use signal_persona_origin::{
     ComponentInstanceName, ComponentName as ProvenanceComponentName, ConnectionClass,
@@ -78,7 +78,7 @@ impl MessageFixture {
     fn local_ledger_path(&self) -> PathBuf {
         self.directory
             .path()
-            .join(".persona-message")
+            .join(".message")
             .join(["messages", ".nota.log"].concat())
     }
 
@@ -98,7 +98,7 @@ impl MessageFixture {
         component_ingresses: Vec<ComponentMessageIngress>,
     ) -> PathBuf {
         let path = self.configuration_path();
-        let configuration = signal_persona_message::MessageDaemonConfiguration {
+        let configuration = signal_message::MessageDaemonConfiguration {
             message_socket_path: signal_persona::WirePath::new(
                 self.message_socket_path().display().to_string(),
             ),
@@ -136,7 +136,7 @@ impl MessageFixture {
         ));
         command.current_dir(self.directory.path());
         if let Some(message_socket_path) = message_socket_path {
-            command.env("PERSONA_MESSAGE_SOCKET", message_socket_path);
+            command.env("MESSAGE_SOCKET", message_socket_path);
         }
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         command.spawn().expect("message shell starts")
@@ -151,7 +151,7 @@ impl MessageFixture {
         command.arg("-c").arg(format!(
             "while [ ! -f '{}' ]; do sleep 0.05; done; '{}' '{}'",
             start_path.display(),
-            env!("CARGO_BIN_EXE_persona-message-daemon"),
+            env!("CARGO_BIN_EXE_message-daemon"),
             configuration_path.display(),
         ));
         command.current_dir(self.directory.path());
@@ -261,8 +261,8 @@ fn message_daemon_applies_configured_socket_mode() {
 fn message_frame_codec_rejects_mismatched_signal_verb() {
     let request = Request::from_operations(NonEmpty::single(Operation::new(
         SignalVerb::Assert,
-        MessageRequest::InboxQuery(signal_persona_message::InboxQuery {
-            recipient: signal_persona_message::MessageRecipient::new("operator"),
+        MessageRequest::InboxQuery(signal_message::InboxQuery {
+            recipient: signal_message::MessageRecipient::new("operator"),
         }),
     )));
     let frame = Frame::new(MessageFrameBody::Request {
@@ -274,7 +274,7 @@ fn message_frame_codec_rejects_mismatched_signal_verb() {
         .expect_err("mismatched verb is rejected");
 
     match error {
-        persona_message::Error::InvalidSignalRequest { reason } => {
+        message::Error::InvalidSignalRequest { reason } => {
             assert_eq!(
                 reason,
                 RequestRejectionReason::VerbPayloadMismatch { index: 0 }
@@ -290,7 +290,7 @@ fn message_daemon_root_stamps_owner_identity_from_configuration() {
         router_socket: SignalRouterSocket::from_path(PathBuf::from("/tmp/unused-router.sock")),
         owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(7000)),
     });
-    let request = MessageRequest::MessageSubmission(signal_persona_message::MessageSubmission {
+    let request = MessageRequest::MessageSubmission(signal_message::MessageSubmission {
         recipient: MessageRecipient::new("router"),
         kind: MessageKind::Send,
         body: MessageBody::new("origin-check"),
@@ -325,7 +325,7 @@ fn message_daemon_root_stamps_component_instance_origin_from_ingress() {
         ProvenanceComponentName::Harness,
         ComponentInstanceName::new("initiator"),
     );
-    let request = MessageRequest::MessageSubmission(signal_persona_message::MessageSubmission {
+    let request = MessageRequest::MessageSubmission(signal_message::MessageSubmission {
         recipient: MessageRecipient::new("responder"),
         kind: MessageKind::Send,
         body: MessageBody::new("component-origin-check"),
@@ -393,7 +393,7 @@ fn message_daemon_answers_component_supervision_relation() {
     send_supervision_request(
         &mut stream,
         SupervisionRequest::Announce(Presence {
-            expected_component: ComponentName::new("persona-message"),
+            expected_component: ComponentName::new("message"),
             expected_kind: ComponentKind::Message,
             engine_management_protocol_version: EngineManagementProtocolVersion::new(1),
         }),
@@ -402,14 +402,14 @@ fn message_daemon_answers_component_supervision_relation() {
     assert!(matches!(
         identity,
         SupervisionReply::Identified(identity)
-            if identity.name.as_str() == "persona-message"
+            if identity.name.as_str() == "message"
                 && identity.kind == ComponentKind::Message
     ));
 
     send_supervision_request(
         &mut stream,
         SupervisionRequest::Query(SupervisionQuery::ReadinessStatus(ComponentName::new(
-            "persona-message",
+            "message",
         ))),
     );
     assert!(matches!(
@@ -420,7 +420,7 @@ fn message_daemon_answers_component_supervision_relation() {
     send_supervision_request(
         &mut stream,
         SupervisionRequest::Query(SupervisionQuery::HealthStatus(ComponentName::new(
-            "persona-message",
+            "message",
         ))),
     );
     assert!(matches!(
@@ -431,7 +431,7 @@ fn message_daemon_answers_component_supervision_relation() {
 }
 
 #[test]
-fn persona_message_daemon_graceful_stop_releases_message_socket_and_rejects_ingress() {
+fn message_daemon_graceful_stop_releases_message_socket_and_rejects_ingress() {
     let fixture = MessageFixture::new();
     let message_socket_path = fixture.message_socket_path();
     let router_socket_path = fixture.router_socket_path();
@@ -453,7 +453,7 @@ fn persona_message_daemon_graceful_stop_releases_message_socket_and_rejects_ingr
         let codec = SupervisionFrameCodec::new(1024 * 1024);
         send_supervision_request(
             &mut supervision,
-            SupervisionRequest::Stop(ComponentName::new("persona-message")),
+            SupervisionRequest::Stop(ComponentName::new("message")),
         );
         assert!(matches!(
             codec
@@ -577,11 +577,11 @@ fn command_line_inbox_routes_signal_frame_without_reading_local_ledger() {
 fn message_output_validator_decodes_submission_accepted_nota() {
     let fixture = MessageFixture::new();
     let output_path = fixture.directory.path().join("accepted.nota");
-    let output = persona_message::command::Output::from_router_reply(
-        MessageReply::SubmissionAccepted(SubmissionAcceptance {
+    let output = message::command::Output::from_router_reply(MessageReply::SubmissionAccepted(
+        SubmissionAcceptance {
             message_slot: MessageSlot::new(19),
-        }),
-    )
+        },
+    ))
     .expect("reply projects to command output")
     .to_nota()
     .expect("command output encodes");
@@ -600,18 +600,17 @@ fn message_output_validator_decodes_submission_accepted_nota() {
 fn message_output_validator_decodes_router_inbox_listing_nota() {
     let fixture = MessageFixture::new();
     let output_path = fixture.directory.path().join("inbox.nota");
-    let output = persona_message::command::Output::from_router_reply(MessageReply::InboxListing(
-        InboxListing {
+    let output =
+        message::command::Output::from_router_reply(MessageReply::InboxListing(InboxListing {
             messages: vec![InboxEntry {
                 message_slot: MessageSlot::new(21),
                 sender: MessageSender::new("reviewer"),
                 body: MessageBody::new("reviewer completed task"),
             }],
-        },
-    ))
-    .expect("reply projects to command output")
-    .to_nota()
-    .expect("command output encodes");
+        }))
+        .expect("reply projects to command output")
+        .to_nota()
+        .expect("command output encodes");
     std::fs::write(&output_path, output).expect("output fixture writes");
 
     OutputValidatorCommandLine::from_arguments([
@@ -653,7 +652,7 @@ fn command_line_send_requires_message_socket() {
 }
 
 #[test]
-fn persona_message_daemon_forwards_cli_signal_frame_to_router_socket() {
+fn message_daemon_forwards_cli_signal_frame_to_router_socket() {
     let fixture = MessageFixture::new();
     let message_socket_path = fixture.message_socket_path();
     let router_socket_path = fixture.router_socket_path();
@@ -704,7 +703,7 @@ fn persona_message_daemon_forwards_cli_signal_frame_to_router_socket() {
 }
 
 #[test]
-fn persona_message_daemon_forwards_component_ingress_as_internal_component_instance() {
+fn message_daemon_forwards_component_ingress_as_internal_component_instance() {
     let fixture = MessageFixture::new();
     let message_socket_path = fixture.component_message_socket_path("initiator");
     let router_socket_path = fixture.router_socket_path();
@@ -780,7 +779,7 @@ fn input_rejects_unknown_record_heads() {
     let error = Input::from_nota("(Bead)").expect_err("unknown input is rejected");
 
     match error {
-        persona_message::Error::Nota(Error::UnknownVariant { enum_name, got }) => {
+        message::Error::Nota(Error::UnknownVariant { enum_name, got }) => {
             assert_eq!(enum_name, "Input");
             assert_eq!(got, "Bead");
         }

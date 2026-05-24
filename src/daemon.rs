@@ -11,12 +11,12 @@ use kameo::actor::{
 };
 use kameo::error::{Infallible, SendError};
 use kameo::message::{Context, Message};
-use signal_persona::TimestampNanos;
-use signal_persona_message::{
+use signal_message::{
     ComponentMessageIngress, MessageDaemonConfiguration, MessageOperationKind, MessageReply,
     MessageRequest, MessageRequestUnimplemented, MessageUnimplementedReason,
     StampedMessageSubmission,
 };
+use signal_persona::TimestampNanos;
 use signal_persona_origin::{
     ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity,
     UnixUserIdentifier,
@@ -100,7 +100,7 @@ impl MessageDaemon {
             owner_identity: self.owner_identity,
         }));
         eprintln!(
-            "persona-message-daemon socket={}",
+            "message-daemon socket={}",
             self.message_socket.path().display()
         );
         while !stop_signal.is_stop_requested() {

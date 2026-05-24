@@ -314,6 +314,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "message"
+version = "0.1.0"
+dependencies = [
+ "kameo",
+ "libc",
+ "nota-codec",
+ "nota-config",
+ "rkyv",
+ "signal-core",
+ "signal-frame",
+ "signal-message",
+ "signal-persona",
+ "signal-persona-origin",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "munge"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -374,25 +393,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "persona-message"
-version = "0.1.0"
-dependencies = [
- "kameo",
- "libc",
- "nota-codec",
- "nota-config",
- "rkyv",
- "signal-core",
- "signal-frame",
- "signal-persona",
- "signal-persona-message",
- "signal-persona-origin",
- "tempfile",
- "thiserror",
- "tokio",
-]
 
 [[package]]
 name = "pin-project-lite"
@@ -614,6 +614,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-message"
+version = "0.1.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git#cbd1542c8554f0c110a079f68ae2dc8c1cfb3f9d"
+dependencies = [
+ "nota-codec",
+ "nota-config",
+ "rkyv",
+ "signal-core",
+ "signal-persona",
+ "signal-persona-origin",
+ "thiserror",
+]
+
+[[package]]
 name = "signal-persona"
 version = "0.1.0"
 source = "git+https://github.com/LiGoldragon/signal-persona.git#eaaf681a84fa57b79c0aacfbcdb2647bd3e7408e"
@@ -623,20 +637,6 @@ dependencies = [
  "signal-frame",
  "signal-persona-origin",
  "signal-sema",
-]
-
-[[package]]
-name = "signal-persona-message"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-persona-message.git#e3410c6acddc4a83bddcd9a4b34211c9aa472cf0"
-dependencies = [
- "nota-codec",
- "nota-config",
- "rkyv",
- "signal-core",
- "signal-persona",
- "signal-persona-origin",
- "thiserror",
 ]
 
 [[package]]

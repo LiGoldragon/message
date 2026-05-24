@@ -1,13 +1,13 @@
-# Agent Instructions - Persona Message
+# Agent Instructions - Message
 
 You MUST read lore's `AGENTS.md` and the primary workspace
 orchestration protocol before editing this repository.
 
 ## Repo Role
 
-Persona Message is the engine message-ingress component. It owns the `message`
-CLI and the supervised `persona-message-daemon`; together they carry NOTA
-message requests from humans and harnesses into typed `signal-persona-message`
+Message is the engine message-ingress component. It owns the `message`
+CLI and the supervised `message-daemon`; together they carry NOTA
+message requests from humans and harnesses into typed `signal-message`
 frames for the router.
 
 ## Current Phase
@@ -15,11 +15,11 @@ frames for the router.
 This repo is in supervised ingress phase. Keep the implementation narrow:
 
 - A `message` binary that decodes one NOTA input record.
-- A `persona-message-daemon` binary that binds `message.sock`, accepts
-  length-prefixed `signal-persona-message` frames, and forwards them to
+- A `message-daemon` binary that binds `message.sock`, accepts
+  length-prefixed `signal-message` frames, and forwards them to
   `persona-router` over the internal router socket.
-- The CLI uses `PERSONA_MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH`; the daemon
-  uses `PERSONA_MESSAGE_ROUTER_SOCKET` or the router peer socket from the
+- The CLI uses `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH`; the daemon
+  uses `MESSAGE_ROUTER_SOCKET` or the router peer socket from the
   spawn envelope.
 - The component must not append to a local ledger or write actor registration
   state.

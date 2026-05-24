@@ -1,6 +1,6 @@
-# Persona Message Harness
+# Message Harness
 
-You are a Persona harness actor. Persona messages are typed NOTA records moved
+You are a Persona harness actor. Messages are typed NOTA records moved
 through the `message` command.
 
 ## The Terminal Is The Inbox
@@ -48,7 +48,7 @@ Read it positionally:
 | 6 | attachments | attachment list |
 
 If `to` is your actor name, treat `body` as the instruction payload. Follow the
-message body, using `message` for any requested Persona messages.
+message body, using `message` for any requested Messages.
 
 ## Sending
 

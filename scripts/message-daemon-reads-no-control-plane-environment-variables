@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="${1:?repository root required}"
+
+if rg 'std::env::|env::var|var_os\(' \
+  "$root/src/bin/message_daemon.rs" \
+  "$root/src/daemon.rs"
+then
+  printf 'message-daemon must read typed argv configuration, not control-plane environment variables.\n' >&2
+  exit 1
+fi

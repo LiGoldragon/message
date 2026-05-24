@@ -1,4 +1,4 @@
-//! Architectural-truth witnesses for persona-message's actor
+//! Architectural-truth witnesses for message's actor
 //! discipline.
 //!
 //! - Public actor nouns are data-bearing — `mem::size_of::<X>() > 0`.
@@ -12,8 +12,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use persona_message::daemon::MessageDaemonRoot;
-use persona_message::supervision::SupervisionPhase;
+use message::daemon::MessageDaemonRoot;
+use message::supervision::SupervisionPhase;
 
 #[test]
 fn public_actor_nouns_carry_data() {

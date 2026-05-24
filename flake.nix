@@ -1,5 +1,5 @@
 {
-  description = "Persona message NOTA CLI and ingress daemon.";
+  description = "Message NOTA CLI and ingress daemon.";
 
   inputs = {
     nixpkgs.url = "github:LiGoldragon/nixpkgs?ref=main";
@@ -77,7 +77,7 @@
           context = mkContext system;
         in
         {
-          test-basic = context.pkgs.writeShellScriptBin "persona-message-test-basic" ''
+          test-basic = context.pkgs.writeShellScriptBin "message-test-basic" ''
             export PATH=${context.pkgs.lib.makeBinPath [ context.toolchain context.pkgs.nix ]}:$PATH
             exec ${context.pkgs.bash}/bin/bash ${./scripts/test-basic} "$@"
           '';
@@ -85,7 +85,7 @@
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              pname = "persona-message";
+              pname = "message";
               meta.mainProgram = "message";
             }
           );
@@ -104,7 +104,7 @@
           };
           test-basic = {
             type = "app";
-            program = "${packages.test-basic}/bin/persona-message-test-basic";
+            program = "${packages.test-basic}/bin/message-test-basic";
           };
         }
       );
@@ -125,8 +125,8 @@
             context.sourceConstraintCheck "message-runtime-cannot-reference-retired-terminal-brand" ./scripts/message-runtime-cannot-reference-retired-terminal-brand;
           message-component-cannot-own-local-ledger =
             context.sourceConstraintCheck "message-component-cannot-own-local-ledger" ./scripts/message-component-cannot-own-local-ledger;
-          persona-message-daemon-reads-no-control-plane-environment-variables =
-            context.sourceConstraintCheck "persona-message-daemon-reads-no-control-plane-environment-variables" ./scripts/persona-message-daemon-reads-no-control-plane-environment-variables;
+          message-daemon-reads-no-control-plane-environment-variables =
+            context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
           message-component-uses-stable-kameo-lifecycle-reference =
             context.cargoTestFile "actor_runtime_truth" "message_component_uses_stable_kameo_lifecycle_reference";
           message-cli-sends-router-signal-without-local-ledger =
@@ -145,10 +145,10 @@
             context.cargoTest "message_daemon_root_stamps_owner_identity_from_configuration";
           message-daemon-root-shutdown-returns-terminal-outcome =
             context.cargoTest "message_daemon_root_shutdown_returns_terminal_outcome";
-          persona-message-daemon-graceful-stop-releases-message-socket-and-rejects-ingress =
-            context.cargoTest "persona_message_daemon_graceful_stop_releases_message_socket_and_rejects_ingress";
-          persona-message-daemon-forwards-cli-signal-frame-to-router-socket =
-            context.cargoTest "persona_message_daemon_forwards_cli_signal_frame_to_router_socket";
+          message-daemon-graceful-stop-releases-message-socket-and-rejects-ingress =
+            context.cargoTest "message_daemon_graceful_stop_releases_message_socket_and_rejects_ingress";
+          message-daemon-forwards-cli-signal-frame-to-router-socket =
+            context.cargoTest "message_daemon_forwards_cli_signal_frame_to_router_socket";
         }
       );
 

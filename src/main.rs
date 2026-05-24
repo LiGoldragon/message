@@ -1,5 +1,5 @@
-use persona_message::Result;
-use persona_message::command::CommandLine;
+use message::Result;
+use message::command::CommandLine;
 
 fn main() -> Result<()> {
     let command_line = CommandLine::from_env();
