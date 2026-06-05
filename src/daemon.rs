@@ -1,9 +1,9 @@
+use std::fmt::{Display, Formatter};
 use std::io::BufReader;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kameo::actor::{
@@ -21,6 +21,10 @@ use signal_persona_origin::{
     ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, OwnerIdentity,
     UnixUserIdentifier,
 };
+use triad_runtime::{
+    ListenerPollInterval, ListenerSocket, MultiListenerDaemon, MultiListenerDaemonError,
+    MultiListenerRuntime, RequestErrorLog, SocketMode as RuntimeSocketMode,
+};
 
 use crate::error::{Error, Result};
 use crate::router::{
@@ -28,7 +32,8 @@ use crate::router::{
     SignalRouterSocket,
 };
 use crate::supervision::{
-    SupervisionListener, SupervisionProfile, SupervisionSocketMode, SupervisionStopSignal,
+    SupervisionHandle, SupervisionListener, SupervisionProfile, SupervisionSocketMode,
+    SupervisionStopSignal,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,37 +89,24 @@ impl MessageDaemon {
     }
 
     pub fn run(self) -> Result<()> {
-        let mut listeners = self.bind_listeners()?;
-        listeners.set_nonblocking(true)?;
-        let stop_signal = SupervisionStopSignal::default();
-        let _supervision = SupervisionListener::new(
-            SupervisionProfile::message(),
-            self.supervision_socket_path.clone(),
-            self.supervision_socket_mode,
-        )
-        .with_stop_signal(stop_signal.clone())
-        .spawn()?;
-        let runtime = tokio::runtime::Runtime::new()?;
-        let root = runtime.block_on(MessageDaemonRoot::start_root(MessageDaemonRootInput {
-            router_socket: self.router_socket,
-            owner_identity: self.owner_identity,
-        }));
+        let listener_sockets = self.listener_sockets();
         eprintln!(
             "message-daemon socket={}",
             self.message_socket.path().display()
         );
-        while !stop_signal.is_stop_requested() {
-            match listeners.accept_one() {
-                Ok(Some(accepted)) => Self::handle_connection(&runtime, &root, accepted)?,
-                Ok(None) => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-        let outcome = runtime.block_on(MessageDaemonRoot::stop_root(root))?;
-        MessageDaemonRoot::assert_stopped_outcome(outcome)?;
-        Ok(())
+        MultiListenerDaemon::new(
+            listener_sockets,
+            MessageDaemonRuntime::new(MessageDaemonRuntimeInput {
+                router_socket: self.router_socket,
+                supervision_socket_path: self.supervision_socket_path,
+                supervision_socket_mode: self.supervision_socket_mode,
+                owner_identity: self.owner_identity,
+            }),
+            RequestErrorLog::new("message-daemon"),
+        )
+        .with_listener_poll_interval(ListenerPollInterval::from_millis(10))
+        .run()
+        .map_err(Self::multi_listener_error)
     }
 
     pub fn bind_listener(&self) -> Result<MessageSocketBinding> {
@@ -126,19 +118,25 @@ impl MessageDaemon {
         .bind()
     }
 
-    pub fn bind_listeners(&self) -> Result<MessageSocketBindings> {
-        let mut bindings = vec![self.bind_listener()?];
+    fn listener_sockets(&self) -> Vec<ListenerSocket<MessageListener>> {
+        let mut sockets = vec![
+            ListenerSocket::new(
+                MessageListener::ExternalPeer,
+                self.message_socket.path().clone(),
+            )
+            .with_socket_mode(RuntimeSocketMode::new(self.message_socket_mode.as_octal())),
+        ];
         for ingress in &self.component_ingresses {
-            bindings.push(
-                MessageSocketBinder::new(
-                    ingress.socket.path().clone(),
-                    ingress.socket_mode,
-                    MessageIngressAuthority::InternalComponentInstance(ingress.origin.clone()),
-                )
-                .bind()?,
-            );
+            sockets.push(ingress.listener_socket());
         }
-        Ok(MessageSocketBindings::new(bindings))
+        sockets
+    }
+
+    fn multi_listener_error(error: MultiListenerDaemonError<Error, Error>) -> Error {
+        match error {
+            MultiListenerDaemonError::Listener(error) => Error::DaemonListener(error),
+            MultiListenerDaemonError::Start(error) | MultiListenerDaemonError::Stop(error) => error,
+        }
     }
 
     fn handle_connection(
@@ -192,6 +190,163 @@ impl ComponentMessageIngressBinding {
             SignalMessageSocket::from_path(ingress.socket_path.as_str()),
             SocketMode::from_octal(ingress.socket_mode.into_u32()),
             ingress.origin,
+        )
+    }
+
+    fn listener_socket(&self) -> ListenerSocket<MessageListener> {
+        ListenerSocket::new(
+            MessageListener::InternalComponentInstance(self.origin.clone()),
+            self.socket.path().clone(),
+        )
+        .with_socket_mode(RuntimeSocketMode::new(self.socket_mode.as_octal()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageListener {
+    ExternalPeer,
+    InternalComponentInstance(InternalComponentInstanceOrigin),
+}
+
+impl MessageListener {
+    fn authority(&self) -> MessageIngressAuthority {
+        match self {
+            Self::ExternalPeer => MessageIngressAuthority::ExternalPeer,
+            Self::InternalComponentInstance(origin) => {
+                MessageIngressAuthority::InternalComponentInstance(origin.clone())
+            }
+        }
+    }
+}
+
+impl Display for MessageListener {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExternalPeer => formatter.write_str("external-peer"),
+            Self::InternalComponentInstance(_) => {
+                formatter.write_str("internal-component-instance")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MessageDaemonRuntimeInput {
+    router_socket: SignalRouterSocket,
+    supervision_socket_path: PathBuf,
+    supervision_socket_mode: SupervisionSocketMode,
+    owner_identity: OwnerIdentity,
+}
+
+pub struct MessageDaemonRuntime {
+    input: MessageDaemonRuntimeInput,
+    phase: Option<MessageDaemonRuntimePhase>,
+}
+
+impl MessageDaemonRuntime {
+    fn new(input: MessageDaemonRuntimeInput) -> Self {
+        Self { input, phase: None }
+    }
+
+    fn phase(&self, operation: &'static str) -> Result<&MessageDaemonRuntimePhase> {
+        self.phase.as_ref().ok_or_else(|| Error::Actor {
+            operation,
+            detail: "message daemon runtime was used before start".to_owned(),
+        })
+    }
+
+    fn phase_mut(&mut self, operation: &'static str) -> Result<&mut MessageDaemonRuntimePhase> {
+        self.phase.as_mut().ok_or_else(|| Error::Actor {
+            operation,
+            detail: "message daemon runtime was used before start".to_owned(),
+        })
+    }
+}
+
+impl MultiListenerRuntime for MessageDaemonRuntime {
+    type Listener = MessageListener;
+    type RequestError = Error;
+    type StartError = Error;
+    type StopError = Error;
+
+    fn should_continue(&self) -> bool {
+        match self.phase("check message daemon stop signal") {
+            Ok(phase) => !phase.is_stop_requested(),
+            Err(_) => true,
+        }
+    }
+
+    fn start(&mut self) -> Result<()> {
+        if self.phase.is_none() {
+            self.phase = Some(MessageDaemonRuntimePhase::start(&self.input)?);
+        }
+        Ok(())
+    }
+
+    fn stop(&mut self) -> Result<()> {
+        if let Some(phase) = self.phase.take() {
+            phase.stop()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn handle_stream(&mut self, listener: Self::Listener, stream: UnixStream) -> Result<()> {
+        self.phase_mut("handle message stream")?
+            .handle_stream(listener, stream)
+    }
+}
+
+pub struct MessageDaemonRuntimePhase {
+    runtime: tokio::runtime::Runtime,
+    root: ActorRef<MessageDaemonRoot>,
+    stop_signal: SupervisionStopSignal,
+    _supervision: SupervisionHandle,
+}
+
+impl MessageDaemonRuntimePhase {
+    fn start(input: &MessageDaemonRuntimeInput) -> Result<Self> {
+        let stop_signal = SupervisionStopSignal::default();
+        let supervision = SupervisionListener::new(
+            SupervisionProfile::message(),
+            input.supervision_socket_path.clone(),
+            input.supervision_socket_mode,
+        )
+        .with_stop_signal(stop_signal.clone())
+        .spawn()?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        let root = runtime.block_on(MessageDaemonRoot::start_root(MessageDaemonRootInput {
+            router_socket: input.router_socket.clone(),
+            owner_identity: input.owner_identity.clone(),
+        }));
+        Ok(Self {
+            runtime,
+            root,
+            stop_signal,
+            _supervision: supervision,
+        })
+    }
+
+    fn is_stop_requested(&self) -> bool {
+        self.stop_signal.is_stop_requested()
+    }
+
+    fn stop(self) -> Result<()> {
+        self.stop_signal.request_stop();
+        let outcome = self
+            .runtime
+            .block_on(MessageDaemonRoot::stop_root(self.root.clone()))?;
+        MessageDaemonRoot::assert_stopped_outcome(outcome)
+    }
+
+    fn handle_stream(&mut self, listener: MessageListener, stream: UnixStream) -> Result<()> {
+        MessageDaemon::handle_connection(
+            &self.runtime,
+            &self.root,
+            AcceptedMessageConnection {
+                stream,
+                authority: listener.authority(),
+            },
         )
     }
 }
@@ -256,34 +411,6 @@ impl MessageSocketBinding {
                 stream,
                 authority: self.authority.clone(),
             })
-    }
-}
-
-pub struct MessageSocketBindings {
-    bindings: Vec<MessageSocketBinding>,
-}
-
-impl MessageSocketBindings {
-    pub fn new(bindings: Vec<MessageSocketBinding>) -> Self {
-        Self { bindings }
-    }
-
-    pub fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
-        for binding in &self.bindings {
-            binding.set_nonblocking(nonblocking)?;
-        }
-        Ok(())
-    }
-
-    pub fn accept_one(&mut self) -> std::io::Result<Option<AcceptedMessageConnection>> {
-        for binding in &self.bindings {
-            match binding.accept() {
-                Ok(accepted) => return Ok(Some(accepted)),
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(None)
     }
 }
 

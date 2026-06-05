@@ -129,6 +129,8 @@
             context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
           message-component-uses-stable-kameo-lifecycle-reference =
             context.cargoTestFile "actor_runtime_truth" "message_component_uses_stable_kameo_lifecycle_reference";
+          message-daemon-uses-shared-triad-multi-listener-runtime =
+            context.cargoTestFile "actor_runtime_truth" "message_daemon_uses_shared_triad_multi_listener_runtime";
           message-cli-sends-router-signal-without-local-ledger =
             context.cargoTest "command_line_send_routes_signal_frame_without_writing_local_ledger";
           message-cli-inbox-uses-router-signal-not-local-ledger =

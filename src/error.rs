@@ -57,6 +57,9 @@ pub enum Error {
         operation: &'static str,
         detail: String,
     },
+
+    #[error("message daemon listener: {0}")]
+    DaemonListener(#[from] triad_runtime::ListenerError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

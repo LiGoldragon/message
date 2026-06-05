@@ -81,6 +81,14 @@ data-bearing types for now. The next actor split is supervision, listener,
 origin stamping, and router-client actors. The daemon is stateless across CLI
 requests — no redb, no durable message ledger.
 
+Listener binding runs through `triad-runtime::MultiListenerDaemon`. The message
+daemon supplies listener identities for external peer ingress and configured
+internal component-instance ingress, and one `MessageDaemonRuntime` owns the
+Kameo root plus supervision stop signal. `MultiListenerRuntime::should_continue`
+is the graceful-stop boundary: the supervision socket requests stop, the shared
+runtime stream loop exits, `MessageDaemonRoot` stops with a clean terminal
+outcome, and the bound runtime removes Unix socket files on drop.
+
 The CLI surface (`message` binary) connects to `message.sock` like any other
 client. The daemon converts client-side `MessageSubmission` into
 router-side `StampedMessageSubmission` by attaching typed provenance from the
@@ -155,6 +163,9 @@ This repo does not own:
 - The daemon applies the configured socket mode from
   `MessageDaemonConfiguration` to `message.sock` before accepting client
   traffic.
+- The daemon uses `triad-runtime::MultiListenerDaemon` for external and
+  internal component-instance ingress sockets instead of owning a local accept
+  loop.
 - The daemon reads its typed `MessageDaemonConfiguration` from argv before
   accepting message ingress, and `External(Owner)` is derived from the
   configured `owner_identity` rather than `message-daemon`'s own
@@ -189,7 +200,7 @@ src/main.rs                    message CLI entry
 src/bin/message_daemon.rs daemon entry
 src/bin/message_validate_output.rs test/debug validator for message CLI NOTA replies
 src/command.rs                 NOTA input/output projection
-src/daemon.rs                  daemon listener and data-bearing Kameo root
+src/daemon.rs                  daemon runtime bridge and data-bearing Kameo root
 src/output_validator.rs        structured validator for sandbox message artifacts
 src/router.rs                  Signal frame clients and codec
 src/surface.rs                 message-local NOTA surface records
@@ -205,6 +216,7 @@ tests/                         ingress and architectural-truth tests
 | Inbox reads come from the router, not a local ledger. | `nix build .#checks.x86_64-linux.message-cli-inbox-uses-router-signal-not-local-ledger` |
 | The message daemon socket is mandatory for the CLI. | `nix build .#checks.x86_64-linux.message-cli-requires-message-socket` |
 | The daemon applies the configured socket mode. | `nix build .#checks.x86_64-linux.message-daemon-applies-configured-socket-mode` |
+| The daemon uses the shared triad multi-listener runtime shell. | `nix build .#checks.x86_64-linux.message-daemon-uses-shared-triad-multi-listener-runtime` |
 | The daemon stamps and forwards CLI Signal frames to the router socket. | `nix build .#checks.x86_64-linux.message-daemon-forwards-cli-signal-frame-to-router-socket` |
 | The daemon root stamps owner identity from the typed configuration, not the CLI payload. | `nix build .#checks.x86_64-linux.message-daemon-root-stamps-owner-identity-from-configuration` |
 | The component uses the stable Persona Kameo lifecycle reference. | `nix build .#checks.x86_64-linux.message-component-uses-stable-kameo-lifecycle-reference` |

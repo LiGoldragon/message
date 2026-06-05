@@ -96,6 +96,22 @@ fn message_daemon_uses_data_bearing_kameo_root_actor() {
 }
 
 #[test]
+fn message_daemon_uses_shared_triad_multi_listener_runtime() {
+    let cargo = SourceFile::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
+    let daemon = SourceFile::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("daemon.rs"),
+    );
+
+    assert!(cargo.contains("triad-runtime"));
+    assert!(daemon.contains("MultiListenerDaemon::new"));
+    assert!(daemon.contains("impl MultiListenerRuntime for MessageDaemonRuntime"));
+    assert!(!daemon.contains("while !stop_signal.is_stop_requested()"));
+    assert!(!daemon.contains("accept_one()"));
+}
+
+#[test]
 fn message_component_uses_stable_kameo_lifecycle_reference() {
     let cargo = SourceFile::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"));
     let lockfile = SourceFile::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock"));

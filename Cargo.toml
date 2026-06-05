@@ -36,6 +36,7 @@ signal-persona-origin = { git = "https://github.com/LiGoldragon/signal-persona-o
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git" }
 thiserror       = "2"
 tokio           = { version = "1", features = ["rt-multi-thread"] }
+triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3"
