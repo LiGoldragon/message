@@ -45,9 +45,15 @@ impl Drop for DaemonProcess {
 impl DaemonProcess {
     fn spawn(socket_path: &Path, router_socket_path: &Path, database_path: &Path) -> Self {
         let configuration_path = socket_path.with_extension("config.rkyv");
-        Configuration::new(socket_path, router_socket_path, database_path, "owner", 1000)
-            .write_binary_file(&configuration_path)
-            .expect("write binary daemon configuration");
+        Configuration::new(
+            socket_path,
+            router_socket_path,
+            database_path,
+            "owner",
+            1000,
+        )
+        .write_binary_file(&configuration_path)
+        .expect("write binary daemon configuration");
         let child = Command::new(env!("CARGO_BIN_EXE_message-daemon"))
             .arg(configuration_path)
             .spawn()
@@ -64,8 +70,14 @@ impl DaemonProcess {
 fn exchange(socket_path: &Path, input: &Input) -> Output {
     let mut stream = UnixStream::connect(socket_path).expect("connect to message socket");
     let codec = LengthPrefixedCodec::default();
-    let body = FrameBody::new(input.encode_signal_frame().expect("encode input signal frame"));
-    codec.write_body(&mut stream, &body).expect("write request frame");
+    let body = FrameBody::new(
+        input
+            .encode_signal_frame()
+            .expect("encode input signal frame"),
+    );
+    codec
+        .write_body(&mut stream, &body)
+        .expect("write request frame");
     stream.flush().expect("flush request");
     let reply = codec.read_body(&mut stream).expect("read reply frame");
     let (_route, output) =

@@ -33,8 +33,8 @@ ComponentDaemon for MessageDaemon` in `src/daemon.rs`: `Configuration` /
 `Engine` / `Error` / `PROCESS_NAME` + `build_runtime` + `handle_working_input`.
 The daemon bin is the one-liner `MessageDaemon::run_to_exit_code()`. The daemon
 reads a binary rkyv `Configuration` from its single argv argument (socket path,
-router socket path, database path, owner name) — no environment variables on the
-production path, no flags.
+router socket path, database path, owner name, owner uid) — no environment
+variables on the production path, no flags.
 
 ## Wire translation to router
 
@@ -44,16 +44,13 @@ hand-written `signal-message` `MessageChannel` wire, so `RouterForwarder`
 (`src/router.rs`) is the translation seam: schema `ForwardRequest` → wire
 `MessageRequest` → router call → wire `MessageReply` → schema `Output`.
 Provenance (origin + ingress timestamp) is minted in the forwarder from the
-configured owner identity, never accepted from the caller payload.
+accepted connection's kernel-vouched peer credentials (`ConnectionContext` /
+`SO_PEERCRED`) and the configured owner uid. A peer uid matching the owner is
+`Owner`; any other peer uid is `NonOwnerUser(uid)`. Provenance is never accepted
+from the caller payload.
 
 ## Residuals (carried, not yet resolved)
 
-- **Peer-credential-derived origin.** The emitted working-input spine decodes
-  the frame to `Input` and discards the connection stream, so SO_PEERCRED is not
-  available in `handle_working_input`. The migrated daemon stamps
-  `MessageOrigin::External(Owner)` from the configured owner identity. Restoring
-  the old peer-credential-derived `ConnectionClass::NonOwnerUser` distinction
-  needs the emitter to thread per-connection context into the working-input hook.
 - **CLI wire format.** The `message` CLI (`src/command.rs`, `src/surface.rs`)
   still encodes the old `signal-message` `MessageChannel` frames, not the
   schema-derived signal frames the migrated daemon now decodes. The CLI must be

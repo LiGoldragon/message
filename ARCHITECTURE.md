@@ -19,7 +19,7 @@ component.*
   `build.rs`; message hand-writes only `impl ComponentDaemon for
   MessageDaemon`. It reads a binary rkyv `Configuration` from its
   single argv argument (socket path, router socket path, database
-  path, owner name), binds `message.sock`, decodes schema-derived
+  path, owner name, owner uid), binds `message.sock`, decodes schema-derived
   signal frames, runs the Nexus forward decision, and forwards the
   translated request to `persona-router`'s internal socket
   (`router.sock`) over the `signal-message` wire as a
@@ -98,12 +98,10 @@ across requests — no redb, no durable message ledger.
 
 `RouterForwarder` (`src/router.rs`) is the translation seam between the
 schema-derived inbound wire and the router's `signal-message` wire: it stamps
-provenance (configured owner identity + daemon-minted ingress timestamp) onto
-the submission and translates the router's reply back to the schema `Output`.
-Provenance is never encoded as strings and never accepted from the caller
-payload. NOTE (residual): SO_PEERCRED-derived origin is not available in the
-emitted working-input hook, so the daemon currently stamps the configured owner
-origin; see `INTENT.md` §"Residuals".
+provenance (peer-credential-derived origin + daemon-minted ingress timestamp)
+onto the submission and translates the router's reply back to the schema
+`Output`. Provenance is never encoded as strings and never accepted from the
+caller payload.
 
 ## 2 · State and Ownership
 
@@ -144,8 +142,8 @@ This repo owns:
 - projection from `signal-message` replies back to NOTA;
 - length-prefixed Signal frame transport from CLI to `message.sock`;
 - frame-level exchange echoing for the current one-operation request/reply
-  path;
-- daemon stamping from `MessageSubmission` to `StampedMessageSubmission`;
+- daemon stamping from `MessageSubmission` to `StampedMessageSubmission`
+  using the accepted connection's peer credentials;
 - daemon forwarding from `message.sock` to the configured router socket.
 
 This repo does not own:
@@ -175,7 +173,7 @@ This repo does not own:
   loop.
 - The daemon reads its typed binary rkyv `Configuration` from argv before
   accepting message ingress, and the stamped origin is derived from the
-  configured `owner_name` rather than `message-daemon`'s own uid.
+  accepted connection's kernel-vouched peer uid and the configured owner uid.
 - CLI and daemon outbound traffic are length-prefixed rkyv Signal frames.
 - Request/reply matching is frame-level: every request frame carries an
   `ExchangeIdentifier`, and every reply frame echoes the same identifier.
@@ -186,9 +184,13 @@ This repo does not own:
   `RequestRejectionReason`, not by string parsing.
 - Sender identity is absent from the CLI payload and absent from frame auth.
 - Provenance is typed in `StampedMessageSubmission`; the daemon mints it in
-  `RouterForwarder::stamp` from the configured owner origin and never accepts
-  it from the CLI payload. (Residual: SO_PEERCRED-derived origin is not yet
-  available in the emitted working-input hook — see `INTENT.md` §"Residuals".)
+  `RouterForwarder::stamp` from `ConnectionContext` (`SO_PEERCRED`) and the
+  configured owner uid. A matching peer uid stamps `Owner`; any other peer uid
+  stamps `NonOwnerUser(uid)`. Provenance is never accepted from the CLI payload.
+- The generated `NexusEngine::execute` runner owns the recursive Nexus loop and
+  continuation budget. Message's component code supplies only one decision step
+  plus the `ForwardToRouter` effect hook through a request-scoped wrapper that
+  carries `ConnectionContext`.
 - The component does not write local message or pending logs.
 - The daemon hand-writes only `impl ComponentDaemon for MessageDaemon`
   (`src/daemon.rs`): `Configuration` / `Engine` / `Error` / `PROCESS_NAME` +
@@ -217,7 +219,7 @@ src/bin/message_daemon.rs      daemon entry (one-liner: MessageDaemon::run_to_ex
 src/bin/message_validate_output.rs test/debug validator for message CLI NOTA replies
 src/config.rs                  binary rkyv daemon Configuration (impl DaemonConfiguration)
 src/daemon.rs                  impl ComponentDaemon for MessageDaemon (the only daemon code)
-src/engine.rs                  MessageEngine: NexusEngine + SemaEngine, the forward loop
+src/engine.rs                  MessageEngine + request-scoped generated Nexus runner hooks
 src/command.rs                 CLI NOTA input/output projection
 src/output_validator.rs        structured validator for sandbox message artifacts
 src/router.rs                  RouterForwarder + signal-message frame clients/codec
@@ -232,8 +234,10 @@ tests/forward_to_router.rs     Nexus forward effect against a stub router
 | Constraint | Test |
 |---|---|
 | The emitted daemon spine serves over a real socket and replies `Unimplemented` straight from the Nexus decision for an already-stamped submission. | `nix build .#checks.x86_64-linux.message-emitted-daemon-replies-unimplemented-for-already-stamped-submission` |
-| The daemon stamps a submission from the configured owner and forwards it to the router, translating the acceptance back. | `nix build .#checks.x86_64-linux.message-daemon-stamps-and-forwards-submission-to-router` |
+| The daemon stamps an owner-peer submission from SO_PEERCRED and forwards it to the router, translating the acceptance back. | `nix build .#checks.x86_64-linux.message-daemon-stamps-owner-submission-to-router` |
+| The daemon stamps a non-owner peer as `NonOwnerUser(uid)`, proving peer credentials survive the generated-runner hook path. | `nix build .#checks.x86_64-linux.message-daemon-stamps-non-owner-submission-to-router` |
 | A router-unreachable forward yields a typed `Error` output. | `nix build .#checks.x86_64-linux.message-router-unreachable-yields-typed-error` |
+| Message's generated Nexus plane owns the runner adapter, and component code cannot reintroduce a local recursive Nexus loop. | `nix build .#checks.x86_64-linux.message-nexus-loop-is-generated` |
 | The production daemon reads no environment variables for control-plane configuration. | `nix build .#checks.x86_64-linux.message-daemon-reads-no-control-plane-environment-variables` |
 | Local ledger, actor index, in-band proof, and endpoint surfaces cannot return. | `nix build .#checks.x86_64-linux.message-component-cannot-own-local-ledger` |
 | Retired terminal-brand vocabulary cannot return. | `nix build .#checks.x86_64-linux.message-runtime-cannot-reference-retired-terminal-brand` |

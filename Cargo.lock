@@ -727,7 +727,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 [[package]]
 name = "triad-runtime"
 version = "0.2.1"
-source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=main#33b9531a3d21e68d6e44652e43b935ac9626240f"
+source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=main#f9c38e22ae6e34133a77f91ba18656ae2e05e7f7"
 dependencies = [
  "rustix",
  "signal-frame",

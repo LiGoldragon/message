@@ -1,20 +1,20 @@
 //! In-process witnesses for message's Nexus forward-to-router effect.
 //!
 //! These drive `MessageEngine::handle` directly against a stub router that
-//! speaks the `signal-message` wire, exercising the full Nexus loop:
+//! speaks the `signal-message` wire, exercising the generated Nexus runner:
 //! `SignalArrived` -> `decide` -> `ForwardToRouter` effect -> the router call ->
-//! `ForwardCompleted` -> `decide` -> `ReplyToSignal`. They cover the two paths
+//! `EffectCompleted` -> `decide` -> `ReplyToSignal`. They cover the two paths
 //! the router-independent process-boundary test does not: a successful submit
 //! forward and the router-unreachable fallback.
 
 use std::{os::unix::net::UnixListener, path::PathBuf, thread};
 
+use message::router::{SignalRouterFrameCodec, SignalRouterSocket};
 use message::{
     MessageEngine, RouterForwarder,
     router::OriginPolicy,
     schema::signal::{Input, MessageKind, MessageSubmission, Output},
 };
-use message::router::{SignalRouterFrameCodec, SignalRouterSocket};
 use signal_message::{MessageReply, MessageRequest, MessageSlot, SubmissionAcceptance};
 use signal_persona_origin::{ConnectionClass, MessageOrigin, UnixUserIdentifier};
 use tempfile::TempDir;
@@ -26,11 +26,11 @@ const OWNER_USER_ID: u32 = 1000;
 const NON_OWNER_USER_ID: u32 = 4242;
 
 fn owner_connection() -> ConnectionContext {
-    ConnectionContext::new(OWNER_USER_ID, OWNER_USER_ID, Some(101))
+    ConnectionContext::new(OWNER_USER_ID, OWNER_USER_ID, 101)
 }
 
 fn non_owner_connection() -> ConnectionContext {
-    ConnectionContext::new(NON_OWNER_USER_ID, NON_OWNER_USER_ID, Some(202))
+    ConnectionContext::new(NON_OWNER_USER_ID, NON_OWNER_USER_ID, 202)
 }
 
 /// A one-shot router stub: accepts one connection, decodes one `signal-message`
@@ -51,8 +51,12 @@ impl StubRouter {
         thread::spawn(move || {
             let codec = SignalRouterFrameCodec::default();
             let (mut stream, _address) = self.listener.accept().expect("accept router connection");
-            let frame = codec.read_frame(&mut stream).expect("read router request frame");
-            let received = codec.request_from_frame(frame).expect("decode router request");
+            let frame = codec
+                .read_frame(&mut stream)
+                .expect("read router request frame");
+            let received = codec
+                .request_from_frame(frame)
+                .expect("decode router request");
             let reply = codec.reply_frame(
                 received.exchange,
                 received.verb,
@@ -60,7 +64,9 @@ impl StubRouter {
                     message_slot: MessageSlot::new(7),
                 }),
             );
-            codec.write_frame(&mut stream, &reply).expect("write router reply");
+            codec
+                .write_frame(&mut stream, &reply)
+                .expect("write router reply");
             received.request
         })
     }
@@ -104,7 +110,10 @@ fn submit_is_stamped_with_owner_origin_when_the_peer_uid_matches_the_owner() {
             assert_eq!(stamped.submission.body.as_str(), "hello");
             // The origin is minted from the connection's peer credentials, NOT a
             // hardcoded constant: a peer uid equal to the owner uid is the owner.
-            assert_eq!(stamped.origin, MessageOrigin::External(ConnectionClass::Owner));
+            assert_eq!(
+                stamped.origin,
+                MessageOrigin::External(ConnectionClass::Owner)
+            );
         }
         other => panic!("expected daemon to stamp the submission before forwarding, got {other:?}"),
     }

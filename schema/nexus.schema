@@ -7,18 +7,19 @@
   MessageReply message:signal:Output
   OperationKind message:signal:OperationKind
   UnimplementedReason message:signal:UnimplementedReason
+  ErrorReport message:signal:ErrorReport
 }
-[SignalArrived ForwardCompleted]
+[SignalArrived EffectCompleted]
 [ReplyToSignal CommandEffect Continue]
 {
   SignalArrived SignalInput
-  ForwardCompleted ForwardResult
+  EffectCompleted NexusEffectResult
 
   ReplyToSignal SignalOutput
   CommandEffect NexusEffectCommand
   Continue NexusWork
 
-  NexusWork [(SignalArrived SignalArrived) (ForwardCompleted ForwardCompleted)]
+  NexusWork [(SignalArrived SignalArrived) (EffectCompleted EffectCompleted)]
   NexusAction [(ReplyToSignal ReplyToSignal) (CommandEffect CommandEffect) (Continue Continue)]
 
   ForwardTarget [Router]
@@ -28,8 +29,8 @@
   NexusEffectCommand [(ForwardToRouter ForwardToRouter)]
   ForwardToRouter ForwardRequest
 
-  ForwardResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable)]
   Forwarded MessageReply
   RouterUnavailable UnimplementedReason
-  NexusEffectResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable)]
+  ForwardFailed ErrorReport
+  NexusEffectResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable) (ForwardFailed ForwardFailed)]
 }

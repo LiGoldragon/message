@@ -30,7 +30,15 @@
             sha256 = "sha256-gh/xTkxKHL4eiRXzWv8KP7vfjSk61Iq48x47BEDFgfk=";
           };
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-          src = craneLib.cleanCargoSource ./.;
+          schemaFilter = path: type:
+            type == "regular" && pkgs.lib.hasSuffix ".schema" path;
+          sourceFilter = path: type:
+            type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);
+          src = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter = sourceFilter;
+            name = "source";
+          };
           commonArgs = {
             inherit src;
             strictDeps = true;
@@ -125,6 +133,8 @@
             context.sourceConstraintCheck "message-component-cannot-own-local-ledger" ./scripts/message-component-cannot-own-local-ledger;
           message-daemon-reads-no-control-plane-environment-variables =
             context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
+          message-nexus-loop-is-generated =
+            context.sourceConstraintCheck "message-nexus-loop-is-generated" ./scripts/message-nexus-loop-is-generated;
           # The emitted daemon spine over a real socket: argv config load ->
           # single working-socket bind -> signal-frame decode -> Nexus decide ->
           # encode -> wire reply. The already-stamped submission replies
@@ -135,9 +145,15 @@
           # The Nexus forward-to-router effect against a stub router: a submit is
           # stamped from the configured owner and forwarded, and the router
           # acceptance is translated back into the Signal output.
-          message-daemon-stamps-and-forwards-submission-to-router =
+          message-daemon-stamps-owner-submission-to-router =
             context.cargoTestFile "forward_to_router"
-              "submit_is_stamped_and_forwarded_then_router_acceptance_is_translated_back";
+              "submit_is_stamped_with_owner_origin_when_the_peer_uid_matches_the_owner";
+          # A non-owner peer is stamped from SO_PEERCRED as NonOwnerUser(uid),
+          # proving the request-scoped generated-runner hook still sees the
+          # connection context.
+          message-daemon-stamps-non-owner-submission-to-router =
+            context.cargoTestFile "forward_to_router"
+              "submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin";
           # The router-unreachable fallback yields a typed Error output rather
           # than a hard failure.
           message-router-unreachable-yields-typed-error =

@@ -297,7 +297,9 @@ impl OriginPolicy {
 
     /// The owner policy for a local Unix user owner identified by uid.
     pub fn for_owner_user_id(owner_user_id: u32) -> Self {
-        Self::new(OwnerIdentity::UnixUser(UnixUserIdentifier::new(owner_user_id)))
+        Self::new(OwnerIdentity::UnixUser(UnixUserIdentifier::new(
+            owner_user_id,
+        )))
     }
 
     /// Classify an accepted connection's peer credentials into a typed origin.
@@ -435,11 +437,9 @@ impl RouterForwarder {
             MessageReply::SubmissionAccepted(acceptance) => Output::SubmissionAccepted(
                 SubmissionAcceptance(acceptance.message_slot.into_u64() as MessageSlot),
             ),
-            MessageReply::SubmissionRejected(rejection) => {
-                Output::SubmissionRejected(SubmissionRejection(Self::schema_rejection_reason(
-                    rejection.reason,
-                )))
-            }
+            MessageReply::SubmissionRejected(rejection) => Output::SubmissionRejected(
+                SubmissionRejection(Self::schema_rejection_reason(rejection.reason)),
+            ),
             MessageReply::InboxListing(listing) => Output::InboxListing(InboxContents(
                 listing
                     .messages

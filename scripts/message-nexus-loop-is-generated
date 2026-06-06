@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_root="${1:?usage: message-nexus-loop-is-generated <source-root>}"
+
+if ! rg --quiet 'triad_runtime::RunnerEngines' "$source_root/src/schema/nexus.rs"; then
+  echo "message generated Nexus plane does not emit the triad-runtime runner adapter" >&2
+  exit 1
+fi
+
+if ! rg --quiet '[.]execute[(]' "$source_root/src/engine.rs"; then
+  echo "message component engine does not enter the generated NexusEngine::execute runner" >&2
+  exit 1
+fi
+
+if rg --line-number \
+  'loop[[:space:]]*[{]|NexusAction::Continue|ForwardCompleted|ForwardResult' \
+  "$source_root/src/engine.rs" \
+  "$source_root/schema/nexus.schema"
+then
+  echo "message component still owns the recursive Nexus loop or its retired completion vocabulary" >&2
+  exit 1
+fi

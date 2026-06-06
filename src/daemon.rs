@@ -55,9 +55,9 @@ pub enum MessageDaemonError {
 impl ComponentDaemon for MessageDaemon {
     type Configuration = Configuration;
     type ConfigurationError = ConfigurationError;
-    /// The engine is single-flight per the `NexusEngine::decide(&mut self)`
-    /// borrow; the emitted spine holds it behind a shared reference, so message
-    /// guards the `&mut self` forward loop through a `Mutex`.
+    /// The engine is single-flight per the generated `NexusEngine::execute`
+    /// runner; the emitted spine holds it behind a shared reference, so message
+    /// guards the per-request runner hooks through a `Mutex`.
     type Engine = Mutex<MessageEngine>;
     type Error = MessageDaemonError;
 
