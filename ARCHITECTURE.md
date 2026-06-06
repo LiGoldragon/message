@@ -115,12 +115,14 @@ malformed.
 
 Caller identity is not accepted from the model or CLI payload.
 `MessageSubmission` and `InboxQuery` stay sender-free, and the component sends
-no in-band proof material. The daemon stamps message submissions from the
-configured `owner_name` and forwards typed provenance in
-`StampedMessageSubmission`. The persona manager builds the configuration
-record from the engine's spawn envelope and writes it to a binary rkyv file on
-spawn; the daemon never reads environment variables for control-plane
-settings.
+no in-band proof material. The daemon first gates trust with the configured
+owner uid against the accepted stream's kernel-vouched peer uid. When that
+check passes, it stamps the configured `owner_name` as this daemon's local
+harness component instance and forwards typed provenance in
+`StampedMessageSubmission`; other peer uids stamp `NonOwnerUser(uid)`. The
+persona manager builds the configuration record from the engine's spawn
+envelope and writes it to a binary rkyv file on spawn; the daemon never reads
+environment variables for control-plane settings.
 
 Typed-configuration-via-argv is the destination shape: every control-plane
 setting (socket paths, owner identity, router socket) arrives as a typed
@@ -184,9 +186,10 @@ This repo does not own:
   `RequestRejectionReason`, not by string parsing.
 - Sender identity is absent from the CLI payload and absent from frame auth.
 - Provenance is typed in `StampedMessageSubmission`; the daemon mints it in
-  `RouterForwarder::stamp` from `ConnectionContext` (`SO_PEERCRED`) and the
-  configured owner uid. A matching peer uid stamps `Owner`; any other peer uid
-  stamps `NonOwnerUser(uid)`. Provenance is never accepted from the CLI payload.
+  `RouterForwarder::stamp` from `ConnectionContext` (`SO_PEERCRED`) and daemon
+  configuration. A matching peer uid stamps the configured `owner_name` as a
+  local harness component instance; any other peer uid stamps
+  `NonOwnerUser(uid)`. Provenance is never accepted from the CLI payload.
 - The generated `NexusEngine::execute` runner owns the recursive Nexus loop and
   continuation budget. Message's component code supplies only one decision step
   plus the `ForwardToRouter` effect hook through a request-scoped wrapper that
@@ -234,7 +237,7 @@ tests/forward_to_router.rs     Nexus forward effect against a stub router
 | Constraint | Test |
 |---|---|
 | The emitted daemon spine serves over a real socket and replies `Unimplemented` straight from the Nexus decision for an already-stamped submission. | `nix build .#checks.x86_64-linux.message-emitted-daemon-replies-unimplemented-for-already-stamped-submission` |
-| The daemon stamps an owner-peer submission from SO_PEERCRED and forwards it to the router, translating the acceptance back. | `nix build .#checks.x86_64-linux.message-daemon-stamps-owner-submission-to-router` |
+| The daemon stamps an owner-peer submission as the configured harness component instance from SO_PEERCRED + config and forwards it to the router, translating the acceptance back. | `nix build .#checks.x86_64-linux.message-daemon-stamps-owner-submission-to-router` |
 | The daemon stamps a non-owner peer as `NonOwnerUser(uid)`, proving peer credentials survive the generated-runner hook path. | `nix build .#checks.x86_64-linux.message-daemon-stamps-non-owner-submission-to-router` |
 | A router-unreachable forward yields a typed `Error` output. | `nix build .#checks.x86_64-linux.message-router-unreachable-yields-typed-error` |
 | Message's generated Nexus plane owns the runner adapter, and component code cannot reintroduce a local recursive Nexus loop. | `nix build .#checks.x86_64-linux.message-nexus-loop-is-generated` |

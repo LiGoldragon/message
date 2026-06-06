@@ -19,7 +19,9 @@ Rules for work here:
 - Do not trust sender fields written by a model. The component does not include
   a sender field, read a local actor index, resolve process ancestry, or
   construct in-band proof material. Origin stamping is typed data minted from
-  SO_PEERCRED, not a string field from the caller.
+  SO_PEERCRED plus daemon configuration, not a string field from the caller.
+  A trusted owner peer stamps the configured local harness instance; other
+  peers stamp `NonOwnerUser(uid)`.
 - Supported input variants are `Send` and `Inbox`. Registry, listing, retry,
   tail, and delivery operations belong to router, mind, harness, or terminal
   surfaces as their contracts land.

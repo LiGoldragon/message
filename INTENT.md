@@ -45,9 +45,10 @@ hand-written `signal-message` `MessageChannel` wire, so `RouterForwarder`
 `MessageRequest` → router call → wire `MessageReply` → schema `Output`.
 Provenance (origin + ingress timestamp) is minted in the forwarder from the
 accepted connection's kernel-vouched peer credentials (`ConnectionContext` /
-`SO_PEERCRED`) and the configured owner uid. A peer uid matching the owner is
-`Owner`; any other peer uid is `NonOwnerUser(uid)`. Provenance is never accepted
-from the caller payload.
+`SO_PEERCRED`) plus daemon configuration. A peer uid matching the configured
+owner uid stamps the configured `owner_name` as this daemon's local harness
+component instance; any other peer uid is `NonOwnerUser(uid)`. Provenance is
+never accepted from the caller payload.
 
 ## Residuals (carried, not yet resolved)
 

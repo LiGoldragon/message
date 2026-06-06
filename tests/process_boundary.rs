@@ -35,6 +35,10 @@ use message::{
     },
 };
 use signal_message::{MessageReply, MessageRequest, MessageSlot, SubmissionAcceptance};
+use signal_persona_origin::{
+    ComponentInstanceName, ComponentName, InternalComponentInstanceOrigin,
+    MessageOrigin as RouterMessageOrigin,
+};
 use tempfile::TempDir;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
 
@@ -57,7 +61,7 @@ impl DaemonProcess {
             router_socket_path,
             database_path,
             "owner",
-            1000,
+            CurrentProcessUser::owner_user_id(),
         )
         .write_binary_file(&configuration_path)
         .expect("write binary daemon configuration");
@@ -68,6 +72,14 @@ impl DaemonProcess {
         let process = Self { child };
         wait_for_socket(socket_path);
         process
+    }
+}
+
+struct CurrentProcessUser;
+
+impl CurrentProcessUser {
+    fn owner_user_id() -> u32 {
+        rustix::process::getuid().as_raw()
     }
 }
 
@@ -199,6 +211,15 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
         MessageRequest::StampedMessageSubmission(stamped) => {
             assert_eq!(stamped.submission.recipient.as_str(), "designer");
             assert_eq!(stamped.submission.body.as_str(), "hello from cli");
+            assert_eq!(
+                stamped.origin,
+                RouterMessageOrigin::InternalComponentInstance(
+                    InternalComponentInstanceOrigin::new(
+                        ComponentName::Harness,
+                        ComponentInstanceName::new("owner"),
+                    )
+                )
+            );
         }
         other => panic!("expected daemon to stamp CLI submission before forwarding, got {other:?}"),
     }

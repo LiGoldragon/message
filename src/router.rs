@@ -13,7 +13,10 @@ use signal_message::{
     StampedMessageSubmission as WireStampedMessageSubmission,
 };
 use signal_persona::TimestampNanos;
-use signal_persona_origin::{ConnectionClass, MessageOrigin, OwnerIdentity, UnixUserIdentifier};
+use signal_persona_origin::{
+    ComponentInstanceName, ComponentName, ConnectionClass, InternalComponentInstanceOrigin,
+    MessageOrigin, OwnerIdentity, UnixUserIdentifier,
+};
 use triad_runtime::ConnectionContext;
 
 use crate::error::{Error, Result};
@@ -228,43 +231,53 @@ pub struct ReceivedMessageRequest {
 }
 
 /// The owner-identity policy that mints a connection's provenance origin from
-/// its kernel-vouched peer credentials.
+/// its kernel-vouched peer credentials and the daemon's configured local
+/// component instance.
 ///
 /// This restores the origin classification the pre-triad-runtime daemon
 /// performed: an accepted connection whose peer uid matches the engine owner is
-/// the owner's own local context (`ConnectionClass::Owner`); any other local
-/// Unix user is a `NonOwnerUser(uid)`. The owner identity is sourced from the
-/// daemon's configuration (the owner's local Unix uid), never from a payload —
-/// provenance crosses the operating-system trust boundary at `SO_PEERCRED`.
+/// the configured local harness instance; any other local Unix user is a
+/// `NonOwnerUser(uid)`. The owner identity and local instance name are sourced
+/// from daemon configuration, never from a payload — provenance crosses the
+/// operating-system trust boundary at `SO_PEERCRED`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OriginPolicy {
     owner_identity: OwnerIdentity,
+    local_instance: ComponentInstanceName,
 }
 
 impl OriginPolicy {
-    pub fn new(owner_identity: OwnerIdentity) -> Self {
-        Self { owner_identity }
+    pub fn new(owner_identity: OwnerIdentity, local_instance: ComponentInstanceName) -> Self {
+        Self {
+            owner_identity,
+            local_instance,
+        }
     }
 
     /// The owner policy for a local Unix user owner identified by uid.
-    pub fn for_owner_user_id(owner_user_id: u32) -> Self {
-        Self::new(OwnerIdentity::UnixUser(UnixUserIdentifier::new(
-            owner_user_id,
-        )))
+    pub fn for_owner_user_id(owner_user_id: u32, local_instance: impl Into<String>) -> Self {
+        Self::new(
+            OwnerIdentity::UnixUser(UnixUserIdentifier::new(owner_user_id)),
+            ComponentInstanceName::new(local_instance),
+        )
     }
 
     /// Classify an accepted connection's peer credentials into a typed origin.
     ///
-    /// A peer uid that matches the owner's Unix uid is the owner's own context;
-    /// any other local user is a non-owner. A `System`-owned engine has no Unix
-    /// owner uid to match against, so every local connection classifies as a
-    /// non-owner user — matching the old daemon, which only granted `Owner` to a
-    /// uid-matched `OwnerIdentity::UnixUser`.
+    /// A peer uid that matches the owner's Unix uid is the configured local
+    /// harness instance; any other local user is a non-owner. A `System`-owned
+    /// engine has no Unix owner uid to match against, so every local connection
+    /// classifies as a non-owner user — matching the old daemon's uid-gated
+    /// trust boundary while preserving the component-instance identity router
+    /// grants need.
     pub fn origin_for_connection(&self, connection: &ConnectionContext) -> MessageOrigin {
         let peer_user_id = UnixUserIdentifier::new(connection.user_id());
         match &self.owner_identity {
             OwnerIdentity::UnixUser(owner_user_id) if peer_user_id == *owner_user_id => {
-                MessageOrigin::External(ConnectionClass::Owner)
+                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin::new(
+                    ComponentName::Harness,
+                    self.local_instance.clone(),
+                ))
             }
             _ => MessageOrigin::External(ConnectionClass::NonOwnerUser(peer_user_id)),
         }
@@ -300,7 +313,10 @@ impl RouterForwarder {
     pub fn from_configuration(configuration: &crate::config::Configuration) -> Self {
         Self::new(
             SignalRouterSocket::from_path(configuration.router_socket_path()),
-            OriginPolicy::for_owner_user_id(configuration.owner_user_id()),
+            OriginPolicy::for_owner_user_id(
+                configuration.owner_user_id(),
+                configuration.owner_name(),
+            ),
         )
     }
 

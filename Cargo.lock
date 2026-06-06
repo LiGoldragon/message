@@ -220,6 +220,7 @@ dependencies = [
  "nota-codec",
  "nota-next",
  "rkyv",
+ "rustix",
  "schema-rust-next",
  "signal-core",
  "signal-frame",

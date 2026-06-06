@@ -16,7 +16,10 @@ use message::{
     schema::signal::{Input, MessageKind, MessageSubmission, Output},
 };
 use signal_message::{MessageReply, MessageRequest, MessageSlot, SubmissionAcceptance};
-use signal_persona_origin::{ConnectionClass, MessageOrigin, UnixUserIdentifier};
+use signal_persona_origin::{
+    ComponentInstanceName, ComponentName, ConnectionClass, InternalComponentInstanceOrigin,
+    MessageOrigin, UnixUserIdentifier,
+};
 use tempfile::TempDir;
 use triad_runtime::ConnectionContext;
 
@@ -24,6 +27,7 @@ use triad_runtime::ConnectionContext;
 /// matching/non-matching peer connections the tests stamp with.
 const OWNER_USER_ID: u32 = 1000;
 const NON_OWNER_USER_ID: u32 = 4242;
+const OWNER_INSTANCE: &str = "operator";
 
 fn owner_connection() -> ConnectionContext {
     ConnectionContext::new(OWNER_USER_ID, OWNER_USER_ID, 101)
@@ -75,12 +79,12 @@ impl StubRouter {
 fn engine_for(router_socket_path: PathBuf) -> MessageEngine {
     MessageEngine::new(RouterForwarder::new(
         SignalRouterSocket::from_path(router_socket_path),
-        OriginPolicy::for_owner_user_id(OWNER_USER_ID),
+        OriginPolicy::for_owner_user_id(OWNER_USER_ID, OWNER_INSTANCE),
     ))
 }
 
 #[test]
-fn submit_is_stamped_with_owner_origin_when_the_peer_uid_matches_the_owner() {
+fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_the_owner() {
     let temp = TempDir::new().expect("tempdir");
     let router_socket_path = temp.path().join("router.sock");
     let router = StubRouter::bind(&router_socket_path);
@@ -108,11 +112,15 @@ fn submit_is_stamped_with_owner_origin_when_the_peer_uid_matches_the_owner() {
         MessageRequest::StampedMessageSubmission(stamped) => {
             assert_eq!(stamped.submission.recipient.as_str(), "designer");
             assert_eq!(stamped.submission.body.as_str(), "hello");
-            // The origin is minted from the connection's peer credentials, NOT a
-            // hardcoded constant: a peer uid equal to the owner uid is the owner.
+            // The origin is minted from peer credentials plus daemon
+            // configuration, NOT from the payload: a trusted owner uid becomes
+            // this daemon's configured local harness instance.
             assert_eq!(
                 stamped.origin,
-                MessageOrigin::External(ConnectionClass::Owner)
+                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin::new(
+                    ComponentName::Harness,
+                    ComponentInstanceName::new(OWNER_INSTANCE),
+                ))
             );
         }
         other => panic!("expected daemon to stamp the submission before forwarding, got {other:?}"),

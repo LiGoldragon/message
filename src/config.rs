@@ -5,9 +5,10 @@
 //! `triad_runtime::DaemonConfiguration` trait. Message extends the uniform
 //! surface with the two fields its forward-only runtime needs that no durable
 //! store would supply: the router socket it forwards stamped submissions to,
-//! and the owner identity it stamps onto submissions. Message owns no durable
-//! database, so `database_path()` names an unused-on-the-forward-path location
-//! kept only to satisfy the uniform trait surface.
+//! the owner identity gate and local instance name it stamps onto submissions.
+//! Message owns no durable database, so `database_path()` names an
+//! unused-on-the-forward-path location kept only to satisfy the uniform trait
+//! surface.
 
 use std::{fs, path::Path};
 
@@ -18,11 +19,12 @@ use triad_runtime::DaemonConfiguration;
 ///
 /// `owner_user_id` is the local Unix user identifier of the engine owner. The
 /// daemon compares it against each accepted connection's kernel-vouched peer uid
-/// (`SO_PEERCRED`, read through `triad_runtime::ConnectionContext`) to mint the
-/// provenance origin: a peer uid that matches the owner is `Owner`; any other
+/// (`SO_PEERCRED`, read through `triad_runtime::ConnectionContext`) to gate
+/// trust: a peer uid that matches the owner stamps the configured
+/// `owner_name` as this daemon's local harness component instance; any other
 /// local user is `NonOwnerUser(uid)`. Provenance is never accepted from the
 /// caller payload — the daemon mints it from the operating-system trust
-/// boundary.
+/// boundary plus daemon configuration.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Configuration {
     socket_path: ConfigurationPath,
