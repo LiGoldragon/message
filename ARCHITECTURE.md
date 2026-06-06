@@ -12,16 +12,18 @@ component.*
   `signal-message` frame, sends it to `message`
   on the engine's user-writable socket (`message.sock`, mode
   0660), reads one reply frame, prints the NOTA reply.
-- The `message` daemon (binary file:
-  `message-daemon`) — a small Kameo daemon supervised
-  by `persona-daemon` as the engine's message ingress
-  component. Reads a typed `MessageDaemonConfiguration` record
-  passed by argv via `nota-config`; binds `message.sock` at the
-  configured mode (0660 with the engine-owner group in
-  production) and stamps `MessageSubmission` frames with the
-  configured owner identity, SO_PEERCRED-derived origin, and
-  ingress time; forwards `StampedMessageSubmission` frames to
-  `persona-router`'s internal socket (`router.sock`, 0600).
+- The `message` daemon (binary file: `message-daemon`) — a
+  schema-derived triad daemon on the emitted `triad-runtime`
+  runtime. The daemon skeleton is EMITTED into
+  `src/schema/daemon.rs` from the `NexusDaemonShape` in
+  `build.rs`; message hand-writes only `impl ComponentDaemon for
+  MessageDaemon`. It reads a binary rkyv `Configuration` from its
+  single argv argument (socket path, router socket path, database
+  path, owner name), binds `message.sock`, decodes schema-derived
+  signal frames, runs the Nexus forward decision, and forwards the
+  translated request to `persona-router`'s internal socket
+  (`router.sock`) over the `signal-message` wire as a
+  `StampedMessageSubmission`.
 
 There is no `MessageProxy` component here. The supervised
 first-stack component is named `message`; the long-lived
@@ -65,65 +67,69 @@ flowchart LR
 - one NOTA reply projection per invocation;
 - no caller-provided identity and no local actor index.
 
-## 1.5 · Daemon actor topology
+## 1.5 · Runtime triad — Signal / Nexus / SEMA
+
+Message's runtime is the three schema-driven planes
+(`skills/component-triad.md` §"Runtime triad"), generated into `src/schema/`:
 
 ```mermaid
-flowchart TB
-    "MessageDaemonRoot" --> "MessageDaemonConnection"
-    "MessageDaemonConnection" --> "SignalRouterClient"
-    "SignalRouterClient" --> "persona-router"
+flowchart LR
+    "message.sock" --> "Signal (Input/Output)"
+    "Signal (Input/Output)" --> "Nexus decide"
+    "Nexus decide" -->|"ForwardToRouter effect"| "RouterForwarder"
+    "RouterForwarder" -->|"signal-message wire"| "persona-router"
+    "Nexus decide" -->|"ReplyToSignal"| "Signal (Input/Output)"
+    "SEMA (Stateless)" -.->|"no durable state"| "Nexus decide"
 ```
 
-The current slice has one data-bearing Kameo root actor:
-`MessageDaemonRoot { router, stamper, forwarded_count }`. Connection handling,
-SO_PEERCRED extraction, origin stamping, and the router client are ordinary
-data-bearing types for now. The next actor split is supervision, listener,
-origin stamping, and router-client actors. The daemon is stateless across CLI
-requests — no redb, no durable message ledger.
+- **Signal** — the wire surface the emitted daemon decodes on `message.sock`.
+- **Nexus** (`MessageEngine`) — the internal-feature catalog: the forward
+  decision plus the `ForwardToRouter` effect. `Submit`/`QueryInbox` stamp and
+  forward; `SubmitStamped` replies `Unimplemented` (the daemon mints provenance,
+  never accepts it from a peer).
+- **SEMA** — honestly empty (`Stateless`). Message owns no durable state; the
+  plane exists only to satisfy the uniform three-plane shape.
 
-Listener binding runs through `triad-runtime::MultiListenerDaemon`. The message
-daemon supplies listener identities for external peer ingress and configured
-internal component-instance ingress, and one `MessageDaemonRuntime` owns the
-Kameo root plus supervision stop signal. `MultiListenerRuntime::should_continue`
-is the graceful-stop boundary: the supervision socket requests stop, the shared
-runtime stream loop exits, `MessageDaemonRoot` stops with a clean terminal
-outcome, and the bound runtime removes Unix socket files on drop.
+The emitted daemon (`src/schema/daemon.rs`) owns the argv-config load, the
+single working-socket bind, and the decode → `handle_working_input` → encode
+spine. `MessageDaemon` (`src/daemon.rs`) supplies only the `ComponentDaemon`
+escape hatches. The daemon is single-listener (no meta tier) and stateless
+across requests — no redb, no durable message ledger.
 
-The CLI surface (`message` binary) connects to `message.sock` like any other
-client. The daemon converts client-side `MessageSubmission` into
-router-side `StampedMessageSubmission` by attaching typed provenance from the
-typed `MessageDaemonConfiguration`'s `owner_identity`, kernel peer
-credentials, and a daemon-minted ingress timestamp. It does not encode
-provenance as strings and it does not infer engine ownership from its own
-effective uid; the owner identity is supplied by the persona manager via the
-typed configuration record. The `geteuid()`-based stamper constructor
-(`MessageOriginStamper::for_current_user`) is a test-only and standalone-launch
-affordance, never reached on the supervised production path.
+`RouterForwarder` (`src/router.rs`) is the translation seam between the
+schema-derived inbound wire and the router's `signal-message` wire: it stamps
+provenance (configured owner identity + daemon-minted ingress timestamp) onto
+the submission and translates the router's reply back to the schema `Output`.
+Provenance is never encoded as strings and never accepted from the caller
+payload. NOTE (residual): SO_PEERCRED-derived origin is not available in the
+emitted working-input hook, so the daemon currently stamps the configured owner
+origin; see `INTENT.md` §"Residuals".
 
 ## 2 · State and Ownership
 
 The message component owns no durable message state. The CLI requires
 `MESSAGE_SOCKET` or `PERSONA_SOCKET_PATH` and exits if the message
-daemon socket is absent. The daemon requires a typed `MessageDaemonConfiguration`
-on argv whose `router_socket_path` names the router's internal socket; it
-exits at decode time if the configuration is missing or malformed.
+daemon socket is absent. The daemon requires a typed binary rkyv
+`Configuration` on argv (socket path, router socket path, database path,
+owner name) whose `router_socket_path` names the router's internal socket;
+the emitted spine exits at decode time if the configuration is missing or
+malformed.
 
 Caller identity is not accepted from the model or CLI payload.
 `MessageSubmission` and `InboxQuery` stay sender-free, and the component sends
 no in-band proof material. The daemon stamps message submissions from the
-configured `OwnerIdentity` plus SO_PEERCRED and forwards typed provenance in
+configured `owner_name` and forwards typed provenance in
 `StampedMessageSubmission`. The persona manager builds the configuration
-record from the engine's spawn envelope and writes it to a NOTA file on
+record from the engine's spawn envelope and writes it to a binary rkyv file on
 spawn; the daemon never reads environment variables for control-plane
 settings.
 
 Typed-configuration-via-argv is the destination shape: every control-plane
-setting (socket paths, socket modes, owner identity, supervision socket,
-router socket) arrives as a typed `MessageDaemonConfiguration` field decoded
-by `nota-config::ConfigurationSource::from_argv`. The residual
-`from_environment` constructors on `SignalRouterSocket`, `SupervisionListener`,
-and the peer-socket enumeration helpers are transitional dead code, unreached
-on the production path and retiring on the next refactor.
+setting (socket paths, owner identity, router socket) arrives as a typed
+`Configuration` field decoded from the single argv argument by
+`Configuration::from_binary_path`. The `SignalMessageSocket::from_environment`
+constructor on the CLI side reads `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH` as
+the CLI's socket discovery; the daemon path reads no environment variables.
 
 Actor registration, actor listing, pending delivery, retry, delivery results,
 and message ledger state are router or engine-manager concerns, not message
@@ -160,16 +166,16 @@ This repo does not own:
 - Supported input variants are `Send` and `Inbox`.
 - The message daemon socket is mandatory for the CLI.
 - The router socket is mandatory for the daemon.
-- The daemon applies the configured socket mode from
-  `MessageDaemonConfiguration` to `message.sock` before accepting client
-  traffic.
-- The daemon uses `triad-runtime::MultiListenerDaemon` for external and
-  internal component-instance ingress sockets instead of owning a local accept
+- The daemon is single-listener: the emitted spine binds one working
+  `message.sock` from the `NexusDaemonShape` in `build.rs`. Message has no
+  owner-only meta tier.
+- The daemon uses the emitted `triad-runtime` `SingleListenerDaemon` spine
+  (the `ComponentDaemon` / `DaemonBinder` default methods in
+  `src/schema/daemon.rs`) for ingress instead of owning a hand-written accept
   loop.
-- The daemon reads its typed `MessageDaemonConfiguration` from argv before
-  accepting message ingress, and `External(Owner)` is derived from the
-  configured `owner_identity` rather than `message-daemon`'s own
-  uid.
+- The daemon reads its typed binary rkyv `Configuration` from argv before
+  accepting message ingress, and the stamped origin is derived from the
+  configured `owner_name` rather than `message-daemon`'s own uid.
 - CLI and daemon outbound traffic are length-prefixed rkyv Signal frames.
 - Request/reply matching is frame-level: every request frame carries an
   `ExchangeIdentifier`, and every reply frame echoes the same identifier.
@@ -179,54 +185,59 @@ This repo does not own:
 - A mismatched outer Signal verb and request payload is rejected as typed
   `RequestRejectionReason`, not by string parsing.
 - Sender identity is absent from the CLI payload and absent from frame auth.
-- Provenance is typed in `StampedMessageSubmission`; the daemon mints it from
-  SO_PEERCRED and never accepts it from the CLI payload.
+- Provenance is typed in `StampedMessageSubmission`; the daemon mints it in
+  `RouterForwarder::stamp` from the configured owner origin and never accepts
+  it from the CLI payload. (Residual: SO_PEERCRED-derived origin is not yet
+  available in the emitted working-input hook — see `INTENT.md` §"Residuals".)
 - The component does not write local message or pending logs.
-- The daemon root is a data-bearing Kameo actor.
-- The component depends on the stable Persona Kameo lifecycle reference, not
-  crates.io Kameo and not a raw revision pin.
-- A graceful supervision stop exits the daemon, stops `MessageDaemonRoot` with
-  a clean terminal outcome, releases the `message.sock` binding, and rejects
-  later CLI ingress.
+- The daemon hand-writes only `impl ComponentDaemon for MessageDaemon`
+  (`src/daemon.rs`): `Configuration` / `Engine` / `Error` / `PROCESS_NAME` +
+  `build_runtime` + `handle_working_input`. The daemon spine, accept loop, and
+  lifecycle are emitted, not hand-written Kameo actors.
+- A graceful stop exits the daemon, releases the `message.sock` binding, and
+  rejects later CLI ingress through the emitted spine's shutdown path.
 - The production daemon reads no environment variables for control-plane
-  configuration. Test fixtures may opt in via an explicit named env var, per
-  the `nota-config` test-shim discipline. Witness: a source scan forbids
-  env-var reads in the daemon binary and daemon runtime sources.
+  configuration; it decodes a binary rkyv `Configuration` from its single argv
+  argument. Witness: a source scan forbids env-var reads in the daemon binary
+  (`src/bin/message_daemon.rs`) and the daemon hook source (`src/daemon.rs`).
 
 ## Code Map
 
 ```text
+schema/signal.schema           daemon-local signal runtime (Input/Output)
+schema/nexus.schema            internal-feature catalog (forward decision + effect)
+schema/sema.schema             durable state plane — honestly empty (Stateless)
+build.rs                       GenerationPlan + NexusDaemonShape (emits src/schema/*.rs)
+src/schema/signal.rs           generated Signal plane
+src/schema/nexus.rs            generated Nexus plane (NexusEngine)
+src/schema/sema.rs             generated SEMA plane (SemaEngine)
+src/schema/daemon.rs           EMITTED daemon skeleton (ComponentDaemon, the spine)
 src/main.rs                    message CLI entry
-src/bin/message_daemon.rs daemon entry
+src/bin/message_daemon.rs      daemon entry (one-liner: MessageDaemon::run_to_exit_code())
 src/bin/message_validate_output.rs test/debug validator for message CLI NOTA replies
-src/command.rs                 NOTA input/output projection
-src/daemon.rs                  daemon runtime bridge and data-bearing Kameo root
+src/config.rs                  binary rkyv daemon Configuration (impl DaemonConfiguration)
+src/daemon.rs                  impl ComponentDaemon for MessageDaemon (the only daemon code)
+src/engine.rs                  MessageEngine: NexusEngine + SemaEngine, the forward loop
+src/command.rs                 CLI NOTA input/output projection
 src/output_validator.rs        structured validator for sandbox message artifacts
-src/router.rs                  Signal frame clients and codec
+src/router.rs                  RouterForwarder + signal-message frame clients/codec
 src/surface.rs                 message-local NOTA surface records
 src/error.rs                   crate error enum
-tests/                         ingress and architectural-truth tests
+tests/process_boundary.rs      emitted daemon over a real socket
+tests/forward_to_router.rs     Nexus forward effect against a stub router
 ```
 
 ## Constraint Tests
 
 | Constraint | Test |
 |---|---|
-| The router Signal path cannot create a local message ledger. | `nix build .#checks.x86_64-linux.message-cli-sends-router-signal-without-local-ledger` |
-| Inbox reads come from the router, not a local ledger. | `nix build .#checks.x86_64-linux.message-cli-inbox-uses-router-signal-not-local-ledger` |
-| The message daemon socket is mandatory for the CLI. | `nix build .#checks.x86_64-linux.message-cli-requires-message-socket` |
-| The daemon applies the configured socket mode. | `nix build .#checks.x86_64-linux.message-daemon-applies-configured-socket-mode` |
-| The daemon uses the shared triad multi-listener runtime shell. | `nix build .#checks.x86_64-linux.message-daemon-uses-shared-triad-multi-listener-runtime` |
-| The daemon stamps and forwards CLI Signal frames to the router socket. | `nix build .#checks.x86_64-linux.message-daemon-forwards-cli-signal-frame-to-router-socket` |
-| The daemon root stamps owner identity from the typed configuration, not the CLI payload. | `nix build .#checks.x86_64-linux.message-daemon-root-stamps-owner-identity-from-configuration` |
-| The component uses the stable Persona Kameo lifecycle reference. | `nix build .#checks.x86_64-linux.message-component-uses-stable-kameo-lifecycle-reference` |
-| The daemon root shutdown returns a terminal outcome. | `nix build .#checks.x86_64-linux.message-daemon-root-shutdown-returns-terminal-outcome` |
-| Graceful daemon stop releases `message.sock` and rejects later ingress. | `nix build .#checks.x86_64-linux.message-daemon-graceful-stop-releases-message-socket-and-rejects-ingress` |
+| The emitted daemon spine serves over a real socket and replies `Unimplemented` straight from the Nexus decision for an already-stamped submission. | `nix build .#checks.x86_64-linux.message-emitted-daemon-replies-unimplemented-for-already-stamped-submission` |
+| The daemon stamps a submission from the configured owner and forwards it to the router, translating the acceptance back. | `nix build .#checks.x86_64-linux.message-daemon-stamps-and-forwards-submission-to-router` |
+| A router-unreachable forward yields a typed `Error` output. | `nix build .#checks.x86_64-linux.message-router-unreachable-yields-typed-error` |
 | The production daemon reads no environment variables for control-plane configuration. | `nix build .#checks.x86_64-linux.message-daemon-reads-no-control-plane-environment-variables` |
-| Mismatched Signal verb/payload pairs are rejected by typed Signal reason. | `nix build .#checks.x86_64-linux.message-frame-codec-rejects-mismatched-signal-verb` |
-| The component does not construct in-band proof material. | `nix build .#checks.x86_64-linux.message-component-cannot-own-local-ledger` |
+| Local ledger, actor index, in-band proof, and endpoint surfaces cannot return. | `nix build .#checks.x86_64-linux.message-component-cannot-own-local-ledger` |
 | Retired terminal-brand vocabulary cannot return. | `nix build .#checks.x86_64-linux.message-runtime-cannot-reference-retired-terminal-brand` |
-| Local ledger and endpoint surfaces cannot return. | `nix build .#checks.x86_64-linux.message-component-cannot-own-local-ledger` |
+| The whole surviving test suite passes. | `nix build .#checks.x86_64-linux.default` |
 
 ## See Also
 

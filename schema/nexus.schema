@@ -1,0 +1,35 @@
+{
+  SignalInput message:signal:Input
+  SignalOutput message:signal:Output
+  MessageSubmission message:signal:MessageSubmission
+  StampedMessageSubmission message:signal:StampedMessageSubmission
+  InboxQuery message:signal:InboxQuery
+  MessageReply message:signal:Output
+  OperationKind message:signal:OperationKind
+  UnimplementedReason message:signal:UnimplementedReason
+}
+[SignalArrived ForwardCompleted]
+[ReplyToSignal CommandEffect Continue]
+{
+  SignalArrived SignalInput
+  ForwardCompleted ForwardResult
+
+  ReplyToSignal SignalOutput
+  CommandEffect NexusEffectCommand
+  Continue NexusWork
+
+  NexusWork [(SignalArrived SignalArrived) (ForwardCompleted ForwardCompleted)]
+  NexusAction [(ReplyToSignal ReplyToSignal) (CommandEffect CommandEffect) (Continue Continue)]
+
+  ForwardTarget [Router]
+  ForwardRequest [(StampAndForward StampAndForward) (ForwardInboxQuery ForwardInboxQuery)]
+  StampAndForward MessageSubmission
+  ForwardInboxQuery InboxQuery
+  NexusEffectCommand [(ForwardToRouter ForwardToRouter)]
+  ForwardToRouter ForwardRequest
+
+  ForwardResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable)]
+  Forwarded MessageReply
+  RouterUnavailable UnimplementedReason
+  NexusEffectResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable)]
+}

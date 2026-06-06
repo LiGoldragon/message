@@ -1,9 +1,5 @@
-use message::Result;
-use message::daemon::MessageDaemon;
-use nota_config::ConfigurationSource;
-use signal_message::MessageDaemonConfiguration;
+use message::{DaemonEntry, MessageDaemon};
 
-fn main() -> Result<()> {
-    let configuration: MessageDaemonConfiguration = ConfigurationSource::from_argv()?.decode()?;
-    MessageDaemon::from_configuration(configuration).run()
+fn main() -> std::process::ExitCode {
+    MessageDaemon::run_to_exit_code()
 }

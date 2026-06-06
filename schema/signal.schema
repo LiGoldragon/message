@@ -1,0 +1,44 @@
+{}
+[Submit SubmitStamped QueryInbox]
+[SubmissionAccepted SubmissionRejected InboxListing Unimplemented Error]
+{
+  Submit MessageSubmission
+  SubmitStamped StampedMessageSubmission
+  QueryInbox InboxQuery
+
+  SubmissionAccepted SubmissionAcceptance
+  SubmissionRejected SubmissionRejection
+  InboxListing InboxContents
+  Unimplemented RequestUnimplemented
+  Error ErrorReport
+
+  Recipient String
+  Sender String
+  Body String
+  MessageSlot Integer
+  OwnerName String
+  TimestampNanos Integer
+  ErrorMessage String
+
+  MessageKind [Send Inbox]
+  MessageSubmission { Recipient * MessageKind * Body * }
+
+  ConnectionClass [Owner NonOwnerUser InternalComponentInstance]
+  MessageOrigin { ConnectionClass * OwnerName * }
+  StampedMessageSubmission { MessageSubmission * MessageOrigin * TimestampNanos * }
+
+  InboxQuery { Recipient * }
+  InboxEntry { MessageSlot * Sender * Body * }
+  InboxEntries (Vec InboxEntry)
+  InboxContents { InboxEntries * }
+
+  SubmissionAcceptance { MessageSlot * }
+  SubmissionRejectionReason [StoreRejected RecipientNotFound]
+  SubmissionRejection { SubmissionRejectionReason * }
+
+  OperationKind [Submit SubmitStamped QueryInbox]
+  UnimplementedReason [NotInPrototypeScope RouterUnreachable]
+  RequestUnimplemented { OperationKind * UnimplementedReason * }
+
+  ErrorReport { ErrorMessage * }
+}

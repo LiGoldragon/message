@@ -9,7 +9,6 @@ if rg --line-number \
   --glob 'flake.nix' \
   --glob 'src/**' \
   --glob 'tests/**' \
-  --glob '!tests/actor_runtime_truth.rs' \
   --glob '!scripts/message-component-cannot-own-local-ledger' \
   'messages[.]nota[.]log|pending[.]nota[.]log|actors[.]nota|MESSAGE_ACTORS|MESSAGE_STORE|MessageStore|StorePath|DeliveryGate|DeliveryOutcome|DeliveryDeferral|EndpointTransport|EndpointKind|PtySocket|Register|Agents|Flush|Tail|AuthProof|LocalOperatorProof|with_auth' \
   "$source_root"

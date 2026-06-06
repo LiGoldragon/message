@@ -180,7 +180,7 @@ impl<'arguments> OutputValidatorArguments<'arguments> {
 
     fn required_path_option(&mut self, name: &str) -> Result<PathBuf> {
         self.expect_option_name(name)?;
-        self.required_value(name).map(PathBuf::from)
+        self.required_value(name)
     }
 
     fn required_string_option(&mut self, name: &str) -> Result<String> {

@@ -1,29 +1,60 @@
 # INTENT — message
 
-`message` owns two binaries: the `message` CLI (thin client) and `message-daemon`
-(supervised first-stack component). Neither carries a durable message ledger. Both are
-stateless boundary surfaces. Routing policy, delivery state, and channel authority
-remain in router.
+`message` is a schema-derived triad component on the emitted daemon runtime. It
+owns two binaries: the `message` CLI (thin client) and `message-daemon` (the
+stamp-and-forward ingress). Neither carries a durable message ledger — message
+is a stateless boundary surface. Routing policy, delivery state, and channel
+authority remain in router.
 
-The daemon owns one Kameo root actor and binds `message.sock` (mode 0660, engine-owner
-group) through `triad-runtime`'s shared multi-listener daemon shell. It reads typed
-`MessageDaemonConfiguration` from argv via `nota-config`—socket paths, socket modes,
-owner identity, supervision socket. The daemon stamps `MessageSubmission` frames with
-configured owner identity, SO_PEERCRED-derived origin, and ingress timestamp; then
-forwards `StampedMessageSubmission` frames to router's internal socket (`router.sock`,
-0600). Provenance is typed, minted by the daemon, never inferred from uid or accepted
-from payload.
+## The three planes
 
-The CLI accepts exactly one NOTA `Send` or `Inbox` record, projects to a length-prefixed
-Signal frame, sends to `message.sock`, reads one reply frame, prints the NOTA reply.
-Request/reply matching is frame-level: every request carries an ExchangeIdentifier, and
-every reply echoes it.
+Message's runtime is the three schema-driven planes (`schema/signal.schema`,
+`schema/nexus.schema`, `schema/sema.schema`), generated into `src/schema/`:
 
-Key constraints: caller identity is not accepted from model or CLI payload. The daemon
-requires a typed configuration on argv; it exits if missing or malformed. The daemon
-applies configured socket mode before accepting client traffic. CLI and daemon outbound
-traffic are length-prefixed rkyv Signal frames. The component depends on stable Persona
-Kameo lifecycle reference. Graceful supervision stop releases the socket and rejects later
-ingress through the shared runtime stop predicate and bound-socket cleanup. Production
-daemon reads no environment variables for control-plane configuration. Mismatched Signal
-verb/payload pairs are rejected as typed RequestRejectionReason.
+- **Signal** — the daemon's wire surface on `message.sock`. Operations:
+  `Submit(MessageSubmission)`, `SubmitStamped(StampedMessageSubmission)`,
+  `QueryInbox(InboxQuery)`. Replies: `SubmissionAccepted` / `SubmissionRejected`
+  / `InboxListing` / `Unimplemented` / `Error`.
+- **Nexus** — the internal-feature catalog (z6qu). Message's one internal
+  feature is the forward-to-router decision plus the `ForwardToRouter` effect.
+  The Nexus `decide` stamps and forwards `Submit`/`QueryInbox`, and replies
+  `Unimplemented` to an already-stamped submission (the daemon mints provenance;
+  it never accepts it from a peer).
+- **SEMA** — honestly empty. Message owns no durable state, so its SEMA engine
+  is a no-op returning `Stateless`. The plane exists only to satisfy the uniform
+  three-plane shape.
+
+## The emitted daemon
+
+The daemon skeleton is emitted into `src/schema/daemon.rs` from the
+`NexusDaemonShape` in `build.rs` (process `message-daemon`, single working
+listener, no meta tier). The only daemon code message hand-writes is `impl
+ComponentDaemon for MessageDaemon` in `src/daemon.rs`: `Configuration` /
+`Engine` / `Error` / `PROCESS_NAME` + `build_runtime` + `handle_working_input`.
+The daemon bin is the one-liner `MessageDaemon::run_to_exit_code()`. The daemon
+reads a binary rkyv `Configuration` from its single argv argument (socket path,
+router socket path, database path, owner name) — no environment variables on the
+production path, no flags.
+
+## Wire translation to router
+
+The daemon's inbound socket (`message.sock`) speaks the schema-derived
+signal-frame format the emitted spine decodes. The router still speaks the
+hand-written `signal-message` `MessageChannel` wire, so `RouterForwarder`
+(`src/router.rs`) is the translation seam: schema `ForwardRequest` → wire
+`MessageRequest` → router call → wire `MessageReply` → schema `Output`.
+Provenance (origin + ingress timestamp) is minted in the forwarder from the
+configured owner identity, never accepted from the caller payload.
+
+## Residuals (carried, not yet resolved)
+
+- **Peer-credential-derived origin.** The emitted working-input spine decodes
+  the frame to `Input` and discards the connection stream, so SO_PEERCRED is not
+  available in `handle_working_input`. The migrated daemon stamps
+  `MessageOrigin::External(Owner)` from the configured owner identity. Restoring
+  the old peer-credential-derived `ConnectionClass::NonOwnerUser` distinction
+  needs the emitter to thread per-connection context into the working-input hook.
+- **CLI wire format.** The `message` CLI (`src/command.rs`, `src/surface.rs`)
+  still encodes the old `signal-message` `MessageChannel` frames, not the
+  schema-derived signal frames the migrated daemon now decodes. The CLI must be
+  migrated to the new wire before the CLI↔daemon path works end to end.

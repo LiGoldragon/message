@@ -1,0 +1,14 @@
+{}
+[WriteInput ReadInput]
+[WriteOutput ReadOutput]
+{
+  WriteInput [(NoDurableState NoDurableState)]
+  NoDurableState Stateless
+
+  ReadInput [(NoDurableState NoDurableState)]
+
+  WriteOutput [(Stateless Stateless)]
+  ReadOutput [(Stateless Stateless)]
+
+  Stateless { }
+}

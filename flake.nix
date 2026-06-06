@@ -54,7 +54,6 @@
                 cargoTestExtraArgs = "--test ${testFile} ${testName} -- --exact";
               }
             );
-          cargoTest = cargoTestFile "message";
           context = {
             inherit
               pkgs
@@ -64,7 +63,6 @@
               cargoArtifacts
               sourceConstraintCheck
               cargoTestFile
-              cargoTest
               ;
           };
         in
@@ -127,30 +125,24 @@
             context.sourceConstraintCheck "message-component-cannot-own-local-ledger" ./scripts/message-component-cannot-own-local-ledger;
           message-daemon-reads-no-control-plane-environment-variables =
             context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
-          message-component-uses-stable-kameo-lifecycle-reference =
-            context.cargoTestFile "actor_runtime_truth" "message_component_uses_stable_kameo_lifecycle_reference";
-          message-daemon-uses-shared-triad-multi-listener-runtime =
-            context.cargoTestFile "actor_runtime_truth" "message_daemon_uses_shared_triad_multi_listener_runtime";
-          message-cli-sends-router-signal-without-local-ledger =
-            context.cargoTest "command_line_send_routes_signal_frame_without_writing_local_ledger";
-          message-cli-inbox-uses-router-signal-not-local-ledger =
-            context.cargoTest "command_line_inbox_routes_signal_frame_without_reading_local_ledger";
-          message-cli-requires-message-socket =
-            context.cargoTest "command_line_send_requires_message_socket";
-          message-daemon-applies-configured-socket-mode =
-            context.cargoTest "message_daemon_applies_configured_socket_mode";
-          message-daemon-answers-component-supervision-relation =
-            context.cargoTest "message_daemon_answers_component_supervision_relation";
-          message-frame-codec-rejects-mismatched-signal-verb =
-            context.cargoTest "message_frame_codec_rejects_mismatched_signal_verb";
-          message-daemon-root-stamps-owner-identity-from-configuration =
-            context.cargoTest "message_daemon_root_stamps_owner_identity_from_configuration";
-          message-daemon-root-shutdown-returns-terminal-outcome =
-            context.cargoTest "message_daemon_root_shutdown_returns_terminal_outcome";
-          message-daemon-graceful-stop-releases-message-socket-and-rejects-ingress =
-            context.cargoTest "message_daemon_graceful_stop_releases_message_socket_and_rejects_ingress";
-          message-daemon-forwards-cli-signal-frame-to-router-socket =
-            context.cargoTest "message_daemon_forwards_cli_signal_frame_to_router_socket";
+          # The emitted daemon spine over a real socket: argv config load ->
+          # single working-socket bind -> signal-frame decode -> Nexus decide ->
+          # encode -> wire reply. The already-stamped submission replies
+          # Unimplemented straight from the Nexus decision, no router needed.
+          message-emitted-daemon-replies-unimplemented-for-already-stamped-submission =
+            context.cargoTestFile "process_boundary"
+              "daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket";
+          # The Nexus forward-to-router effect against a stub router: a submit is
+          # stamped from the configured owner and forwarded, and the router
+          # acceptance is translated back into the Signal output.
+          message-daemon-stamps-and-forwards-submission-to-router =
+            context.cargoTestFile "forward_to_router"
+              "submit_is_stamped_and_forwarded_then_router_acceptance_is_translated_back";
+          # The router-unreachable fallback yields a typed Error output rather
+          # than a hard failure.
+          message-router-unreachable-yields-typed-error =
+            context.cargoTestFile "forward_to_router"
+              "router_unreachable_yields_typed_error_output";
         }
       );
 

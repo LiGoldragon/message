@@ -8,9 +8,6 @@ pub enum Error {
     #[error("nota: {0}")]
     Nota(#[from] nota_codec::Error),
 
-    #[error("configuration: {0}")]
-    Configuration(#[from] nota_config::Error),
-
     #[error("signal frame: {0}")]
     SignalFrame(#[from] signal_core::FrameError),
 
@@ -45,21 +42,6 @@ pub enum Error {
     InvalidSignalRequest {
         reason: signal_core::RequestRejectionReason,
     },
-
-    #[error("could not read peer credentials for message socket")]
-    PeerCredentials,
-
-    #[error("system clock is before the Unix epoch")]
-    ClockBeforeUnixEpoch,
-
-    #[error("actor failed during {operation}: {detail}")]
-    Actor {
-        operation: &'static str,
-        detail: String,
-    },
-
-    #[error("message daemon listener: {0}")]
-    DaemonListener(#[from] triad_runtime::ListenerError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

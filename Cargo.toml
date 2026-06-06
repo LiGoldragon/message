@@ -23,20 +23,24 @@ path = "src/bin/message_daemon.rs"
 name = "message-validate-output"
 path = "src/bin/message_validate_output.rs"
 
+[features]
+default = []
+nota-text = ["dep:nota-next"]
+
 [dependencies]
-kameo           = { git = "https://github.com/LiGoldragon/kameo", branch = "persona-lifecycle-terminal-outcome", default-features = false, features = ["macros"] }
-libc            = "0.2"
 nota-codec      = { git = "https://github.com/LiGoldragon/nota-codec.git", branch = "main" }
-nota-config     = { git = "https://github.com/LiGoldragon/nota-config.git", branch = "main" }
-rkyv            = "0.8"
+nota-next       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main", optional = true }
+rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-core     = { git = "https://github.com/LiGoldragon/signal-core.git" }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
 signal-persona  = { git = "https://github.com/LiGoldragon/signal-persona.git" }
 signal-persona-origin = { git = "https://github.com/LiGoldragon/signal-persona-origin.git" }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git" }
 thiserror       = "2"
-tokio           = { version = "1", features = ["rt-multi-thread"] }
 triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
+
+[build-dependencies]
+schema-rust-next = { git = "https://github.com/LiGoldragon/schema-rust-next.git", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3"
