@@ -15,7 +15,10 @@
 
 use std::{
     io::Write,
-    os::unix::net::UnixStream,
+    os::unix::{
+        ffi::OsStrExt,
+        net::{UnixListener, UnixStream},
+    },
     path::Path,
     process::{Child, Command},
     thread,
@@ -24,10 +27,14 @@ use std::{
 
 use message::{
     Configuration,
+    command::Output as CommandOutput,
+    router::SignalRouterFrameCodec,
     schema::signal::{
-        Input, MessageKind, MessageOrigin, MessageSubmission, Output, StampedMessageSubmission,
+        Input, MessageKind, MessageOrigin, MessageSubmission, Output as SignalOutput,
+        StampedMessageSubmission,
     },
 };
+use signal_message::{MessageReply, MessageRequest, MessageSlot, SubmissionAcceptance};
 use tempfile::TempDir;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
 
@@ -67,7 +74,7 @@ impl DaemonProcess {
 /// One request/reply round trip over the daemon's working socket, framed the
 /// way the emitted spine frames it: a length-prefixed envelope around the
 /// schema signal frame.
-fn exchange(socket_path: &Path, input: &Input) -> Output {
+fn exchange(socket_path: &Path, input: &Input) -> SignalOutput {
     let mut stream = UnixStream::connect(socket_path).expect("connect to message socket");
     let codec = LengthPrefixedCodec::default();
     let body = FrameBody::new(
@@ -81,8 +88,44 @@ fn exchange(socket_path: &Path, input: &Input) -> Output {
     stream.flush().expect("flush request");
     let reply = codec.read_body(&mut stream).expect("read reply frame");
     let (_route, output) =
-        Output::decode_signal_frame(&reply.into_bytes()).expect("decode output signal frame");
+        SignalOutput::decode_signal_frame(&reply.into_bytes()).expect("decode output signal frame");
     output
+}
+
+struct StubRouter {
+    listener: UnixListener,
+}
+
+impl StubRouter {
+    fn bind(socket_path: &Path) -> Self {
+        Self {
+            listener: UnixListener::bind(socket_path).expect("bind stub router socket"),
+        }
+    }
+
+    fn serve_one_acceptance(self) -> thread::JoinHandle<MessageRequest> {
+        thread::spawn(move || {
+            let codec = SignalRouterFrameCodec::default();
+            let (mut stream, _address) = self.listener.accept().expect("accept router connection");
+            let frame = codec
+                .read_frame(&mut stream)
+                .expect("read router request frame");
+            let received = codec
+                .request_from_frame(frame)
+                .expect("decode router request");
+            let reply = codec.reply_frame(
+                received.exchange,
+                received.verb,
+                MessageReply::SubmissionAccepted(SubmissionAcceptance {
+                    message_slot: MessageSlot::new(7),
+                }),
+            );
+            codec
+                .write_frame(&mut stream, &reply)
+                .expect("write router reply");
+            received.request
+        })
+    }
 }
 
 #[test]
@@ -111,13 +154,53 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
     });
 
     match exchange(&socket_path, &stamped) {
-        Output::Unimplemented(unimplemented) => {
+        SignalOutput::Unimplemented(unimplemented) => {
             assert_eq!(
                 unimplemented.operation_kind,
                 message::schema::signal::OperationKind::SubmitStamped
             );
         }
         other => panic!("expected Unimplemented for already-stamped submission, got {other:?}"),
+    }
+}
+
+#[test]
+fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
+    let temp = TempDir::new().expect("tempdir");
+    let socket_path = temp.path().join("message.sock");
+    let router_socket_path = temp.path().join("router.sock");
+    let database_path = temp.path().join("message.unused");
+    let router = StubRouter::bind(&router_socket_path);
+    let router_thread = router.serve_one_acceptance();
+
+    let _daemon = DaemonProcess::spawn(&socket_path, &router_socket_path, &database_path);
+
+    let cli_output = Command::new(env!("CARGO_BIN_EXE_message"))
+        .env("MESSAGE_SOCKET", &socket_path)
+        .arg("(Send designer [hello from cli])")
+        .output()
+        .expect("run message CLI");
+
+    assert!(
+        cli_output.status.success(),
+        "message CLI failed: {}",
+        String::from_utf8_lossy(&cli_output.stderr)
+    );
+    let stdout = String::from_utf8(cli_output.stdout).expect("CLI stdout is utf8");
+    match CommandOutput::from_nota(stdout.trim()).expect("decode CLI NOTA output") {
+        CommandOutput::SubmissionAccepted(accepted) => {
+            assert_eq!(accepted.message_slot, 7);
+        }
+        other => panic!("expected CLI SubmissionAccepted output, got {other:?}"),
+    }
+
+    let forwarded = router_thread.join().expect("router thread");
+    match forwarded {
+        MessageRequest::StampedMessageSubmission(stamped) => {
+            assert_eq!(stamped.submission.recipient.as_str(), "designer");
+            assert_eq!(stamped.submission.body.as_str(), "hello from cli");
+        }
+        other => panic!("expected daemon to stamp CLI submission before forwarding, got {other:?}"),
     }
 }
 
@@ -129,5 +212,8 @@ fn wait_for_socket(path: &Path) {
         }
         thread::sleep(Duration::from_millis(25));
     }
-    panic!("socket did not appear at {}", path.display());
+    panic!(
+        "socket did not appear at {}",
+        String::from_utf8_lossy(path.as_os_str().as_bytes())
+    );
 }

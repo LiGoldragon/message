@@ -39,55 +39,6 @@ impl SignalRouterSocket {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignalMessageSocket {
-    path: PathBuf,
-}
-
-impl SignalMessageSocket {
-    pub fn from_environment() -> Option<Self> {
-        std::env::var_os("MESSAGE_SOCKET")
-            .or_else(|| std::env::var_os("PERSONA_SOCKET_PATH"))
-            .map(Self::from_path)
-    }
-
-    pub fn from_path(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
-
-    pub fn client(&self) -> SignalMessageClient {
-        SignalMessageClient::from_socket(self.clone())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignalMessageClient {
-    socket: SignalMessageSocket,
-    codec: SignalRouterFrameCodec,
-}
-
-impl SignalMessageClient {
-    pub fn from_socket(socket: SignalMessageSocket) -> Self {
-        Self {
-            socket,
-            codec: SignalRouterFrameCodec::default(),
-        }
-    }
-
-    pub fn submit(&self, request: MessageRequest) -> Result<MessageReply> {
-        let mut stream = UnixStream::connect(&self.socket.path)?;
-        let exchange = self.codec.connector_exchange();
-        let frame = self.codec.request_frame_with_exchange(exchange, request);
-        self.codec.write_frame(&mut stream, &frame)?;
-        let reply = self.codec.read_frame(&mut stream)?;
-        self.codec.reply_from_frame_for_exchange(reply, exchange)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalRouterClient {
     socket: SignalRouterSocket,
     codec: SignalRouterFrameCodec,

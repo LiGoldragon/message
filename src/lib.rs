@@ -16,6 +16,7 @@
 
 extern crate self as message;
 
+pub mod client;
 pub mod command;
 pub mod config;
 pub mod daemon;

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use crate::command::{Output, RouterInboxListing};
+use crate::command::{InboxListing, Output};
 use crate::error::{Error, Result};
 use crate::surface::RecipientName;
 
@@ -138,15 +138,15 @@ impl OutputExpectation {
 }
 
 struct RouterInboxOutput<'output> {
-    listing: &'output RouterInboxListing,
+    listing: &'output InboxListing,
 }
 
 impl<'output> RouterInboxOutput<'output> {
     fn from_output(output: &'output Output) -> Result<Self> {
         match output {
-            Output::RouterInboxListing(listing) => Ok(Self { listing }),
+            Output::InboxListing(listing) => Ok(Self { listing }),
             other => Err(Error::OutputValidation {
-                detail: format!("expected RouterInboxListing, got {other:?}"),
+                detail: format!("expected InboxListing, got {other:?}"),
             }),
         }
     }

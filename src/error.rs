@@ -8,13 +8,19 @@ pub enum Error {
     #[error("nota: {0}")]
     Nota(#[from] nota_codec::Error),
 
-    #[error("signal frame: {0}")]
+    #[error("legacy signal frame: {0}")]
     SignalFrame(#[from] signal_core::FrameError),
+
+    #[error("triad frame: {0}")]
+    TriadFrame(#[from] triad_runtime::FrameError),
+
+    #[error("schema signal frame: {0}")]
+    SchemaSignalFrame(#[from] crate::schema::signal::SignalFrameError),
 
     #[error("inline Nota argument must be UTF-8: {got:?}")]
     InvalidInlineNotaArgument { got: String },
 
-    #[error("missing NOTA input; pass one record such as '(Send designer \"hello\")'")]
+    #[error("missing NOTA input; pass one record such as '(Send designer [hello])'")]
     MissingInput,
 
     #[error("unexpected command-line argument: {got:?}")]

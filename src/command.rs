@@ -4,17 +4,10 @@ use std::path::PathBuf;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode, NotaRecord};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use signal_message::{
-    InboxQuery as SignalInboxQuery, MessageBody as SignalMessageBody,
-    MessageKind as SignalMessageKind, MessageOperationKind as SignalMessageOperationKind,
-    MessageRecipient as SignalMessageRecipient, MessageReply, MessageRequest,
-    MessageRequestUnimplemented as SignalMessageRequestUnimplemented, MessageSubmission,
-    MessageUnimplementedReason as SignalMessageUnimplementedReason,
-    SubmissionRejectionReason as SignalSubmissionRejectionReason,
-};
 
+use crate::client::MessageSocket;
 use crate::error::{Error, Result};
-use crate::router::SignalMessageSocket;
+use crate::schema::signal as signal_schema;
 use crate::surface::{RecipientName, expect_end};
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
@@ -43,37 +36,35 @@ impl Input {
     }
 
     pub fn run(self, mut output: impl Write) -> Result<()> {
-        let socket =
-            SignalMessageSocket::from_environment().ok_or(Error::SignalMessageSocketMissing)?;
-        let request = self.into_message_request();
-        let reply = socket.client().submit(request)?;
-        writeln!(output, "{}", Output::from_router_reply(reply)?.to_nota()?)?;
+        let socket = MessageSocket::from_environment().ok_or(Error::SignalMessageSocketMissing)?;
+        let reply = socket.client().submit(self.into_signal_input())?;
+        writeln!(output, "{}", Output::from_signal_output(reply).to_nota()?)?;
         Ok(())
     }
 
-    fn into_message_request(self) -> MessageRequest {
+    fn into_signal_input(self) -> signal_schema::Input {
         match self {
-            Self::Send(send) => send.into_message_request(),
-            Self::Inbox(inbox) => inbox.into_message_request(),
+            Self::Send(send) => send.into_signal_input(),
+            Self::Inbox(inbox) => inbox.into_signal_input(),
         }
     }
 }
 
 impl Send {
-    pub fn into_message_request(self) -> MessageRequest {
-        MessageRequest::MessageSubmission(MessageSubmission {
-            recipient: SignalMessageRecipient::new(self.recipient.as_str()),
-            kind: SignalMessageKind::Send,
-            body: SignalMessageBody::new(self.body),
+    pub fn into_signal_input(self) -> signal_schema::Input {
+        signal_schema::Input::Submit(signal_schema::MessageSubmission {
+            recipient: self.recipient.as_str().to_owned(),
+            message_kind: signal_schema::MessageKind::Send,
+            body: self.body,
         })
     }
 }
 
 impl Inbox {
-    pub fn into_message_request(self) -> MessageRequest {
-        MessageRequest::InboxQuery(SignalInboxQuery {
-            recipient: SignalMessageRecipient::new(self.recipient.as_str()),
-        })
+    pub fn into_signal_input(self) -> signal_schema::Input {
+        signal_schema::Input::QueryInbox(signal_schema::InboxQuery::new(
+            self.recipient.as_str().to_owned(),
+        ))
     }
 }
 
@@ -139,23 +130,48 @@ pub enum SubmissionRejectionReason {
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct RouterInboxListing {
-    pub messages: Vec<RouterInboxEntry>,
+pub struct InboxListing {
+    pub messages: Vec<InboxEntry>,
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct RouterInboxEntry {
+pub struct InboxEntry {
     pub message_slot: u64,
     pub sender: RecipientName,
     pub body: String,
+}
+
+#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
+pub struct Unimplemented {
+    pub operation: OperationKind,
+    pub reason: UnimplementedReason,
+}
+
+#[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
+pub enum OperationKind {
+    Submit,
+    SubmitStamped,
+    QueryInbox,
+}
+
+#[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
+pub enum UnimplementedReason {
+    NotInPrototypeScope,
+    RouterUnreachable,
+}
+
+#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
+pub struct ErrorReport {
+    pub message: String,
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Output {
     SubmissionAccepted(SubmissionAccepted),
     SubmissionRejected(SubmissionRejected),
-    RouterInboxListing(RouterInboxListing),
-    MessageRequestUnimplemented(SignalMessageRequestUnimplemented),
+    InboxListing(InboxListing),
+    Unimplemented(Unimplemented),
+    Error(ErrorReport),
 }
 
 impl Output {
@@ -172,30 +188,34 @@ impl Output {
         Ok(encoder.into_string())
     }
 
-    pub fn from_router_reply(reply: MessageReply) -> Result<Self> {
+    pub fn from_signal_output(reply: signal_schema::Output) -> Self {
         match reply {
-            MessageReply::SubmissionAccepted(acceptance) => {
-                Ok(Self::SubmissionAccepted(SubmissionAccepted {
-                    message_slot: acceptance.message_slot.into_u64(),
-                }))
+            signal_schema::Output::SubmissionAccepted(acceptance) => {
+                Self::SubmissionAccepted(SubmissionAccepted {
+                    message_slot: acceptance.into_payload(),
+                })
             }
-            MessageReply::SubmissionRejected(rejection) => {
-                Ok(Self::SubmissionRejected(SubmissionRejected {
-                    reason: SubmissionRejectionReason::from_signal(rejection.reason),
-                }))
+            signal_schema::Output::SubmissionRejected(rejection) => {
+                Self::SubmissionRejected(SubmissionRejected {
+                    reason: SubmissionRejectionReason::from_signal(rejection.into_payload()),
+                })
             }
-            MessageReply::InboxListing(listing) => {
-                Ok(Self::RouterInboxListing(RouterInboxListing {
-                    messages: listing
-                        .messages
-                        .into_iter()
-                        .map(RouterInboxEntry::from_signal)
-                        .collect(),
-                }))
+            signal_schema::Output::InboxListing(listing) => Self::InboxListing(InboxListing {
+                messages: listing
+                    .into_payload()
+                    .into_iter()
+                    .map(InboxEntry::from_signal)
+                    .collect(),
+            }),
+            signal_schema::Output::Unimplemented(unimplemented) => {
+                Self::Unimplemented(Unimplemented {
+                    operation: OperationKind::from_signal(unimplemented.operation_kind),
+                    reason: UnimplementedReason::from_signal(unimplemented.unimplemented_reason),
+                })
             }
-            MessageReply::MessageRequestUnimplemented(unimplemented) => {
-                Ok(Self::MessageRequestUnimplemented(unimplemented))
-            }
+            signal_schema::Output::Error(error) => Self::Error(ErrorReport {
+                message: error.into_payload(),
+            }),
         }
     }
 }
@@ -213,15 +233,20 @@ impl NotaEncode for Output {
                 output.reason.encode(encoder)?;
                 encoder.end_record()
             }
-            Self::RouterInboxListing(output) => {
-                encoder.start_record("RouterInboxListing")?;
+            Self::InboxListing(output) => {
+                encoder.start_record("InboxListing")?;
                 output.messages.encode(encoder)?;
                 encoder.end_record()
             }
-            Self::MessageRequestUnimplemented(output) => {
-                encoder.start_record("MessageRequestUnimplemented")?;
+            Self::Unimplemented(output) => {
+                encoder.start_record("Unimplemented")?;
                 output.operation.encode(encoder)?;
                 output.reason.encode(encoder)?;
+                encoder.end_record()
+            }
+            Self::Error(output) => {
+                encoder.start_record("Error")?;
+                output.message.encode(encoder)?;
                 encoder.end_record()
             }
         }
@@ -246,20 +271,27 @@ impl NotaDecode for Output {
                 let output = SubmissionRejected { reason };
                 Ok(Self::SubmissionRejected(output))
             }
-            "RouterInboxListing" => {
-                decoder.expect_record_head("RouterInboxListing")?;
-                let messages = Vec::<RouterInboxEntry>::decode(decoder)?;
+            "InboxListing" => {
+                decoder.expect_record_head("InboxListing")?;
+                let messages = Vec::<InboxEntry>::decode(decoder)?;
                 decoder.expect_record_end()?;
-                let output = RouterInboxListing { messages };
-                Ok(Self::RouterInboxListing(output))
+                let output = InboxListing { messages };
+                Ok(Self::InboxListing(output))
             }
-            "MessageRequestUnimplemented" => {
-                decoder.expect_record_head("MessageRequestUnimplemented")?;
-                let operation = SignalMessageOperationKind::decode(decoder)?;
-                let reason = SignalMessageUnimplementedReason::decode(decoder)?;
+            "Unimplemented" => {
+                decoder.expect_record_head("Unimplemented")?;
+                let operation = OperationKind::decode(decoder)?;
+                let reason = UnimplementedReason::decode(decoder)?;
                 decoder.expect_record_end()?;
-                let output = SignalMessageRequestUnimplemented { operation, reason };
-                Ok(Self::MessageRequestUnimplemented(output))
+                let output = Unimplemented { operation, reason };
+                Ok(Self::Unimplemented(output))
+            }
+            "Error" => {
+                decoder.expect_record_head("Error")?;
+                let message = String::decode(decoder)?;
+                decoder.expect_record_end()?;
+                let output = ErrorReport { message };
+                Ok(Self::Error(output))
             }
             other => Err(nota_codec::Error::UnknownVariant {
                 enum_name: "Output",
@@ -270,10 +302,10 @@ impl NotaDecode for Output {
 }
 
 impl SubmissionRejectionReason {
-    fn from_signal(reason: SignalSubmissionRejectionReason) -> Self {
+    fn from_signal(reason: signal_schema::SubmissionRejectionReason) -> Self {
         match reason {
-            SignalSubmissionRejectionReason::StoreRejected => Self::StoreRejected,
-            SignalSubmissionRejectionReason::RecipientNotFound => Self::RecipientNotFound,
+            signal_schema::SubmissionRejectionReason::StoreRejected => Self::StoreRejected,
+            signal_schema::SubmissionRejectionReason::RecipientNotFound => Self::RecipientNotFound,
         }
     }
 }
@@ -300,12 +332,77 @@ impl NotaDecode for SubmissionRejectionReason {
     }
 }
 
-impl RouterInboxEntry {
-    fn from_signal(entry: signal_message::InboxEntry) -> Self {
+impl InboxEntry {
+    fn from_signal(entry: signal_schema::InboxEntry) -> Self {
         Self {
-            message_slot: entry.message_slot.into_u64(),
-            sender: RecipientName::new(entry.sender.as_str()),
-            body: entry.body.as_str().to_string(),
+            message_slot: entry.message_slot,
+            sender: RecipientName::new(entry.sender),
+            body: entry.body,
+        }
+    }
+}
+
+impl OperationKind {
+    fn from_signal(kind: signal_schema::OperationKind) -> Self {
+        match kind {
+            signal_schema::OperationKind::Submit => Self::Submit,
+            signal_schema::OperationKind::SubmitStamped => Self::SubmitStamped,
+            signal_schema::OperationKind::QueryInbox => Self::QueryInbox,
+        }
+    }
+}
+
+impl NotaEncode for OperationKind {
+    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
+        match self {
+            Self::Submit => "Submit".to_string().encode(encoder),
+            Self::SubmitStamped => "SubmitStamped".to_string().encode(encoder),
+            Self::QueryInbox => "QueryInbox".to_string().encode(encoder),
+        }
+    }
+}
+
+impl NotaDecode for OperationKind {
+    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
+        match String::decode(decoder)?.as_str() {
+            "Submit" => Ok(Self::Submit),
+            "SubmitStamped" => Ok(Self::SubmitStamped),
+            "QueryInbox" => Ok(Self::QueryInbox),
+            other => Err(nota_codec::Error::UnknownVariant {
+                enum_name: "OperationKind",
+                got: other.to_string(),
+            }),
+        }
+    }
+}
+
+impl UnimplementedReason {
+    fn from_signal(reason: signal_schema::UnimplementedReason) -> Self {
+        match reason {
+            signal_schema::UnimplementedReason::NotInPrototypeScope => Self::NotInPrototypeScope,
+            signal_schema::UnimplementedReason::RouterUnreachable => Self::RouterUnreachable,
+        }
+    }
+}
+
+impl NotaEncode for UnimplementedReason {
+    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
+        match self {
+            Self::NotInPrototypeScope => "NotInPrototypeScope".to_string().encode(encoder),
+            Self::RouterUnreachable => "RouterUnreachable".to_string().encode(encoder),
+        }
+    }
+}
+
+impl NotaDecode for UnimplementedReason {
+    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
+        match String::decode(decoder)?.as_str() {
+            "NotInPrototypeScope" => Ok(Self::NotInPrototypeScope),
+            "RouterUnreachable" => Ok(Self::RouterUnreachable),
+            other => Err(nota_codec::Error::UnknownVariant {
+                enum_name: "UnimplementedReason",
+                got: other.to_string(),
+            }),
         }
     }
 }
