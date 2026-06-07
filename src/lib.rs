@@ -30,13 +30,8 @@ pub mod schema {
     #[rustfmt::skip]
     pub mod nexus;
     #[rustfmt::skip]
-    pub mod sema; // The daemon emitter emits `WorkingTransport::try_clone_stream` unconditionally,
-    // but it is only reached on the streaming path. Message declares no stream, so
-    // the method is dead in this generated module. The allow is scoped to the
-    // generated module only — it does not mask dead code in message's own sources.
-    // Residual: schema-rust-next should gate `try_clone_stream` on `emits_stream`.
+    pub mod sema;
     #[rustfmt::skip]
-    #[allow(dead_code)]
     pub mod daemon;
 }
 

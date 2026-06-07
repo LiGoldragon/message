@@ -57,7 +57,7 @@ pub struct MessageEngine {
 /// borrow while delegating durable behavior to `MessageEngine`.
 #[derive(Debug)]
 struct MessageRequestEngine<'request> {
-    engine: &'request mut MessageEngine,
+    engine: &'request MessageEngine,
     connection: &'request ConnectionContext,
 }
 
@@ -79,11 +79,7 @@ impl MessageEngine {
     ///
     /// `connection` carries the accepted stream's peer credentials; the router
     /// forward stamps the provenance origin minted from them.
-    pub fn handle(
-        &mut self,
-        input: Input,
-        connection: &ConnectionContext,
-    ) -> Result<Output, Error> {
+    pub fn handle(&self, input: Input, connection: &ConnectionContext) -> Result<Output, Error> {
         let mut request_engine = MessageRequestEngine::new(self, connection);
         let action = request_engine
             .execute(NexusWork::signal_arrived(input).with_origin_route(FORWARD_ORIGIN_ROUTE))
@@ -167,7 +163,7 @@ impl MessageEngine {
 }
 
 impl<'request> MessageRequestEngine<'request> {
-    fn new(engine: &'request mut MessageEngine, connection: &'request ConnectionContext) -> Self {
+    fn new(engine: &'request MessageEngine, connection: &'request ConnectionContext) -> Self {
         Self { engine, connection }
     }
 }

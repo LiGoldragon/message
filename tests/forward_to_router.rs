@@ -89,7 +89,7 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
     let router = StubRouter::bind(&router_socket_path);
     let router_thread = router.serve_one_acceptance();
 
-    let mut engine = engine_for(router_socket_path);
+    let engine = engine_for(router_socket_path);
     let output = engine
         .handle(
             Input::Submit(MessageSubmission {
@@ -133,7 +133,7 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
     let router = StubRouter::bind(&router_socket_path);
     let router_thread = router.serve_one_acceptance();
 
-    let mut engine = engine_for(router_socket_path);
+    let engine = engine_for(router_socket_path);
     let output = engine
         .handle(
             Input::Submit(MessageSubmission {
@@ -169,7 +169,7 @@ fn router_unreachable_yields_typed_error_output() {
     // No stub router bound at this path — the forward connect fails.
     let router_socket_path = temp.path().join("absent-router.sock");
 
-    let mut engine = engine_for(router_socket_path);
+    let engine = engine_for(router_socket_path);
     let output = engine
         .handle(
             Input::Submit(MessageSubmission {

@@ -312,7 +312,7 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -324,6 +324,7 @@ dependencies = [
  "signal-persona-origin",
  "tempfile",
  "thiserror",
+ "tokio",
  "triad-runtime",
 ]
 
@@ -527,8 +528,8 @@ dependencies = [
 
 [[package]]
 name = "schema-rust-next"
-version = "0.1.15"
-source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#8ae5b59633cfa1570ca0dbb7bc0096a0d3829374"
+version = "0.2.0"
+source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#83b3c474b7ab5225d548f551b1ca6e7afd274aeb"
 dependencies = [
  "prettyplease",
  "proc-macro2",

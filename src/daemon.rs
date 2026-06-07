@@ -1,7 +1,7 @@
 //! Message's daemon hooks — the only daemon code message hand-writes.
 //!
-//! The uniform daemon skeleton (the `DaemonCommand` argv parsing, the decode ->
-//! execute -> encode spine, the `SingleListenerDaemon` selection, and the
+//! The uniform daemon skeleton (the `DaemonCommand` argv parsing, the async
+//! decode -> execute -> encode spine, the actor-native listener, and the
 //! `ExitReport`-based entry) is EMITTED into `src/schema/daemon.rs` by
 //! schema-rust-next's daemon emitter, driven by the `NexusDaemonShape` in
 //! `build.rs`. Message fills only the record-1488 escape hatches through `impl
@@ -11,10 +11,8 @@
 //! no durable store, so there is no meta hook and no `start`/`stop` resource
 //! setup.
 
-use std::sync::Mutex;
-
 use thiserror::Error;
-use triad_runtime::{FrameError, ListenerError};
+use triad_runtime::FrameError;
 
 use crate::{
     config::{Configuration, ConfigurationError},
@@ -34,9 +32,9 @@ use crate::{
 pub struct MessageDaemon;
 
 /// Message's daemon error: the engine-facing variants the emitted spine needs
-/// (`From<FrameError>` / `From<SignalFrameError>` / `From<ListenerError>`) plus
-/// message's domain error. The emitted `DaemonError<MessageDaemon>` wraps this
-/// under its `Component` arm.
+/// (`From<FrameError>` / `From<SignalFrameError>`) plus message's domain error.
+/// The emitted `DaemonError<MessageDaemon>` wraps this under its `Component`
+/// arm.
 #[derive(Debug, Error)]
 pub enum MessageDaemonError {
     #[error("daemon frame error: {0}")]
@@ -45,9 +43,6 @@ pub enum MessageDaemonError {
     #[error("daemon signal frame error: {0}")]
     SignalFrame(#[from] SignalFrameError),
 
-    #[error("daemon listener error: {0}")]
-    Listener(#[from] ListenerError),
-
     #[error("daemon component error: {0}")]
     Component(#[from] MessageError),
 }
@@ -55,10 +50,7 @@ pub enum MessageDaemonError {
 impl ComponentDaemon for MessageDaemon {
     type Configuration = Configuration;
     type ConfigurationError = ConfigurationError;
-    /// The engine is single-flight per the generated `NexusEngine::execute`
-    /// runner; the emitted spine holds it behind a shared reference, so message
-    /// guards the per-request runner hooks through a `Mutex`.
-    type Engine = Mutex<MessageEngine>;
+    type Engine = MessageEngine;
     type Error = MessageDaemonError;
 
     const PROCESS_NAME: &'static str = "message-daemon";
@@ -70,7 +62,7 @@ impl ComponentDaemon for MessageDaemon {
     }
 
     fn build_runtime(configuration: &Self::Configuration) -> Result<Self::Engine, Self::Error> {
-        Ok(Mutex::new(MessageEngine::from_configuration(configuration)))
+        Ok(MessageEngine::from_configuration(configuration))
     }
 
     fn handle_working_input(
@@ -78,7 +70,6 @@ impl ComponentDaemon for MessageDaemon {
         input: Input,
         connection: &triad_runtime::ConnectionContext,
     ) -> Result<Output, Self::Error> {
-        let mut engine = engine.lock().expect("message engine lock");
         Ok(engine.handle(input, connection)?)
     }
 }
