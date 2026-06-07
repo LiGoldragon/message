@@ -60,7 +60,7 @@ flowchart LR
 - a `message-daemon` binary;
 - NOTA `Send` and `Inbox` input records;
 - one length-prefixed schema signal request frame per CLI invocation;
-- one daemon-bound `message.sock` for owner ingress;
+- one daemon-bound `message.sock` for working ingress;
 - one router client path to internal `router.sock`;
 - one NOTA reply projection per invocation;
 - no caller-provided identity and no local actor index.
@@ -249,4 +249,4 @@ tests/forward_to_router.rs     Nexus forward effect against a stub router
 
 - `../signal-message/ARCHITECTURE.md`
 - `../router/ARCHITECTURE.md`
-- `../signal-persona/ARCHITECTURE.md`
+- `../signal-persona-origin/ARCHITECTURE.md`

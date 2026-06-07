@@ -2,302 +2,269 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
 
-use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode, NotaRecord};
+use nota_next::{Block, Delimiter, NotaBody, NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 use crate::client::MessageSocket;
-use crate::error::{Error, Result};
+use crate::error::{Error, Result as MessageResult};
 use crate::schema::signal as signal_schema;
-use crate::surface::{RecipientName, expect_end};
-
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct Send {
-    pub recipient: RecipientName,
-    pub body: String,
-}
-
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct Inbox {
-    pub recipient: RecipientName,
-}
+use crate::surface::RecipientName;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Input {
-    Send(Send),
-    Inbox(Inbox),
+    Send(RecipientName, String),
+    Inbox(RecipientName),
 }
 
 impl Input {
-    pub fn from_nota(text: &str) -> Result<Self> {
-        let mut decoder = Decoder::new(text);
-        let input = Self::decode(&mut decoder)?;
-        expect_end(&mut decoder)?;
-        Ok(input)
+    pub fn from_nota(text: &str) -> MessageResult<Self> {
+        Ok(NotaSource::new(text).parse::<Self>()?)
     }
 
-    pub fn run(self, mut output: impl Write) -> Result<()> {
+    pub fn run(self, mut output: impl Write) -> MessageResult<()> {
         let socket = MessageSocket::from_environment().ok_or(Error::SignalMessageSocketMissing)?;
         let reply = socket.client().submit(self.into_signal_input())?;
-        writeln!(output, "{}", Output::from_signal_output(reply).to_nota()?)?;
+        writeln!(output, "{}", Output::from_signal_output(reply).to_nota())?;
         Ok(())
     }
 
     fn into_signal_input(self) -> signal_schema::Input {
         match self {
-            Self::Send(send) => send.into_signal_input(),
-            Self::Inbox(inbox) => inbox.into_signal_input(),
-        }
-    }
-}
-
-impl Send {
-    pub fn into_signal_input(self) -> signal_schema::Input {
-        signal_schema::Input::Submit(signal_schema::MessageSubmission {
-            recipient: self.recipient.as_str().to_owned(),
-            message_kind: signal_schema::MessageKind::Send,
-            body: self.body,
-        })
-    }
-}
-
-impl Inbox {
-    pub fn into_signal_input(self) -> signal_schema::Input {
-        signal_schema::Input::QueryInbox(signal_schema::InboxQuery::new(
-            self.recipient.as_str().to_owned(),
-        ))
-    }
-}
-
-impl NotaEncode for Input {
-    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
-        match self {
-            Self::Send(input) => {
-                encoder.start_record("Send")?;
-                input.recipient.encode(encoder)?;
-                input.body.encode(encoder)?;
-                encoder.end_record()
+            Self::Send(recipient, body) => {
+                signal_schema::Input::Submit(signal_schema::MessageSubmission {
+                    recipient: recipient.as_str().to_owned(),
+                    message_kind: signal_schema::MessageKind::Send,
+                    body,
+                })
             }
-            Self::Inbox(input) => {
-                encoder.start_record("Inbox")?;
-                input.recipient.encode(encoder)?;
-                encoder.end_record()
-            }
+            Self::Inbox(recipient) => signal_schema::Input::QueryInbox(
+                signal_schema::InboxQuery::new(recipient.as_str().to_owned()),
+            ),
         }
     }
 }
 
 impl NotaDecode for Input {
-    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
-        let head = decoder.peek_record_head()?;
-        match head.as_str() {
+    fn from_nota_block(block: &Block) -> std::result::Result<Self, NotaDecodeError> {
+        let fields =
+            NotaBody::from_delimited(block, Delimiter::Parenthesis, "Input")?.root_objects();
+        let Some(head) = fields.first().and_then(Block::demote_to_string) else {
+            return Err(NotaDecodeError::ExpectedAtom { type_name: "Input" });
+        };
+        match head {
             "Send" => {
-                decoder.expect_record_head("Send")?;
-                let recipient = RecipientName::decode(decoder)?;
-                let body = String::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let input = Send { recipient, body };
-                Ok(Self::Send(input))
+                Self::expect_fields(fields, "Input::Send", 3)?;
+                Ok(Self::Send(
+                    RecipientName::from_nota_block(&fields[1])?,
+                    String::from_nota_block(&fields[2])?,
+                ))
             }
             "Inbox" => {
-                decoder.expect_record_head("Inbox")?;
-                let recipient = RecipientName::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let input = Inbox { recipient };
-                Ok(Self::Inbox(input))
+                Self::expect_fields(fields, "Input::Inbox", 2)?;
+                Ok(Self::Inbox(RecipientName::from_nota_block(&fields[1])?))
             }
-            other => Err(nota_codec::Error::UnknownVariant {
+            other => Err(NotaDecodeError::UnknownVariant {
                 enum_name: "Input",
-                got: other.to_string(),
+                variant: other.to_owned(),
             }),
         }
     }
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct SubmissionAccepted {
-    pub message_slot: u64,
+impl NotaEncode for Input {
+    fn to_nota(&self) -> String {
+        match self {
+            Self::Send(recipient, body) => Delimiter::Parenthesis.wrap([
+                String::from("Send"),
+                recipient.to_nota(),
+                body.to_nota(),
+            ]),
+            Self::Inbox(recipient) => {
+                Delimiter::Parenthesis.wrap([String::from("Inbox"), recipient.to_nota()])
+            }
+        }
+    }
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct SubmissionRejected {
-    pub reason: SubmissionRejectionReason,
+impl Input {
+    fn expect_fields(
+        fields: &[Block],
+        type_name: &'static str,
+        expected: usize,
+    ) -> std::result::Result<(), NotaDecodeError> {
+        let found = fields.len();
+        if found != expected {
+            return Err(NotaDecodeError::ExpectedRootCount {
+                type_name,
+                expected,
+                found,
+            });
+        }
+        Ok(())
+    }
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Archive, RkyvSerialize, RkyvDeserialize, NotaEncode, NotaDecode, Debug, Clone, PartialEq, Eq,
+)]
 pub enum SubmissionRejectionReason {
     StoreRejected,
     RecipientNotFound,
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct InboxListing {
-    pub messages: Vec<InboxEntry>,
-}
+pub type InboxListing = Vec<InboxEntry>;
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Archive, RkyvSerialize, RkyvDeserialize, NotaEncode, NotaDecode, Debug, Clone, PartialEq, Eq,
+)]
 pub struct InboxEntry {
     pub message_slot: u64,
     pub sender: RecipientName,
     pub body: String,
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct Unimplemented {
-    pub operation: OperationKind,
-    pub reason: UnimplementedReason,
-}
-
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Archive, RkyvSerialize, RkyvDeserialize, NotaEncode, NotaDecode, Debug, Clone, PartialEq, Eq,
+)]
 pub enum OperationKind {
     Submit,
     SubmitStamped,
     QueryInbox,
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Archive, RkyvSerialize, RkyvDeserialize, NotaEncode, NotaDecode, Debug, Clone, PartialEq, Eq,
+)]
 pub enum UnimplementedReason {
     NotInPrototypeScope,
     RouterUnreachable,
 }
 
-#[derive(Archive, RkyvSerialize, RkyvDeserialize, NotaRecord, Debug, Clone, PartialEq, Eq)]
-pub struct ErrorReport {
-    pub message: String,
-}
-
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Output {
-    SubmissionAccepted(SubmissionAccepted),
-    SubmissionRejected(SubmissionRejected),
+    SubmissionAccepted(u64),
+    SubmissionRejected(SubmissionRejectionReason),
     InboxListing(InboxListing),
-    Unimplemented(Unimplemented),
-    Error(ErrorReport),
+    Unimplemented(OperationKind, UnimplementedReason),
+    Error(String),
 }
 
 impl Output {
-    pub fn from_nota(text: &str) -> Result<Self> {
-        let mut decoder = Decoder::new(text);
-        let output = Self::decode(&mut decoder)?;
-        expect_end(&mut decoder)?;
-        Ok(output)
+    pub fn from_nota(text: &str) -> MessageResult<Self> {
+        Ok(NotaSource::new(text).parse::<Self>()?)
     }
 
-    pub fn to_nota(&self) -> Result<String> {
-        let mut encoder = Encoder::new();
-        self.encode(&mut encoder)?;
-        Ok(encoder.into_string())
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
     }
 
     pub fn from_signal_output(reply: signal_schema::Output) -> Self {
         match reply {
             signal_schema::Output::SubmissionAccepted(acceptance) => {
-                Self::SubmissionAccepted(SubmissionAccepted {
-                    message_slot: acceptance.into_payload(),
-                })
+                Self::SubmissionAccepted(acceptance.into_payload())
             }
-            signal_schema::Output::SubmissionRejected(rejection) => {
-                Self::SubmissionRejected(SubmissionRejected {
-                    reason: SubmissionRejectionReason::from_signal(rejection.into_payload()),
-                })
-            }
-            signal_schema::Output::InboxListing(listing) => Self::InboxListing(InboxListing {
-                messages: listing
+            signal_schema::Output::SubmissionRejected(rejection) => Self::SubmissionRejected(
+                SubmissionRejectionReason::from_signal(rejection.into_payload()),
+            ),
+            signal_schema::Output::InboxListing(listing) => Self::InboxListing(
+                listing
                     .into_payload()
                     .into_iter()
                     .map(InboxEntry::from_signal)
                     .collect(),
-            }),
-            signal_schema::Output::Unimplemented(unimplemented) => {
-                Self::Unimplemented(Unimplemented {
-                    operation: OperationKind::from_signal(unimplemented.operation_kind),
-                    reason: UnimplementedReason::from_signal(unimplemented.unimplemented_reason),
-                })
+            ),
+            signal_schema::Output::Unimplemented(unimplemented) => Self::Unimplemented(
+                OperationKind::from_signal(unimplemented.operation_kind),
+                UnimplementedReason::from_signal(unimplemented.unimplemented_reason),
+            ),
+            signal_schema::Output::Error(error) => Self::Error(error.into_payload()),
+        }
+    }
+}
+
+impl NotaDecode for Output {
+    fn from_nota_block(block: &Block) -> std::result::Result<Self, NotaDecodeError> {
+        let fields =
+            NotaBody::from_delimited(block, Delimiter::Parenthesis, "Output")?.root_objects();
+        let Some(head) = fields.first().and_then(Block::demote_to_string) else {
+            return Err(NotaDecodeError::ExpectedAtom {
+                type_name: "Output",
+            });
+        };
+        match head {
+            "SubmissionAccepted" => {
+                Self::expect_fields(fields, "Output::SubmissionAccepted", 2)?;
+                Ok(Self::SubmissionAccepted(u64::from_nota_block(&fields[1])?))
             }
-            signal_schema::Output::Error(error) => Self::Error(ErrorReport {
-                message: error.into_payload(),
+            "SubmissionRejected" => {
+                Self::expect_fields(fields, "Output::SubmissionRejected", 2)?;
+                Ok(Self::SubmissionRejected(
+                    SubmissionRejectionReason::from_nota_block(&fields[1])?,
+                ))
+            }
+            "InboxListing" => {
+                Self::expect_fields(fields, "Output::InboxListing", 2)?;
+                Ok(Self::InboxListing(Vec::<InboxEntry>::from_nota_block(
+                    &fields[1],
+                )?))
+            }
+            "Unimplemented" => {
+                Self::expect_fields(fields, "Output::Unimplemented", 3)?;
+                Ok(Self::Unimplemented(
+                    OperationKind::from_nota_block(&fields[1])?,
+                    UnimplementedReason::from_nota_block(&fields[2])?,
+                ))
+            }
+            "Error" => {
+                Self::expect_fields(fields, "Output::Error", 2)?;
+                Ok(Self::Error(String::from_nota_block(&fields[1])?))
+            }
+            other => Err(NotaDecodeError::UnknownVariant {
+                enum_name: "Output",
+                variant: other.to_owned(),
             }),
         }
     }
 }
 
 impl NotaEncode for Output {
-    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
+    fn to_nota(&self) -> String {
         match self {
-            Self::SubmissionAccepted(output) => {
-                encoder.start_record("SubmissionAccepted")?;
-                output.message_slot.encode(encoder)?;
-                encoder.end_record()
+            Self::SubmissionAccepted(message_slot) => Delimiter::Parenthesis
+                .wrap([String::from("SubmissionAccepted"), message_slot.to_nota()]),
+            Self::SubmissionRejected(reason) => {
+                Delimiter::Parenthesis.wrap([String::from("SubmissionRejected"), reason.to_nota()])
             }
-            Self::SubmissionRejected(output) => {
-                encoder.start_record("SubmissionRejected")?;
-                output.reason.encode(encoder)?;
-                encoder.end_record()
+            Self::InboxListing(messages) => {
+                Delimiter::Parenthesis.wrap([String::from("InboxListing"), messages.to_nota()])
             }
-            Self::InboxListing(output) => {
-                encoder.start_record("InboxListing")?;
-                output.messages.encode(encoder)?;
-                encoder.end_record()
-            }
-            Self::Unimplemented(output) => {
-                encoder.start_record("Unimplemented")?;
-                output.operation.encode(encoder)?;
-                output.reason.encode(encoder)?;
-                encoder.end_record()
-            }
-            Self::Error(output) => {
-                encoder.start_record("Error")?;
-                output.message.encode(encoder)?;
-                encoder.end_record()
+            Self::Unimplemented(operation, reason) => Delimiter::Parenthesis.wrap([
+                String::from("Unimplemented"),
+                operation.to_nota(),
+                reason.to_nota(),
+            ]),
+            Self::Error(message) => {
+                Delimiter::Parenthesis.wrap([String::from("Error"), message.to_nota()])
             }
         }
     }
 }
 
-impl NotaDecode for Output {
-    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
-        let head = decoder.peek_record_head()?;
-        match head.as_str() {
-            "SubmissionAccepted" => {
-                decoder.expect_record_head("SubmissionAccepted")?;
-                let message_slot = u64::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let output = SubmissionAccepted { message_slot };
-                Ok(Self::SubmissionAccepted(output))
-            }
-            "SubmissionRejected" => {
-                decoder.expect_record_head("SubmissionRejected")?;
-                let reason = SubmissionRejectionReason::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let output = SubmissionRejected { reason };
-                Ok(Self::SubmissionRejected(output))
-            }
-            "InboxListing" => {
-                decoder.expect_record_head("InboxListing")?;
-                let messages = Vec::<InboxEntry>::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let output = InboxListing { messages };
-                Ok(Self::InboxListing(output))
-            }
-            "Unimplemented" => {
-                decoder.expect_record_head("Unimplemented")?;
-                let operation = OperationKind::decode(decoder)?;
-                let reason = UnimplementedReason::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let output = Unimplemented { operation, reason };
-                Ok(Self::Unimplemented(output))
-            }
-            "Error" => {
-                decoder.expect_record_head("Error")?;
-                let message = String::decode(decoder)?;
-                decoder.expect_record_end()?;
-                let output = ErrorReport { message };
-                Ok(Self::Error(output))
-            }
-            other => Err(nota_codec::Error::UnknownVariant {
-                enum_name: "Output",
-                got: other.to_string(),
-            }),
+impl Output {
+    fn expect_fields(
+        fields: &[Block],
+        type_name: &'static str,
+        expected: usize,
+    ) -> std::result::Result<(), NotaDecodeError> {
+        let found = fields.len();
+        if found != expected {
+            return Err(NotaDecodeError::ExpectedRootCount {
+                type_name,
+                expected,
+                found,
+            });
         }
+        Ok(())
     }
 }
 
@@ -306,28 +273,6 @@ impl SubmissionRejectionReason {
         match reason {
             signal_schema::SubmissionRejectionReason::StoreRejected => Self::StoreRejected,
             signal_schema::SubmissionRejectionReason::RecipientNotFound => Self::RecipientNotFound,
-        }
-    }
-}
-
-impl NotaEncode for SubmissionRejectionReason {
-    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
-        match self {
-            Self::StoreRejected => "StoreRejected".to_string().encode(encoder),
-            Self::RecipientNotFound => "RecipientNotFound".to_string().encode(encoder),
-        }
-    }
-}
-
-impl NotaDecode for SubmissionRejectionReason {
-    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
-        match String::decode(decoder)?.as_str() {
-            "StoreRejected" => Ok(Self::StoreRejected),
-            "RecipientNotFound" => Ok(Self::RecipientNotFound),
-            other => Err(nota_codec::Error::UnknownVariant {
-                enum_name: "SubmissionRejectionReason",
-                got: other.to_string(),
-            }),
         }
     }
 }
@@ -352,57 +297,11 @@ impl OperationKind {
     }
 }
 
-impl NotaEncode for OperationKind {
-    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
-        match self {
-            Self::Submit => "Submit".to_string().encode(encoder),
-            Self::SubmitStamped => "SubmitStamped".to_string().encode(encoder),
-            Self::QueryInbox => "QueryInbox".to_string().encode(encoder),
-        }
-    }
-}
-
-impl NotaDecode for OperationKind {
-    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
-        match String::decode(decoder)?.as_str() {
-            "Submit" => Ok(Self::Submit),
-            "SubmitStamped" => Ok(Self::SubmitStamped),
-            "QueryInbox" => Ok(Self::QueryInbox),
-            other => Err(nota_codec::Error::UnknownVariant {
-                enum_name: "OperationKind",
-                got: other.to_string(),
-            }),
-        }
-    }
-}
-
 impl UnimplementedReason {
     fn from_signal(reason: signal_schema::UnimplementedReason) -> Self {
         match reason {
             signal_schema::UnimplementedReason::NotInPrototypeScope => Self::NotInPrototypeScope,
             signal_schema::UnimplementedReason::RouterUnreachable => Self::RouterUnreachable,
-        }
-    }
-}
-
-impl NotaEncode for UnimplementedReason {
-    fn encode(&self, encoder: &mut Encoder) -> nota_codec::Result<()> {
-        match self {
-            Self::NotInPrototypeScope => "NotInPrototypeScope".to_string().encode(encoder),
-            Self::RouterUnreachable => "RouterUnreachable".to_string().encode(encoder),
-        }
-    }
-}
-
-impl NotaDecode for UnimplementedReason {
-    fn decode(decoder: &mut Decoder<'_>) -> nota_codec::Result<Self> {
-        match String::decode(decoder)?.as_str() {
-            "NotInPrototypeScope" => Ok(Self::NotInPrototypeScope),
-            "RouterUnreachable" => Ok(Self::RouterUnreachable),
-            other => Err(nota_codec::Error::UnknownVariant {
-                enum_name: "UnimplementedReason",
-                got: other.to_string(),
-            }),
         }
     }
 }
@@ -427,7 +326,7 @@ impl CommandLine {
         }
     }
 
-    pub fn decode_input(&self) -> Result<Input> {
+    pub fn decode_input(&self) -> MessageResult<Input> {
         let Some(first) = self.arguments.first() else {
             return Err(Error::MissingInput);
         };
@@ -445,11 +344,11 @@ impl CommandLine {
         }
     }
 
-    pub fn run(&self, output: impl Write) -> Result<()> {
+    pub fn run(&self, output: impl Write) -> MessageResult<()> {
         self.decode_input()?.run(output)
     }
 
-    fn require_single_argument(&self) -> Result<()> {
+    fn require_single_argument(&self) -> MessageResult<()> {
         if let Some(argument) = self.arguments.get(1) {
             return Err(Error::UnexpectedArgument {
                 got: argument.to_string_lossy().to_string(),
@@ -469,7 +368,7 @@ impl InputFile {
         Self { path }
     }
 
-    pub fn decode(&self) -> Result<Input> {
+    pub fn decode(&self) -> MessageResult<Input> {
         let text = std::fs::read_to_string(&self.path)?;
         Input::from_nota(&text)
     }

@@ -199,8 +199,8 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
     );
     let stdout = String::from_utf8(cli_output.stdout).expect("CLI stdout is utf8");
     match CommandOutput::from_nota(stdout.trim()).expect("decode CLI NOTA output") {
-        CommandOutput::SubmissionAccepted(accepted) => {
-            assert_eq!(accepted.message_slot, 7);
+        CommandOutput::SubmissionAccepted(message_slot) => {
+            assert_eq!(message_slot, 7);
         }
         other => panic!("expected CLI SubmissionAccepted output, got {other:?}"),
     }

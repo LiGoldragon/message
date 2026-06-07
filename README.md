@@ -14,7 +14,7 @@ The `message` daemon (binary file `message-daemon`) is the
 engine's user-writable ingress boundary: it binds `message.sock` (mode 0660,
 engine-owner group), stamps `MessageSubmission` frames with SO_PEERCRED-
 derived origin and ingress time, then forwards `StampedMessageSubmission`
-frames to `persona-router` over the internal `router.sock`. No durable
+frames to `router` over the internal `router.sock`. No durable
 state; no local message ledger.
 
 The supported input records are:
@@ -33,6 +33,6 @@ actor-registration files. Origin stamping is typed contract data at the
 daemon/router ingress boundary, not a caller-provided proof.
 
 Durable message acceptance, pending delivery, retry, owner approval, and
-terminal delivery state belong to `persona-router` and its downstream
-`persona-harness` / `persona-terminal` path. This crate owns text projection at
+terminal delivery state belong to `router` and its downstream
+`harness` / `terminal` path. This crate owns text projection at
 the edge: NOTA in, Signal out, Signal in, NOTA out.

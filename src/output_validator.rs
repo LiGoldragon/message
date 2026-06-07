@@ -152,7 +152,7 @@ impl<'output> RouterInboxOutput<'output> {
     }
 
     fn contains_entry(&self, sender: Option<&RecipientName>, body: &str) -> bool {
-        self.listing.messages.iter().any(|entry| {
+        self.listing.iter().any(|entry| {
             entry.body == body
                 && sender
                     .map(|expected_sender| entry.sender == *expected_sender)
@@ -161,7 +161,7 @@ impl<'output> RouterInboxOutput<'output> {
     }
 
     fn contains_body(&self, body: &str) -> bool {
-        self.listing.messages.iter().any(|entry| entry.body == body)
+        self.listing.iter().any(|entry| entry.body == body)
     }
 }
 

@@ -25,16 +25,15 @@ path = "src/bin/message_validate_output.rs"
 
 [features]
 default = []
-nota-text = ["dep:nota-next"]
+nota-text = []
 
 [dependencies]
-nota-codec      = { git = "https://github.com/LiGoldragon/nota-codec.git", branch = "main" }
-nota-next       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main", optional = true }
+nota-next       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
+signal-engine-management = { git = "https://github.com/LiGoldragon/signal-engine-management.git", branch = "main" }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
-signal-persona  = { git = "https://github.com/LiGoldragon/signal-persona.git" }
-signal-persona-origin = { git = "https://github.com/LiGoldragon/signal-persona-origin.git" }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git" }
+signal-persona-origin = { git = "https://github.com/LiGoldragon/signal-persona-origin.git", branch = "main" }
+signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", branch = "main" }
 thiserror       = "2"
 triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
 

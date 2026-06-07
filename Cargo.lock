@@ -50,16 +50,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
-name = "camino"
-version = "1.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "downcast-rs"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "equivalent"
@@ -90,10 +96,69 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "futures"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b147ee9d1f6d097cef9ce628cd2ee62288d963e16fb287bd9286455b241382d"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-channel"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
+
+[[package]]
+name = "futures-executor"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf29c38818342a3b26b5b923639e7b1f4a61fc5e76102d4b1981c6dc7a7579d"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-io"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
+
+[[package]]
+name = "futures-macro"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e835b70203e41293343137df5c0664546da5745f82ec9b84d40be8336958447b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "futures-sink"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c39754e157331b013978ec91992bde1ac089843443c49cbc7f46150b0fad0893"
 
 [[package]]
 name = "futures-task"
@@ -107,8 +172,13 @@ version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
+ "futures-macro",
+ "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -184,6 +254,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "kameo"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1dfd134d7a2c6ec05ee696dcbf3f7a034bdb97ecc623e981014652dcd124d77"
+dependencies = [
+ "downcast-rs",
+ "dyn-clone",
+ "futures",
+ "kameo_macros",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "kameo_macros"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c9002c9ecd16e1636f566c0bf62db48e70d86ed0d0a91b398955e883217a23"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -217,18 +314,28 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 name = "message"
 version = "0.1.0"
 dependencies = [
- "nota-codec",
  "nota-next",
  "rkyv",
  "rustix",
  "schema-rust-next",
+ "signal-engine-management",
  "signal-frame",
  "signal-message",
- "signal-persona",
- "signal-persona-origin 0.1.0 (git+https://github.com/LiGoldragon/signal-persona-origin.git)",
+ "signal-persona-origin",
  "tempfile",
  "thiserror",
  "triad-runtime",
+]
+
+[[package]]
+name = "mio"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02bd0af71c67b473010cbbc60715ee815645a4dc942899111f494b4b737d6fda"
+dependencies = [
+ "libc",
+ "wasi",
+ "windows-sys",
 ]
 
 [[package]]
@@ -245,36 +352,6 @@ name = "munge_macro"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4568f25ccbd45ab5d5603dc34318c1ec56b117531781260002151b8530a9f931"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "nota-codec"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-codec.git?branch=main#f761421c383121a04df761a444a3778d1c0b137d"
-dependencies = [
- "camino",
- "nota-derive",
- "thiserror",
-]
-
-[[package]]
-name = "nota-config"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-config.git?branch=main#bd9173a7f4e92e4b201f663f70ae853e8c226c22"
-dependencies = [
- "nota-codec",
- "rkyv",
- "thiserror",
-]
-
-[[package]]
-name = "nota-derive"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-derive.git?branch=main#11347da1ff4425ff4e743c15a3e3ec322b54ea9a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -305,19 +382,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "owner-signal-persona"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/owner-signal-persona.git?branch=main#0150169f75acc3731a1c6f99615bd7a7bc7b7af7"
-dependencies = [
- "nota-codec",
- "rkyv",
- "signal-engine-management",
- "signal-frame",
- "signal-persona-origin 0.1.0 (git+https://github.com/LiGoldragon/signal-persona-origin.git?branch=main)",
- "signal-sema",
-]
 
 [[package]]
 name = "paste"
@@ -487,6 +551,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -525,20 +590,20 @@ dependencies = [
 [[package]]
 name = "signal-engine-management"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-engine-management.git?branch=main#32b226ecc6296ce039f9f8e1446c6c83ee955185"
+source = "git+https://github.com/LiGoldragon/signal-engine-management.git?branch=main#305b7031668fed76c43af0d28cf70b94c933089d"
 dependencies = [
- "nota-codec",
+ "nota-next",
  "rkyv",
  "signal-frame",
- "signal-persona-origin 0.1.0 (git+https://github.com/LiGoldragon/signal-persona-origin.git?branch=main)",
+ "signal-persona-origin",
 ]
 
 [[package]]
 name = "signal-frame"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#ed066bcce411faf4cb4c7e8aad45cf72f8c9aa9e"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#904bb2fdb0210bbeec9f9f4edc9f8b88341522a3"
 dependencies = [
- "nota-codec",
+ "nota-next",
  "paste",
  "rkyv",
  "signal-frame-macros",
@@ -548,9 +613,8 @@ dependencies = [
 [[package]]
 name = "signal-frame-macros"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#ed066bcce411faf4cb4c7e8aad45cf72f8c9aa9e"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#904bb2fdb0210bbeec9f9f4edc9f8b88341522a3"
 dependencies = [
- "nota-codec",
  "proc-macro2",
  "quote",
  "syn",
@@ -559,57 +623,23 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git#f8769051afe5aead1c881083bb6c0ba61bbcc0ab"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#f84ec07b7339dc155170efbcbbfe49e974ff4f76"
 dependencies = [
- "nota-codec",
- "nota-config",
- "rkyv",
- "signal-frame",
- "signal-persona",
- "signal-persona-origin 0.1.0 (git+https://github.com/LiGoldragon/signal-persona-origin.git)",
- "thiserror",
-]
-
-[[package]]
-name = "signal-persona"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-persona.git#851236028e7271b3cf9222f468866e70ee385f84"
-dependencies = [
- "nota-codec",
- "owner-signal-persona",
+ "nota-next",
  "rkyv",
  "signal-engine-management",
  "signal-frame",
- "signal-persona-origin 0.1.0 (git+https://github.com/LiGoldragon/signal-persona-origin.git)",
- "signal-sema",
-]
-
-[[package]]
-name = "signal-persona-origin"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-persona-origin.git?branch=main#837a6c6d2bac56974dbd13c47496a2d0d93b701d"
-dependencies = [
- "nota-codec",
- "rkyv",
-]
-
-[[package]]
-name = "signal-persona-origin"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-persona-origin.git#837a6c6d2bac56974dbd13c47496a2d0d93b701d"
-dependencies = [
- "nota-codec",
- "rkyv",
-]
-
-[[package]]
-name = "signal-sema"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-sema.git?branch=main#c132e9a06431617055bad2a9bae7bbecdeacd4b0"
-dependencies = [
- "nota-codec",
- "rkyv",
+ "signal-persona-origin",
  "thiserror",
+]
+
+[[package]]
+name = "signal-persona-origin"
+version = "0.1.0"
+source = "git+https://github.com/LiGoldragon/signal-persona-origin.git?branch=main#da2bee2e1a178f24a62d1eb5d3985e3937a79b5b"
+dependencies = [
+ "nota-next",
+ "rkyv",
 ]
 
 [[package]]
@@ -623,6 +653,16 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "socket2"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
 
 [[package]]
 name = "syn"
@@ -684,13 +724,73 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
-name = "triad-runtime"
-version = "0.2.1"
-source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=main#7c2529008d750f05bd18e7f3a90cc9ab7d41270e"
+name = "tokio"
+version = "1.52.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
 dependencies = [
+ "bytes",
+ "libc",
+ "mio",
+ "pin-project-lite",
+ "socket2",
+ "tokio-macros",
+ "tracing",
+ "windows-sys",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "tracing"
+version = "0.1.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
+dependencies = [
+ "pin-project-lite",
+ "tracing-attributes",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-attributes"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "tracing-core"
+version = "0.1.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
+dependencies = [
+ "once_cell",
+]
+
+[[package]]
+name = "triad-runtime"
+version = "0.4.0"
+source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=main#26b090b0d8143986e65c70e1966f1a512e003220"
+dependencies = [
+ "kameo",
  "rustix",
  "signal-frame",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -714,6 +814,12 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "wasi"
+version = "0.11.1+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"

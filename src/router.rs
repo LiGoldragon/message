@@ -3,6 +3,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use signal_engine_management::TimestampNanos;
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply as SignalReply,
     Request as SignalRequest, SessionEpoch, SubReply,
@@ -12,7 +13,6 @@ use signal_message::{
     MessageRecipient, MessageReply, MessageRequest, MessageSubmission as WireMessageSubmission,
     StampedMessageSubmission as WireStampedMessageSubmission,
 };
-use signal_persona::TimestampNanos;
 use signal_persona_origin::{
     ComponentInstanceName, ComponentName, ConnectionClass, InternalComponentInstanceOrigin,
     MessageOrigin, OwnerIdentity, UnixUserIdentifier,

@@ -16,11 +16,11 @@ This repo is in supervised ingress phase. Keep the implementation narrow:
 
 - A `message` binary that decodes one NOTA input record.
 - A `message-daemon` binary that binds `message.sock`, accepts
-  length-prefixed `signal-message` frames, and forwards them to
-  `router` over the internal router socket.
-- The CLI uses `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH`; the daemon
-  uses `MESSAGE_ROUTER_SOCKET` or the router peer socket from the
-  spawn envelope.
+  length-prefixed schema-derived Signal frames, stamps them, and forwards
+  `signal-message` frames to `router` over the internal router socket.
+- The CLI uses `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH`; the daemon reads a
+  binary rkyv `Configuration` from its single argv argument and uses the
+  configured router socket path.
 - The component must not append to a local ledger or write actor registration
   state.
 - The component must not construct in-band proof material or read a local actor
