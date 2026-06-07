@@ -166,7 +166,7 @@ This repo does not own:
 - The router socket is mandatory for the daemon.
 - The daemon is single-listener: the emitted spine binds one working
   `message.sock` from the `NexusDaemonShape` in `build.rs`. Message has no
-  owner-only meta tier.
+  meta tier.
 - The daemon uses the emitted `triad-runtime` `SingleListenerDaemon` spine
   (the `ComponentDaemon` / `DaemonBinder` default methods in
   `src/schema/daemon.rs`) for ingress instead of owning a hand-written accept

@@ -17,7 +17,7 @@ This repo is in supervised ingress phase. Keep the implementation narrow:
 - A `message` binary that decodes one NOTA input record.
 - A `message-daemon` binary that binds `message.sock`, accepts
   length-prefixed `signal-message` frames, and forwards them to
-  `persona-router` over the internal router socket.
+  `router` over the internal router socket.
 - The CLI uses `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH`; the daemon
   uses `MESSAGE_ROUTER_SOCKET` or the router peer socket from the
   spawn envelope.

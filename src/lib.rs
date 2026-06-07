@@ -14,8 +14,6 @@
 //! hand-writes is `impl ComponentDaemon for MessageDaemon` in `daemon.rs`; the
 //! daemon skeleton itself is emitted into `schema/daemon.rs`.
 
-extern crate self as message;
-
 pub mod client;
 pub mod command;
 pub mod config;

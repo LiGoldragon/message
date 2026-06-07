@@ -5,15 +5,15 @@ pub type Integer = u64;
 pub type Boolean = bool;
 pub type Path = std::string::String;
 
-pub use message::schema::signal::Input as SignalInput;
-pub use message::schema::signal::Output as SignalOutput;
-pub use message::schema::signal::MessageSubmission as MessageSubmission;
-pub use message::schema::signal::StampedMessageSubmission as StampedMessageSubmission;
-pub use message::schema::signal::InboxQuery as InboxQuery;
-pub use message::schema::signal::Output as MessageReply;
-pub use message::schema::signal::OperationKind as OperationKind;
-pub use message::schema::signal::UnimplementedReason as UnimplementedReason;
-pub use message::schema::signal::ErrorReport as ErrorReport;
+pub use crate::schema::signal::Input as SignalInput;
+pub use crate::schema::signal::Output as SignalOutput;
+pub use crate::schema::signal::MessageSubmission as MessageSubmission;
+pub use crate::schema::signal::StampedMessageSubmission as StampedMessageSubmission;
+pub use crate::schema::signal::InboxQuery as InboxQuery;
+pub use crate::schema::signal::Output as MessageReply;
+pub use crate::schema::signal::OperationKind as OperationKind;
+pub use crate::schema::signal::UnimplementedReason as UnimplementedReason;
+pub use crate::schema::signal::ErrorReport as ErrorReport;
 
 #[cfg(feature = "nota-text")]
 pub use nota_next::{NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
