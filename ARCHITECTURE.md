@@ -21,7 +21,7 @@ component.*
   single argv argument (socket path, router socket path, database
   path, owner name, owner uid), binds `message.sock`, decodes schema-derived
   signal frames, runs the Nexus forward decision, and forwards the
-  translated request to `persona-router`'s internal socket
+  translated request to `router`'s internal socket
   (`router.sock`) over the `signal-message` wire as a
   `StampedMessageSubmission`.
 
@@ -40,14 +40,14 @@ This repo owns the engine's message-ingress boundary: a
 small supervised daemon plus a CLI client. Neither carries
 a durable message ledger; both are stateless boundary
 surfaces. Routing policy, delivery state, and channel
-authority remain in `persona-router`.
+authority remain in `router`.
 
 ```mermaid
 flowchart LR
     "human or harness" -->|"one NOTA Send or Inbox"| "message CLI"
     "message CLI" -->|"length-prefixed schema signal frame"| "message"
-    "message" -->|"StampedMessageSubmission"| "persona-router"
-    "persona-router" -->|"length-prefixed reply frame"| "message"
+    "message" -->|"StampedMessageSubmission"| "router"
+    "router" -->|"length-prefixed reply frame"| "message"
     "message" -->|"length-prefixed reply frame"| "message CLI"
     "message CLI" -->|"one NOTA reply"| "human or harness"
 ```
@@ -75,7 +75,7 @@ flowchart LR
     "message.sock" --> "Signal (Input/Output)"
     "Signal (Input/Output)" --> "Nexus decide"
     "Nexus decide" -->|"ForwardToRouter effect"| "RouterForwarder"
-    "RouterForwarder" -->|"signal-message wire"| "persona-router"
+    "RouterForwarder" -->|"signal-message wire"| "router"
     "Nexus decide" -->|"ReplyToSignal"| "Signal (Input/Output)"
     "SEMA (Stateless)" -.->|"no durable state"| "Nexus decide"
 ```
@@ -248,5 +248,5 @@ tests/forward_to_router.rs     Nexus forward effect against a stub router
 ## See Also
 
 - `../signal-message/ARCHITECTURE.md`
-- `../persona-router/ARCHITECTURE.md`
+- `../router/ARCHITECTURE.md`
 - `../signal-persona/ARCHITECTURE.md`
