@@ -8,8 +8,8 @@ pub enum Error {
     #[error("nota: {0}")]
     Nota(#[from] nota_codec::Error),
 
-    #[error("legacy signal frame: {0}")]
-    SignalFrame(#[from] signal_core::FrameError),
+    #[error("signal frame: {0}")]
+    SignalFrame(#[from] signal_frame::FrameError),
 
     #[error("triad frame: {0}")]
     TriadFrame(#[from] triad_runtime::FrameError),
@@ -43,11 +43,6 @@ pub enum Error {
 
     #[error("daemon input was not a request frame: {got}")]
     UnexpectedDaemonInput { got: String },
-
-    #[error("daemon input failed Signal request checks: {reason}")]
-    InvalidSignalRequest {
-        reason: signal_core::RequestRejectionReason,
-    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

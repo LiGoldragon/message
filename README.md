@@ -5,8 +5,8 @@
 `message-daemon`), the supervised first-stack component.
 
 The `message` binary accepts exactly one NOTA input record, validates it
-through Rust types, sends one length-prefixed `signal-message` frame
-to `message` on the engine's user-writable socket
+through Rust types, sends one length-prefixed schema-derived signal frame to
+`message` on the engine's user-writable socket
 (`message.sock`, mode 0660), reads one typed reply frame, and prints one
 NOTA reply.
 

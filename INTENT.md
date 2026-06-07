@@ -38,9 +38,9 @@ variables on the production path, no flags.
 
 ## Wire translation to router
 
-The daemon's inbound socket (`message.sock`) speaks the schema-derived
+The CLI and daemon inbound socket (`message.sock`) speak the schema-derived
 signal-frame format the emitted spine decodes. The router still speaks the
-hand-written `signal-message` `MessageChannel` wire, so `RouterForwarder`
+hand-written `signal-message` contract wire, so `RouterForwarder`
 (`src/router.rs`) is the translation seam: schema `ForwardRequest` → wire
 `MessageRequest` → router call → wire `MessageReply` → schema `Output`.
 Provenance (origin + ingress timestamp) is minted in the forwarder from the
@@ -49,10 +49,3 @@ accepted connection's kernel-vouched peer credentials (`ConnectionContext` /
 owner uid stamps the configured `owner_name` as this daemon's local harness
 component instance; any other peer uid is `NonOwnerUser(uid)`. Provenance is
 never accepted from the caller payload.
-
-## Residuals (carried, not yet resolved)
-
-- **CLI wire format.** The `message` CLI (`src/command.rs`, `src/surface.rs`)
-  still encodes the old `signal-message` `MessageChannel` frames, not the
-  schema-derived signal frames the migrated daemon now decodes. The CLI must be
-  migrated to the new wire before the CLI↔daemon path works end to end.

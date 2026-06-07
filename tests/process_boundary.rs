@@ -127,7 +127,6 @@ impl StubRouter {
                 .expect("decode router request");
             let reply = codec.reply_frame(
                 received.exchange,
-                received.verb,
                 MessageReply::SubmissionAccepted(SubmissionAcceptance {
                     message_slot: MessageSlot::new(7),
                 }),
@@ -208,7 +207,7 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
 
     let forwarded = router_thread.join().expect("router thread");
     match forwarded {
-        MessageRequest::StampedMessageSubmission(stamped) => {
+        MessageRequest::SubmitStamped(stamped) => {
             assert_eq!(stamped.submission.recipient.as_str(), "designer");
             assert_eq!(stamped.submission.body.as_str(), "hello from cli");
             assert_eq!(

@@ -3,9 +3,9 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use signal_core::{
-    ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply as SignalReply, Request,
-    SessionEpoch, SignalVerb, SubReply,
+use signal_frame::{
+    ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply as SignalReply,
+    Request as SignalRequest, SessionEpoch, SubReply,
 };
 use signal_message::{
     Frame, FrameBody, InboxQuery as WireInboxQuery, MessageBody, MessageKind as WireMessageKind,
@@ -117,30 +117,23 @@ impl SignalRouterFrameCodec {
     ) -> Frame {
         Frame::new(FrameBody::Request {
             exchange,
-            request: Request::from_payload(request),
+            request: SignalRequest::from_payload(request),
         })
     }
 
     pub fn request_from_frame(&self, frame: Frame) -> Result<ReceivedMessageRequest> {
         match frame.into_body() {
             FrameBody::Request { exchange, request } => {
-                let checked = request
-                    .into_checked()
-                    .map_err(|(reason, _)| Error::InvalidSignalRequest { reason })?;
-                let (operation, tail) = checked.operations.into_head_and_tail();
+                let (request, tail) = request.payloads.into_head_and_tail();
                 if !tail.is_empty() {
                     return Err(Error::UnexpectedDaemonInput {
                         got: format!(
-                            "expected one message operation, got {}",
+                            "expected one message payload, got {}",
                             tail.len().saturating_add(1)
                         ),
                     });
                 }
-                Ok(ReceivedMessageRequest {
-                    exchange,
-                    verb: operation.verb,
-                    request: operation.payload,
-                })
+                Ok(ReceivedMessageRequest { exchange, request })
             }
             other => Err(Error::UnexpectedDaemonInput {
                 got: format!("{other:?}"),
@@ -148,18 +141,10 @@ impl SignalRouterFrameCodec {
         }
     }
 
-    pub fn reply_frame(
-        &self,
-        exchange: ExchangeIdentifier,
-        verb: SignalVerb,
-        reply: MessageReply,
-    ) -> Frame {
+    pub fn reply_frame(&self, exchange: ExchangeIdentifier, reply: MessageReply) -> Frame {
         Frame::new(FrameBody::Reply {
             exchange,
-            reply: SignalReply::completed(NonEmpty::single(SubReply::Ok {
-                verb,
-                payload: reply,
-            })),
+            reply: SignalReply::committed(NonEmpty::single(SubReply::Ok(reply))),
         })
     }
 
@@ -204,7 +189,7 @@ impl SignalRouterFrameCodec {
                     });
                 }
                 match sub_reply {
-                    SubReply::Ok { payload, .. } => Ok(payload),
+                    SubReply::Ok(payload) => Ok(payload),
                     other => Err(Error::UnexpectedRouterReply {
                         got: format!("{other:?}"),
                     }),
@@ -226,7 +211,6 @@ impl Default for SignalRouterFrameCodec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedMessageRequest {
     pub exchange: ExchangeIdentifier,
-    pub verb: SignalVerb,
     pub request: MessageRequest,
 }
 
@@ -289,7 +273,7 @@ impl OriginPolicy {
 ///
 /// The daemon's INBOUND socket (`message.sock`) now speaks the schema-derived
 /// signal-frame format the emitted daemon decodes. The router still speaks the
-/// hand-written `signal-message` `MessageChannel` wire, so this forwarder is the
+/// hand-written `signal-message` contract wire, so this forwarder is the
 /// translation seam: schema `ForwardRequest` -> wire `MessageRequest` -> router
 /// call -> wire `MessageReply` -> schema `Output`. Provenance (origin + ingress
 /// timestamp) is minted here: the origin is derived from the accepted
@@ -349,10 +333,10 @@ impl RouterForwarder {
     ) -> MessageRequest {
         match request {
             ForwardRequest::StampAndForward(submission) => {
-                MessageRequest::StampedMessageSubmission(self.stamp(submission, connection))
+                MessageRequest::SubmitStamped(self.stamp(submission, connection))
             }
             ForwardRequest::ForwardInboxQuery(query) => {
-                MessageRequest::InboxQuery(WireInboxQuery {
+                MessageRequest::QueryInbox(WireInboxQuery {
                     recipient: MessageRecipient::new(query.into_payload()),
                 })
             }

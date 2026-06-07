@@ -9,7 +9,7 @@ component.*
 
 - The `message` CLI — one NOTA in, one NOTA out. Validates a
   user-typed NOTA record through Rust types, projects to a
-  `signal-message` frame, sends it to `message`
+  schema-derived signal frame, sends it to `message`
   on the engine's user-writable socket (`message.sock`, mode
   0660), reads one reply frame, prints the NOTA reply.
 - The `message` daemon (binary file: `message-daemon`) — a
@@ -34,8 +34,6 @@ binary is `message-daemon`.
 > message is a realization step. See `~/primary/ESSENCE.md` §"Today and
 > eventually".
 
----
-
 ## 0 · TL;DR
 
 This repo owns the engine's message-ingress boundary: a
@@ -47,7 +45,7 @@ authority remain in `persona-router`.
 ```mermaid
 flowchart LR
     "human or harness" -->|"one NOTA Send or Inbox"| "message CLI"
-    "message CLI" -->|"length-prefixed signal-message frame"| "message"
+    "message CLI" -->|"length-prefixed schema signal frame"| "message"
     "message" -->|"StampedMessageSubmission"| "persona-router"
     "persona-router" -->|"length-prefixed reply frame"| "message"
     "message" -->|"length-prefixed reply frame"| "message CLI"
@@ -61,7 +59,7 @@ flowchart LR
 - a `message` binary;
 - a `message-daemon` binary;
 - NOTA `Send` and `Inbox` input records;
-- one length-prefixed `signal-message` request frame per CLI invocation;
+- one length-prefixed schema signal request frame per CLI invocation;
 - one daemon-bound `message.sock` for owner ingress;
 - one router client path to internal `router.sock`;
 - one NOTA reply projection per invocation;
@@ -182,8 +180,9 @@ This repo does not own:
 - The current message ingress path is deliberately one operation per request.
   Multi-operation request execution belongs in the shared Signal runtime slice,
   not in this component's ad hoc codec.
-- A mismatched outer Signal verb and request payload is rejected as typed
-  `RequestRejectionReason`, not by string parsing.
+- Multi-payload router requests are rejected as typed `UnexpectedDaemonInput`
+  until shared Signal batching exists; there is no outer Signal verb on the
+  new frame kernel.
 - Sender identity is absent from the CLI payload and absent from frame auth.
 - Provenance is typed in `StampedMessageSubmission`; the daemon mints it in
   `RouterForwarder::stamp` from `ConnectionContext` (`SO_PEERCRED`) and daemon
@@ -225,7 +224,7 @@ src/daemon.rs                  impl ComponentDaemon for MessageDaemon (the only 
 src/engine.rs                  MessageEngine + request-scoped generated Nexus runner hooks
 src/command.rs                 CLI NOTA input/output projection
 src/output_validator.rs        structured validator for sandbox message artifacts
-src/router.rs                  RouterForwarder + signal-message frame clients/codec
+src/router.rs                  RouterForwarder + signal-message contract client/codec
 src/surface.rs                 message-local NOTA surface records
 src/error.rs                   crate error enum
 tests/process_boundary.rs      emitted daemon over a real socket
