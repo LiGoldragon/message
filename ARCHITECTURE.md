@@ -29,11 +29,6 @@ There is no `MessageProxy` component here. The supervised
 first-stack component is named `message`; the long-lived
 binary is `message-daemon`.
 
-> **Scope.** Any "sema" reference in this doc means today's `sema`
-> library (rename pending → `sema-db`). The eventual `Sema` is broader; today's
-> message is a realization step. See `~/primary/ESSENCE.md` §"Today and
-> eventually".
-
 ## 0 · TL;DR
 
 This repo owns the engine's message-ingress boundary: a
