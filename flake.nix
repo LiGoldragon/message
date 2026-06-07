@@ -59,6 +59,11 @@
               commonArgs
               // {
                 inherit cargoArtifacts;
+                nativeBuildInputs = [ pkgs.ripgrep ];
+                preCheck = ''
+                  rg --fixed-strings ${pkgs.lib.escapeShellArg "fn ${testName}("} \
+                    tests/${testFile}.rs
+                '';
                 cargoTestExtraArgs = "--test ${testFile} ${testName} -- --exact";
               }
             );
@@ -147,7 +152,7 @@
           # acceptance is translated back into the Signal output.
           message-daemon-stamps-owner-submission-to-router =
             context.cargoTestFile "forward_to_router"
-              "submit_is_stamped_with_owner_origin_when_the_peer_uid_matches_the_owner";
+              "submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_the_owner";
           # A non-owner peer is stamped from SO_PEERCRED as NonOwnerUser(uid),
           # proving the request-scoped generated-runner hook still sees the
           # connection context.
