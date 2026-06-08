@@ -12,7 +12,7 @@
 //! setup.
 
 use thiserror::Error;
-use triad_runtime::FrameError;
+use triad_runtime::{EngineRequestError, FrameError};
 
 use crate::{
     config::{Configuration, ConfigurationError},
@@ -34,7 +34,10 @@ pub struct MessageDaemon;
 /// Message's daemon error: the engine-facing variants the emitted spine needs
 /// (`From<FrameError>` / `From<SignalFrameError>`) plus message's domain error.
 /// The emitted `DaemonError<MessageDaemon>` wraps this under its `Component`
-/// arm.
+/// arm. The `EngineRequest` arm absorbs the engine-actor mailbox-failure path
+/// the emitted runtime translates through `From<EngineRequestError>` (actor not
+/// running, stopped before replying, mailbox full, request timed out, or a
+/// startup panic).
 #[derive(Debug, Error)]
 pub enum MessageDaemonError {
     #[error("daemon frame error: {0}")]
@@ -42,6 +45,9 @@ pub enum MessageDaemonError {
 
     #[error("daemon signal frame error: {0}")]
     SignalFrame(#[from] SignalFrameError),
+
+    #[error("daemon engine actor error: {0}")]
+    EngineRequest(#[from] EngineRequestError),
 
     #[error("daemon component error: {0}")]
     Component(#[from] MessageError),
@@ -66,7 +72,7 @@ impl ComponentDaemon for MessageDaemon {
     }
 
     async fn handle_working_input(
-        engine: &Self::Engine,
+        engine: &mut Self::Engine,
         input: Input,
         connection: &triad_runtime::ConnectionContext,
     ) -> Result<Output, Self::Error> {
