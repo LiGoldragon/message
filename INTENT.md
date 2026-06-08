@@ -39,10 +39,11 @@ variables on the production path, no flags.
 ## Wire translation to router
 
 The CLI and daemon inbound socket (`message.sock`) speak the schema-derived
-signal-frame format the emitted spine decodes. The router still speaks the
-hand-written `signal-message` contract wire, so `RouterForwarder`
-(`src/router.rs`) is the translation seam: schema `ForwardRequest` → wire
-`MessageRequest` → router call → wire `MessageReply` → schema `Output`.
+signal-frame format the emitted spine decodes. Router ingress speaks the
+published schema-derived `signal-message` contract, so `RouterForwarder`
+(`src/router.rs`) is the translation seam: daemon-local schema
+`ForwardRequest` → `signal_message::Input` → router call →
+`signal_message::Output` → daemon-local schema `Output`.
 Provenance (origin + ingress timestamp) is minted in the forwarder from the
 accepted connection's kernel-vouched peer credentials (`ConnectionContext` /
 `SO_PEERCRED`) plus daemon configuration. A peer uid matching the configured

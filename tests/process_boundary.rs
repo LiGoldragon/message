@@ -34,10 +34,11 @@ use message::{
         StampedMessageSubmission,
     },
 };
-use signal_message::{MessageReply, MessageRequest, MessageSlot, SubmissionAcceptance};
-use signal_persona_origin::{
-    ComponentInstanceName, ComponentName, InternalComponentInstanceOrigin,
-    MessageOrigin as RouterMessageOrigin,
+use signal_message::{
+    ComponentInstanceName as RouterComponentInstanceName, ComponentName as RouterComponentName,
+    Input as SignalMessageInput, InternalComponentInstanceOrigin as RouterInstanceOrigin,
+    MessageOrigin as RouterMessageOrigin, MessageSlot, Output as SignalMessageOutput,
+    SubmissionAcceptance,
 };
 use tempfile::TempDir;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
@@ -115,7 +116,7 @@ impl StubRouter {
         }
     }
 
-    fn serve_one_acceptance(self) -> thread::JoinHandle<MessageRequest> {
+    fn serve_one_acceptance(self) -> thread::JoinHandle<SignalMessageInput> {
         thread::spawn(move || {
             let codec = SignalRouterFrameCodec::default();
             let (mut stream, _address) = self.listener.accept().expect("accept router connection");
@@ -127,9 +128,9 @@ impl StubRouter {
                 .expect("decode router request");
             let reply = codec.reply_frame(
                 received.exchange,
-                MessageReply::SubmissionAccepted(SubmissionAcceptance {
-                    message_slot: MessageSlot::new(7),
-                }),
+                SignalMessageOutput::SubmissionAccepted(SubmissionAcceptance::new(
+                    MessageSlot::new(7),
+                )),
             );
             codec
                 .write_frame(&mut stream, &reply)
@@ -207,17 +208,15 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
 
     let forwarded = router_thread.join().expect("router thread");
     match forwarded {
-        MessageRequest::SubmitStamped(stamped) => {
+        SignalMessageInput::SubmitStamped(stamped) => {
             assert_eq!(stamped.submission.recipient.as_str(), "designer");
             assert_eq!(stamped.submission.body.as_str(), "hello from cli");
             assert_eq!(
                 stamped.origin,
-                RouterMessageOrigin::InternalComponentInstance(
-                    InternalComponentInstanceOrigin::new(
-                        ComponentName::Harness,
-                        ComponentInstanceName::new("owner"),
-                    )
-                )
+                RouterMessageOrigin::InternalComponentInstance(RouterInstanceOrigin {
+                    component: RouterComponentName::Harness,
+                    instance: RouterComponentInstanceName::new("owner".to_owned()),
+                })
             );
         }
         other => panic!("expected daemon to stamp CLI submission before forwarding, got {other:?}"),

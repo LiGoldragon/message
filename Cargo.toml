@@ -1,8 +1,8 @@
 [package]
 name         = "message"
-version      = "0.2.1"
+version      = "0.3.0"
 edition      = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/message"
 description  = "Persona NOTA message CLI and supervised message ingress daemon."
@@ -30,9 +30,7 @@ nota-text = []
 [dependencies]
 nota-next       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-signal-engine-management = { git = "https://github.com/LiGoldragon/signal-engine-management.git", branch = "main" }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
-signal-persona-origin = { git = "https://github.com/LiGoldragon/signal-persona-origin.git", branch = "main" }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", branch = "main" }
 thiserror       = "2"
 tokio           = { version = "1", features = ["io-util", "rt-multi-thread"] }

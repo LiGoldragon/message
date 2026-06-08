@@ -312,16 +312,14 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "nota-next",
  "rkyv",
  "rustix",
  "schema-rust-next",
- "signal-engine-management",
  "signal-frame",
  "signal-message",
- "signal-persona-origin",
  "tempfile",
  "thiserror",
  "tokio",
@@ -529,7 +527,7 @@ dependencies = [
 [[package]]
 name = "schema-rust-next"
 version = "0.5.1"
-source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#aa4b80e1509f2ba6d344f8ead523b32675b21f21"
+source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#0a845c374a2fa04e4040517ffac312d90441c486"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -589,21 +587,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "signal-engine-management"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-engine-management.git?branch=main#305b7031668fed76c43af0d28cf70b94c933089d"
-dependencies = [
- "nota-next",
- "rkyv",
- "signal-frame",
- "signal-persona-origin",
-]
-
-[[package]]
 name = "signal-frame"
 version = "0.2.1"
 source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#166bda84dc63bf8461fff11a41c43d6a1c92a941"
 dependencies = [
+ "nota-next",
  "paste",
  "rkyv",
  "signal-frame-macros",
@@ -622,24 +610,14 @@ dependencies = [
 
 [[package]]
 name = "signal-message"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#f84ec07b7339dc155170efbcbbfe49e974ff4f76"
+version = "0.2.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#6a29eb1999f35a1f0d0c60ebe2cade3a5eee2d59"
 dependencies = [
  "nota-next",
  "rkyv",
- "signal-engine-management",
+ "schema-rust-next",
  "signal-frame",
- "signal-persona-origin",
  "thiserror",
-]
-
-[[package]]
-name = "signal-persona-origin"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-persona-origin.git?branch=main#da2bee2e1a178f24a62d1eb5d3985e3937a79b5b"
-dependencies = [
- "nota-next",
- "rkyv",
 ]
 
 [[package]]

@@ -3,19 +3,17 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use signal_engine_management::TimestampNanos;
 use signal_frame::{
     ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply as SignalReply,
     Request as SignalRequest, SessionEpoch, SubReply,
 };
 use signal_message::{
-    Frame, FrameBody, InboxQuery as WireInboxQuery, MessageBody, MessageKind as WireMessageKind,
-    MessageRecipient, MessageReply, MessageRequest, MessageSubmission as WireMessageSubmission,
-    StampedMessageSubmission as WireStampedMessageSubmission,
-};
-use signal_persona_origin::{
-    ComponentInstanceName, ComponentName, ConnectionClass, InternalComponentInstanceOrigin,
-    MessageOrigin, OwnerIdentity, UnixUserIdentifier,
+    ComponentInstanceName, ComponentName, ConnectionClass, Frame, FrameBody,
+    InboxEntry as WireInboxEntry, InboxQuery as WireInboxQuery, Input as SignalMessageInput,
+    InternalComponentInstanceOrigin, MessageBody, MessageKind as WireMessageKind, MessageOrigin,
+    MessageRecipient, MessageSubmission as WireMessageSubmission, Output as SignalMessageOutput,
+    OwnerIdentity, StampedMessageSubmission as WireStampedMessageSubmission,
+    SubmissionRejectionReason as WireSubmissionRejectionReason, TimestampNanos, UnixUserIdentifier,
 };
 use triad_runtime::ConnectionContext;
 
@@ -55,7 +53,7 @@ impl SignalRouterClient {
         }
     }
 
-    pub fn submit(&self, request: MessageRequest) -> Result<MessageReply> {
+    pub fn submit(&self, request: SignalMessageInput) -> Result<SignalMessageOutput> {
         let mut stream = UnixStream::connect(&self.socket.path)?;
         let exchange = self.codec.connector_exchange();
         let frame = self.codec.request_frame_with_exchange(exchange, request);
@@ -106,14 +104,14 @@ impl SignalRouterFrameCodec {
         )
     }
 
-    pub fn request_frame(&self, request: MessageRequest) -> Frame {
+    pub fn request_frame(&self, request: SignalMessageInput) -> Frame {
         self.request_frame_with_exchange(self.connector_exchange(), request)
     }
 
     pub fn request_frame_with_exchange(
         &self,
         exchange: ExchangeIdentifier,
-        request: MessageRequest,
+        request: SignalMessageInput,
     ) -> Frame {
         Frame::new(FrameBody::Request {
             exchange,
@@ -121,7 +119,7 @@ impl SignalRouterFrameCodec {
         })
     }
 
-    pub fn request_from_frame(&self, frame: Frame) -> Result<ReceivedMessageRequest> {
+    pub fn request_from_frame(&self, frame: Frame) -> Result<ReceivedSignalMessageInput> {
         match frame.into_body() {
             FrameBody::Request { exchange, request } => {
                 let (request, tail) = request.payloads.into_head_and_tail();
@@ -133,7 +131,7 @@ impl SignalRouterFrameCodec {
                         ),
                     });
                 }
-                Ok(ReceivedMessageRequest { exchange, request })
+                Ok(ReceivedSignalMessageInput { exchange, request })
             }
             other => Err(Error::UnexpectedDaemonInput {
                 got: format!("{other:?}"),
@@ -141,14 +139,14 @@ impl SignalRouterFrameCodec {
         }
     }
 
-    pub fn reply_frame(&self, exchange: ExchangeIdentifier, reply: MessageReply) -> Frame {
+    pub fn reply_frame(&self, exchange: ExchangeIdentifier, reply: SignalMessageOutput) -> Frame {
         Frame::new(FrameBody::Reply {
             exchange,
             reply: SignalReply::committed(NonEmpty::single(SubReply::Ok(reply))),
         })
     }
 
-    pub fn reply_from_frame(&self, frame: Frame) -> Result<MessageReply> {
+    pub fn reply_from_frame(&self, frame: Frame) -> Result<SignalMessageOutput> {
         self.reply_from_frame_without_exchange_check(frame)
     }
 
@@ -156,7 +154,7 @@ impl SignalRouterFrameCodec {
         &self,
         frame: Frame,
         expected: ExchangeIdentifier,
-    ) -> Result<MessageReply> {
+    ) -> Result<SignalMessageOutput> {
         match frame.into_body() {
             FrameBody::Reply { exchange, reply } if exchange == expected => {
                 self.payload_from_reply(reply)
@@ -170,7 +168,7 @@ impl SignalRouterFrameCodec {
         }
     }
 
-    fn reply_from_frame_without_exchange_check(&self, frame: Frame) -> Result<MessageReply> {
+    fn reply_from_frame_without_exchange_check(&self, frame: Frame) -> Result<SignalMessageOutput> {
         match frame.into_body() {
             FrameBody::Reply { reply, .. } => self.payload_from_reply(reply),
             other => Err(Error::UnexpectedRouterReply {
@@ -179,7 +177,10 @@ impl SignalRouterFrameCodec {
         }
     }
 
-    fn payload_from_reply(&self, reply: SignalReply<MessageReply>) -> Result<MessageReply> {
+    fn payload_from_reply(
+        &self,
+        reply: SignalReply<SignalMessageOutput>,
+    ) -> Result<SignalMessageOutput> {
         match reply {
             SignalReply::Accepted { per_operation, .. } => {
                 let (sub_reply, tail) = per_operation.into_head_and_tail();
@@ -209,9 +210,9 @@ impl Default for SignalRouterFrameCodec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReceivedMessageRequest {
+pub struct ReceivedSignalMessageInput {
     pub exchange: ExchangeIdentifier,
-    pub request: MessageRequest,
+    pub request: SignalMessageInput,
 }
 
 /// The owner-identity policy that mints a connection's provenance origin from
@@ -241,8 +242,8 @@ impl OriginPolicy {
     /// The owner policy for a local Unix user owner identified by uid.
     pub fn for_owner_user_id(owner_user_id: u32, local_instance: impl Into<String>) -> Self {
         Self::new(
-            OwnerIdentity::UnixUser(UnixUserIdentifier::new(owner_user_id)),
-            ComponentInstanceName::new(local_instance),
+            OwnerIdentity::UnixUser(UnixUserIdentifier::new(u64::from(owner_user_id))),
+            ComponentInstanceName::new(local_instance.into()),
         )
     }
 
@@ -255,13 +256,13 @@ impl OriginPolicy {
     /// trust boundary while preserving the component-instance identity router
     /// grants need.
     pub fn origin_for_connection(&self, connection: &ConnectionContext) -> MessageOrigin {
-        let peer_user_id = UnixUserIdentifier::new(connection.user_id());
+        let peer_user_id = UnixUserIdentifier::new(u64::from(connection.user_id()));
         match &self.owner_identity {
             OwnerIdentity::UnixUser(owner_user_id) if peer_user_id == *owner_user_id => {
-                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin::new(
-                    ComponentName::Harness,
-                    self.local_instance.clone(),
-                ))
+                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {
+                    component: ComponentName::Harness,
+                    instance: self.local_instance.clone(),
+                })
             }
             _ => MessageOrigin::External(ConnectionClass::NonOwnerUser(peer_user_id)),
         }
@@ -269,17 +270,18 @@ impl OriginPolicy {
 }
 
 /// The outbound half of the message daemon: the schema `ForwardToRouter` effect
-/// realized over the `signal-message` wire.
+/// realized over the generated `signal-message` wire.
 ///
-/// The daemon's INBOUND socket (`message.sock`) now speaks the schema-derived
-/// signal-frame format the emitted daemon decodes. The router still speaks the
-/// hand-written `signal-message` contract wire, so this forwarder is the
-/// translation seam: schema `ForwardRequest` -> wire `MessageRequest` -> router
-/// call -> wire `MessageReply` -> schema `Output`. Provenance (origin + ingress
-/// timestamp) is minted here: the origin is derived from the accepted
-/// connection's peer credentials through [`OriginPolicy`] (threaded in from the
-/// emitted working-input hook), and the ingress timestamp is daemon-stamped.
-/// Provenance is never accepted from the caller payload.
+/// The daemon's inbound socket (`message.sock`) speaks the daemon-local schema
+/// signal-frame format. The router ingress socket speaks the published
+/// `signal-message` contract, now generated from `signal-message/schema/lib.schema`.
+/// This forwarder is the projection seam from daemon-local `ForwardRequest`
+/// values into `signal_message::Input` values and back from
+/// `signal_message::Output` into daemon-local `Output`. Provenance is minted
+/// here: the origin is derived from the accepted connection's peer credentials
+/// through [`OriginPolicy`] (threaded in from the emitted working-input hook),
+/// and the ingress timestamp is daemon-stamped. Provenance is never accepted
+/// from the caller payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouterForwarder {
     client: SignalRouterClient,
@@ -330,16 +332,14 @@ impl RouterForwarder {
         &self,
         request: ForwardRequest,
         connection: &ConnectionContext,
-    ) -> MessageRequest {
+    ) -> SignalMessageInput {
         match request {
             ForwardRequest::StampAndForward(submission) => {
-                MessageRequest::SubmitStamped(self.stamp(submission, connection))
+                SignalMessageInput::SubmitStamped(self.stamp(submission, connection))
             }
-            ForwardRequest::ForwardInboxQuery(query) => {
-                MessageRequest::QueryInbox(WireInboxQuery {
-                    recipient: MessageRecipient::new(query.into_payload()),
-                })
-            }
+            ForwardRequest::ForwardInboxQuery(query) => SignalMessageInput::QueryInbox(
+                WireInboxQuery::new(MessageRecipient::new(query.into_payload())),
+            ),
         }
     }
 
@@ -383,22 +383,22 @@ impl RouterForwarder {
 
     /// Translate a `signal-message` reply back into the daemon-local schema
     /// `Output` the emitted Signal plane replies with.
-    fn schema_output(reply: MessageReply) -> Output {
+    fn schema_output(reply: SignalMessageOutput) -> Output {
         match reply {
-            MessageReply::SubmissionAccepted(acceptance) => Output::SubmissionAccepted(
-                SubmissionAcceptance(acceptance.message_slot.into_u64() as MessageSlot),
+            SignalMessageOutput::SubmissionAccepted(acceptance) => Output::SubmissionAccepted(
+                SubmissionAcceptance(acceptance.into_payload().into_u64() as MessageSlot),
             ),
-            MessageReply::SubmissionRejected(rejection) => Output::SubmissionRejected(
-                SubmissionRejection(Self::schema_rejection_reason(rejection.reason)),
+            SignalMessageOutput::SubmissionRejected(rejection) => Output::SubmissionRejected(
+                SubmissionRejection(Self::schema_rejection_reason(rejection.into_payload())),
             ),
-            MessageReply::InboxListing(listing) => Output::InboxListing(InboxContents(
+            SignalMessageOutput::InboxListing(listing) => Output::InboxListing(InboxContents(
                 listing
-                    .messages
+                    .into_payload()
                     .into_iter()
                     .map(Self::schema_inbox_entry)
                     .collect(),
             )),
-            MessageReply::MessageRequestUnimplemented(unimplemented) => {
+            SignalMessageOutput::MessageRequestUnimplemented(unimplemented) => {
                 Output::Error(crate::schema::signal::ErrorReport(format!(
                     "router rejected operation {:?}: {:?}",
                     unimplemented.operation, unimplemented.reason
@@ -407,7 +407,7 @@ impl RouterForwarder {
         }
     }
 
-    fn schema_inbox_entry(entry: signal_message::InboxEntry) -> InboxEntry {
+    fn schema_inbox_entry(entry: WireInboxEntry) -> InboxEntry {
         InboxEntry {
             message_slot: entry.message_slot.into_u64() as MessageSlot,
             sender: entry.sender.as_str().to_owned() as Sender,
@@ -415,14 +415,12 @@ impl RouterForwarder {
         }
     }
 
-    fn schema_rejection_reason(
-        reason: signal_message::SubmissionRejectionReason,
-    ) -> SubmissionRejectionReason {
+    fn schema_rejection_reason(reason: WireSubmissionRejectionReason) -> SubmissionRejectionReason {
         match reason {
-            signal_message::SubmissionRejectionReason::StoreRejected => {
+            WireSubmissionRejectionReason::StoreRejected => {
                 SubmissionRejectionReason::StoreRejected
             }
-            signal_message::SubmissionRejectionReason::RecipientNotFound => {
+            WireSubmissionRejectionReason::RecipientNotFound => {
                 SubmissionRejectionReason::RecipientNotFound
             }
         }

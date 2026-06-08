@@ -15,10 +15,10 @@ use message::{
     router::OriginPolicy,
     schema::signal::{Input, MessageKind, MessageSubmission, Output},
 };
-use signal_message::{MessageReply, MessageRequest, MessageSlot, SubmissionAcceptance};
-use signal_persona_origin::{
-    ComponentInstanceName, ComponentName, ConnectionClass, InternalComponentInstanceOrigin,
-    MessageOrigin, UnixUserIdentifier,
+use signal_message::{
+    ComponentInstanceName, ComponentName, ConnectionClass, Input as SignalMessageInput,
+    InternalComponentInstanceOrigin, MessageOrigin, MessageSlot, Output as SignalMessageOutput,
+    SubmissionAcceptance, UnixUserIdentifier,
 };
 use tempfile::TempDir;
 use triad_runtime::ConnectionContext;
@@ -51,7 +51,7 @@ impl StubRouter {
         }
     }
 
-    fn serve_one_acceptance(self) -> thread::JoinHandle<MessageRequest> {
+    fn serve_one_acceptance(self) -> thread::JoinHandle<SignalMessageInput> {
         thread::spawn(move || {
             let codec = SignalRouterFrameCodec::default();
             let (mut stream, _address) = self.listener.accept().expect("accept router connection");
@@ -63,9 +63,9 @@ impl StubRouter {
                 .expect("decode router request");
             let reply = codec.reply_frame(
                 received.exchange,
-                MessageReply::SubmissionAccepted(SubmissionAcceptance {
-                    message_slot: MessageSlot::new(7),
-                }),
+                SignalMessageOutput::SubmissionAccepted(SubmissionAcceptance::new(
+                    MessageSlot::new(7),
+                )),
             );
             codec
                 .write_frame(&mut stream, &reply)
@@ -109,7 +109,7 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
 
     let forwarded = router_thread.join().expect("router thread");
     match forwarded {
-        MessageRequest::SubmitStamped(stamped) => {
+        SignalMessageInput::SubmitStamped(stamped) => {
             assert_eq!(stamped.submission.recipient.as_str(), "designer");
             assert_eq!(stamped.submission.body.as_str(), "hello");
             // The origin is minted from peer credentials plus daemon
@@ -117,10 +117,10 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
             // this daemon's configured local harness instance.
             assert_eq!(
                 stamped.origin,
-                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin::new(
-                    ComponentName::Harness,
-                    ComponentInstanceName::new(OWNER_INSTANCE),
-                ))
+                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {
+                    component: ComponentName::Harness,
+                    instance: ComponentInstanceName::new(OWNER_INSTANCE.to_owned()),
+                })
             );
         }
         other => panic!("expected daemon to stamp the submission before forwarding, got {other:?}"),
@@ -151,13 +151,13 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
 
     let forwarded = router_thread.join().expect("router thread");
     match forwarded {
-        MessageRequest::SubmitStamped(stamped) => {
+        SignalMessageInput::SubmitStamped(stamped) => {
             // A peer uid that does not match the owner mints NonOwnerUser(uid) —
             // the peer-credential origin classification the migration regressed.
             assert_eq!(
                 stamped.origin,
                 MessageOrigin::External(ConnectionClass::NonOwnerUser(UnixUserIdentifier::new(
-                    NON_OWNER_USER_ID
+                    u64::from(NON_OWNER_USER_ID)
                 )))
             );
         }

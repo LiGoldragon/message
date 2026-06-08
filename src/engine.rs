@@ -56,7 +56,7 @@ pub struct MessageEngine {
 /// context, not global engine state, so this wrapper owns the request-local
 /// borrow while delegating durable behavior to `MessageEngine`.
 #[derive(Debug)]
-struct MessageRequestEngine<'request> {
+struct RequestEngine<'request> {
     engine: &'request MessageEngine,
     connection: &'request ConnectionContext,
 }
@@ -84,7 +84,7 @@ impl MessageEngine {
         input: Input,
         connection: &ConnectionContext,
     ) -> Result<Output, Error> {
-        let mut request_engine = MessageRequestEngine::new(self, connection);
+        let mut request_engine = RequestEngine::new(self, connection);
         let action = request_engine
             .execute(NexusWork::signal_arrived(input).with_origin_route(FORWARD_ORIGIN_ROUTE))
             .await
@@ -167,13 +167,13 @@ impl MessageEngine {
     }
 }
 
-impl<'request> MessageRequestEngine<'request> {
+impl<'request> RequestEngine<'request> {
     fn new(engine: &'request MessageEngine, connection: &'request ConnectionContext) -> Self {
         Self { engine, connection }
     }
 }
 
-impl NexusEngine for MessageRequestEngine<'_> {
+impl NexusEngine for RequestEngine<'_> {
     fn decide(
         &mut self,
         input: nexus_schema::nexus::Nexus<nexus_schema::nexus::Work>,

@@ -90,9 +90,10 @@ escape hatches. The daemon is single-listener (no meta tier) and stateless
 across requests — no redb, no durable message ledger.
 
 `RouterForwarder` (`src/router.rs`) is the translation seam between the
-schema-derived inbound wire and the router's `signal-message` wire: it stamps
-provenance (peer-credential-derived origin + daemon-minted ingress timestamp)
-onto the submission and translates the router's reply back to the schema
+daemon-local inbound wire and the published schema-derived `signal-message`
+wire: it stamps provenance (peer-credential-derived origin + daemon-minted
+ingress timestamp) onto the submission, sends `signal_message::Input` to
+router, and translates `signal_message::Output` back to the daemon-local schema
 `Output`. Provenance is never encoded as strings and never accepted from the
 caller payload.
 
@@ -245,4 +246,3 @@ tests/forward_to_router.rs     Nexus forward effect against a stub router
 
 - `../signal-message/ARCHITECTURE.md`
 - `../router/ARCHITECTURE.md`
-- `../signal-persona-origin/ARCHITECTURE.md`
