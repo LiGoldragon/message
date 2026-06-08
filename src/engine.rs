@@ -79,10 +79,15 @@ impl MessageEngine {
     ///
     /// `connection` carries the accepted stream's peer credentials; the router
     /// forward stamps the provenance origin minted from them.
-    pub fn handle(&self, input: Input, connection: &ConnectionContext) -> Result<Output, Error> {
+    pub async fn handle(
+        &self,
+        input: Input,
+        connection: &ConnectionContext,
+    ) -> Result<Output, Error> {
         let mut request_engine = MessageRequestEngine::new(self, connection);
         let action = request_engine
             .execute(NexusWork::signal_arrived(input).with_origin_route(FORWARD_ORIGIN_ROUTE))
+            .await
             .into_root();
         match action {
             NexusAction::ReplyToSignal(output) => Ok(output),
@@ -181,7 +186,7 @@ impl NexusEngine for MessageRequestEngine<'_> {
         action.with_origin_route(origin_route)
     }
 
-    fn run_effect(&mut self, input: NexusEffectCommand) -> NexusEffectResult {
+    async fn run_effect(&mut self, input: NexusEffectCommand) -> NexusEffectResult {
         self.engine.run_forward_effect(input, self.connection)
     }
 

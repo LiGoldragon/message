@@ -1,7 +1,7 @@
 //! Message's daemon hooks — the only daemon code message hand-writes.
 //!
 //! The uniform daemon skeleton (the `DaemonCommand` argv parsing, the async
-//! decode -> execute -> encode spine, the actor-native listener, and the
+//! decode -> execute -> encode spine, the async task-backed listener, and the
 //! `ExitReport`-based entry) is EMITTED into `src/schema/daemon.rs` by
 //! schema-rust-next's daemon emitter, driven by the `NexusDaemonShape` in
 //! `build.rs`. Message fills only the record-1488 escape hatches through `impl
@@ -65,11 +65,11 @@ impl ComponentDaemon for MessageDaemon {
         Ok(MessageEngine::from_configuration(configuration))
     }
 
-    fn handle_working_input(
+    async fn handle_working_input(
         engine: &Self::Engine,
         input: Input,
         connection: &triad_runtime::ConnectionContext,
     ) -> Result<Output, Self::Error> {
-        Ok(engine.handle(input, connection)?)
+        Ok(engine.handle(input, connection).await?)
     }
 }

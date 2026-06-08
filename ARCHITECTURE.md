@@ -162,7 +162,7 @@ This repo does not own:
 - The daemon is single-listener: the emitted spine binds one working
   `message.sock` from the `NexusDaemonShape` in `build.rs`. Message has no
   meta tier.
-- The daemon uses the emitted `triad-runtime` `ActorSingleListenerDaemon` spine
+- The daemon uses the emitted `triad-runtime` `AsyncSingleListenerDaemon` spine
   (the `ComponentDaemon` / `DaemonBinder` default methods in
   `src/schema/daemon.rs`) for ingress instead of owning a hand-written accept
   loop.
@@ -193,7 +193,7 @@ This repo does not own:
   (`src/daemon.rs`): `Configuration` / `Engine` / `Error` / `PROCESS_NAME` +
   `build_runtime` + `handle_working_input`. The daemon spine, request gate,
   accept loop, and lifecycle are emitted by schema-rust-next into the shared
-  actor-native triad-runtime shell.
+  async task-backed triad-runtime shell.
 - A graceful stop exits the daemon, releases the `message.sock` binding, and
   rejects later CLI ingress through the emitted spine's shutdown path.
 - The production daemon reads no environment variables for control-plane

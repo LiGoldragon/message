@@ -90,15 +90,16 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
     let router_thread = router.serve_one_acceptance();
 
     let engine = engine_for(router_socket_path);
-    let output = engine
-        .handle(
+    let output = tokio::runtime::Runtime::new()
+        .expect("tokio runtime")
+        .block_on(engine.handle(
             Input::Submit(MessageSubmission {
                 recipient: "designer".to_owned(),
                 message_kind: MessageKind::Send,
                 body: "hello".to_owned(),
             }),
             &owner_connection(),
-        )
+        ))
         .expect("handle submit");
 
     match output {
@@ -134,15 +135,16 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
     let router_thread = router.serve_one_acceptance();
 
     let engine = engine_for(router_socket_path);
-    let output = engine
-        .handle(
+    let output = tokio::runtime::Runtime::new()
+        .expect("tokio runtime")
+        .block_on(engine.handle(
             Input::Submit(MessageSubmission {
                 recipient: "designer".to_owned(),
                 message_kind: MessageKind::Send,
                 body: "from a stranger".to_owned(),
             }),
             &non_owner_connection(),
-        )
+        ))
         .expect("handle submit");
 
     assert!(matches!(output, Output::SubmissionAccepted(_)));
@@ -170,15 +172,16 @@ fn router_unreachable_yields_typed_error_output() {
     let router_socket_path = temp.path().join("absent-router.sock");
 
     let engine = engine_for(router_socket_path);
-    let output = engine
-        .handle(
+    let output = tokio::runtime::Runtime::new()
+        .expect("tokio runtime")
+        .block_on(engine.handle(
             Input::Submit(MessageSubmission {
                 recipient: "designer".to_owned(),
                 message_kind: MessageKind::Send,
                 body: "no router".to_owned(),
             }),
             &owner_connection(),
-        )
+        ))
         .expect("handle submit without router");
 
     assert!(

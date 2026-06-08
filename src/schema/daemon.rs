@@ -2,14 +2,15 @@
 #[rustfmt::skip]
 use thiserror::Error;
 #[rustfmt::skip]
+use triad_runtime::{
+    AcceptedConnection, AsyncListenerError, AsyncConnectionRuntime,
+    AsyncSingleListenerDaemon, AsyncSingleListenerDaemonError, ArgumentError,
+    ComponentArgument, ComponentCommand, DaemonConfiguration, ExitReport, RequestErrorLog,
+};
+#[rustfmt::skip]
 use tokio::io::AsyncWriteExt;
 #[rustfmt::skip]
-use triad_runtime::{
-    AcceptedConnection, ActorListenerError, ActorConnectionRuntime,
-    ActorSingleListenerDaemon, ActorSingleListenerDaemonError, ArgumentError,
-    ComponentArgument, ComponentCommand, DaemonConfiguration, ExitReport, FrameBody,
-    FrameError, LengthPrefixedCodec, RequestErrorLog,
-};
+use triad_runtime::{FrameBody, FrameError, LengthPrefixedCodec};
 #[rustfmt::skip]
 use crate::schema::signal::{Input, Output, SignalFrameError};
 #[rustfmt::skip]
@@ -56,11 +57,13 @@ pub trait ComponentDaemon: Sized + 'static {
     /// mint an origin from the operating-system trust boundary rather than
     /// trusting a payload claim. Components that do not classify by origin
     /// take it as `_connection`.
-    fn handle_working_input(
-        engine: &Self::Engine,
+    fn handle_working_input<'connection>(
+        engine: &'connection Self::Engine,
         input: Input,
-        connection: &triad_runtime::ConnectionContext,
-    ) -> Result<Output, Self::Error>;
+        connection: &'connection triad_runtime::ConnectionContext,
+    ) -> impl std::future::Future<
+        Output = Result<Output, Self::Error>,
+    > + Send + 'connection;
 }
 #[rustfmt::skip]
 /// argv -> binary `Configuration` -> the bound daemon. The single-argument
@@ -112,25 +115,30 @@ impl<Daemon: ComponentDaemon> DaemonCommand<Daemon> {
 #[rustfmt::skip]
 /// The bound daemon constructor on the component trait: builds the engine,
 /// wraps it in the generated actor connection runtime, and returns the
-/// actor-native listener shell the `DaemonCommand` drives. The component
+/// async task-backed listener shell the `DaemonCommand` drives. The component
 /// never writes this by hand — it is emitted as a default method on
 /// `ComponentDaemon`.
 pub trait DaemonBinder: ComponentDaemon {
     fn bind(
         configuration: Self::Configuration,
     ) -> Result<
-        ActorSingleListenerDaemon<GeneratedDaemonRuntime<Self>>,
+        AsyncSingleListenerDaemon<GeneratedDaemonRuntime<Self>>,
         DaemonError<Self>,
     > {
         let engine = Self::build_runtime(&configuration)
             .map_err(DaemonError::Component)?;
         let runtime = GeneratedDaemonRuntime::<Self>::new(engine);
-        Ok(
-            ActorSingleListenerDaemon::new(
+        let daemon = AsyncSingleListenerDaemon::new(
                 configuration.socket_path().to_path_buf(),
                 runtime,
                 RequestErrorLog::new(Self::PROCESS_NAME),
-            ),
+            )
+            .with_concurrency_limit(configuration.request_concurrency_limit());
+        Ok(
+            match configuration.socket_mode() {
+                Some(socket_mode) => daemon.with_socket_mode(socket_mode),
+                None => daemon,
+            },
         )
     }
 }
@@ -185,16 +193,17 @@ impl<Daemon: ComponentDaemon> GeneratedDaemonRuntime<Daemon> {
         let frame = transport.read_frame().await?;
         let (_route, input) = Input::decode_signal_frame(&frame)?;
         let output = Daemon::handle_working_input(
-            &self.engine,
-            input,
-            transport.context(),
-        )?;
+                &self.engine,
+                input,
+                transport.context(),
+            )
+            .await?;
         transport.write_frame(output.encode_signal_frame()?).await?;
         Ok(())
     }
 }
 #[rustfmt::skip]
-impl<Daemon: ComponentDaemon> ActorConnectionRuntime for GeneratedDaemonRuntime<Daemon> {
+impl<Daemon: ComponentDaemon> AsyncConnectionRuntime for GeneratedDaemonRuntime<Daemon> {
     type Error = Daemon::Error;
     async fn start(&self) -> Result<(), Self::Error> {
         Daemon::start(&self.engine)
@@ -221,7 +230,7 @@ pub enum DaemonError<Daemon: ComponentDaemon> {
     #[error("daemon runtime error: {0}")]
     Runtime(std::io::Error),
     #[error("daemon listener error: {0}")]
-    Listener(ActorListenerError),
+    Listener(AsyncListenerError),
     #[error("component error: {0}")]
     Component(Daemon::Error),
 }
@@ -232,13 +241,13 @@ impl<Daemon: ComponentDaemon> From<ArgumentError> for DaemonError<Daemon> {
     }
 }
 #[rustfmt::skip]
-impl<Daemon: ComponentDaemon> From<ActorSingleListenerDaemonError<Daemon::Error>>
+impl<Daemon: ComponentDaemon> From<AsyncSingleListenerDaemonError<Daemon::Error>>
 for DaemonError<Daemon> {
-    fn from(error: ActorSingleListenerDaemonError<Daemon::Error>) -> Self {
+    fn from(error: AsyncSingleListenerDaemonError<Daemon::Error>) -> Self {
         match error {
-            ActorSingleListenerDaemonError::Listener(error) => Self::Listener(error),
-            ActorSingleListenerDaemonError::Start(error)
-            | ActorSingleListenerDaemonError::Stop(error) => Self::Component(error),
+            AsyncSingleListenerDaemonError::Listener(error) => Self::Listener(error),
+            AsyncSingleListenerDaemonError::Start(error)
+            | AsyncSingleListenerDaemonError::Stop(error) => Self::Component(error),
         }
     }
 }

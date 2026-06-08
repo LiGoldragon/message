@@ -26,7 +26,7 @@ Message's runtime is the three schema-driven planes (`schema/signal.schema`,
 
 ## The emitted daemon
 
-The actor-native daemon skeleton is emitted into `src/schema/daemon.rs` from the
+The async task-backed daemon skeleton is emitted into `src/schema/daemon.rs` from the
 `NexusDaemonShape` in `build.rs` (process `message-daemon`, single working
 listener, no meta tier). The only daemon code message hand-writes is `impl
 ComponentDaemon for MessageDaemon` in `src/daemon.rs`: `Configuration` /

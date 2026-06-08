@@ -561,46 +561,46 @@ impl triad_runtime::NexusEffectResult for EffectCompleted {}
 
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ActorStartFailure {
+pub enum EngineStartFailure {
     ResourceBusy(String),
     ConfigurationInvalid(String),
 }
 #[rustfmt::skip]
-impl std::fmt::Display for ActorStartFailure {
+impl std::fmt::Display for EngineStartFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ResourceBusy(message) => {
-                write!(formatter, "actor resource busy: {message}")
+                write!(formatter, "engine resource busy: {message}")
             }
             Self::ConfigurationInvalid(message) => {
-                write!(formatter, "actor configuration invalid: {message}")
+                write!(formatter, "engine configuration invalid: {message}")
             }
         }
     }
 }
 #[rustfmt::skip]
-impl std::error::Error for ActorStartFailure {}
+impl std::error::Error for EngineStartFailure {}
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ActorStopFailure {
+pub enum EngineStopFailure {
     ResourceLocked(String),
     ChildStillRunning(String),
 }
 #[rustfmt::skip]
-impl std::fmt::Display for ActorStopFailure {
+impl std::fmt::Display for EngineStopFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ResourceLocked(message) => {
-                write!(formatter, "actor resource locked: {message}")
+                write!(formatter, "engine resource locked: {message}")
             }
             Self::ChildStillRunning(message) => {
-                write!(formatter, "actor child still running: {message}")
+                write!(formatter, "engine child still running: {message}")
             }
         }
     }
 }
 #[rustfmt::skip]
-impl std::error::Error for ActorStopFailure {}
+impl std::error::Error for EngineStopFailure {}
 
 #[rustfmt::skip]
 pub type NexusRunnerNextStep = triad_runtime::NextStep<
@@ -627,11 +627,11 @@ impl triad_runtime::NexusAction for NexusAction {
 }
 
 #[rustfmt::skip]
-pub trait NexusEngine {
-    fn on_start(&mut self) -> Result<(), ActorStartFailure> {
+pub trait NexusEngine: Send {
+    fn on_start(&mut self) -> Result<(), EngineStartFailure> {
         Ok(())
     }
-    fn on_stop(&mut self) -> Result<(), ActorStopFailure> {
+    fn on_stop(&mut self) -> Result<(), EngineStopFailure> {
         Ok(())
     }
     fn trace_nexus_activation(&self, _object_name: NexusObjectName) {}
@@ -644,7 +644,10 @@ pub trait NexusEngine {
     fn continuation_limit(&self) -> triad_runtime::ContinuationLimit {
         triad_runtime::ContinuationLimit::default()
     }
-    fn run_effect(&mut self, input: CommandEffect) -> EffectCompleted;
+    fn run_effect(
+        &mut self,
+        input: CommandEffect,
+    ) -> impl std::future::Future<Output = EffectCompleted> + Send + '_;
     fn budget_exhausted_reply(
         &self,
         exhausted: triad_runtime::ContinuationExhausted,
@@ -656,19 +659,22 @@ pub trait NexusEngine {
     fn execute(
         &mut self,
         input: nexus::Nexus<nexus::Work>,
-    ) -> nexus::Nexus<nexus::Action>
+    ) -> impl std::future::Future<Output = nexus::Nexus<nexus::Action>> + Send + '_
     where
         Self: Sized,
     {
-        self.trace_nexus_entered();
-        let origin_route = input.origin_route();
-        let first_work = input.into_root();
-        let runner = triad_runtime::Runner::new(self.continuation_limit());
-        let mut runner_adapter = NexusRunnerAdapter::new(self, origin_route);
-        let reply = runner.drive(&mut runner_adapter, first_work);
-        let output = NexusAction::reply_to_signal(reply).with_origin_route(origin_route);
-        self.trace_nexus_decided();
-        output
+        async move {
+            self.trace_nexus_entered();
+            let origin_route = input.origin_route();
+            let first_work = input.into_root();
+            let runner = triad_runtime::Runner::new(self.continuation_limit());
+            let mut runner_adapter = NexusRunnerAdapter::new(self, origin_route);
+            let reply = runner.drive(&mut runner_adapter, first_work).await;
+            let output = NexusAction::reply_to_signal(reply)
+                .with_origin_route(origin_route);
+            self.trace_nexus_decided();
+            output
+        }
     }
 }
 
@@ -705,14 +711,14 @@ where
             .into_root();
         triad_runtime::NexusAction::into_next_step(action)
     }
-    fn apply_sema_write(&mut self, write: Self::SemaWrite) -> Self::Work {
+    async fn apply_sema_write(&mut self, write: Self::SemaWrite) -> Self::Work {
         match write {}
     }
-    fn observe_sema_read(&self, read: Self::SemaRead) -> Self::Work {
+    async fn observe_sema_read(&mut self, read: Self::SemaRead) -> Self::Work {
         match read {}
     }
-    fn run_effect(&mut self, effect: Self::Effect) -> Self::Work {
-        let output: EffectCompleted = NexusEngine::run_effect(self.engine, effect);
+    async fn run_effect(&mut self, effect: Self::Effect) -> Self::Work {
+        let output: EffectCompleted = NexusEngine::run_effect(self.engine, effect).await;
         NexusWork::effect_completed(output)
     }
     fn budget_exhausted_reply(
