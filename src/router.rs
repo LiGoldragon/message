@@ -20,8 +20,10 @@ use triad_runtime::ConnectionContext;
 use crate::error::{Error, Result};
 use crate::schema::nexus::ForwardRequest;
 use crate::schema::signal::{
-    Body, InboxContents, InboxEntry, MessageKind, MessageSlot, MessageSubmission, Output, Sender,
-    SubmissionAcceptance, SubmissionRejection, SubmissionRejectionReason,
+    Body, Error as SignalError, ErrorMessage, ErrorReport, InboxContents, InboxEntries, InboxEntry,
+    InboxListing, MessageKind, MessageSlot, MessageSubmission, Output, Sender,
+    SubmissionAcceptance, SubmissionAccepted, SubmissionRejected, SubmissionRejection,
+    SubmissionRejectionReason,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -335,11 +337,13 @@ impl RouterForwarder {
     ) -> SignalMessageInput {
         match request {
             ForwardRequest::StampAndForward(submission) => {
-                SignalMessageInput::SubmitStamped(self.stamp(submission, connection))
+                SignalMessageInput::SubmitStamped(self.stamp(submission.into_payload(), connection))
             }
-            ForwardRequest::ForwardInboxQuery(query) => SignalMessageInput::QueryInbox(
-                WireInboxQuery::new(MessageRecipient::new(query.into_payload())),
-            ),
+            ForwardRequest::ForwardInboxQuery(query) => {
+                SignalMessageInput::QueryInbox(WireInboxQuery::new(MessageRecipient::new(
+                    query.into_payload().into_payload().into_payload(),
+                )))
+            }
         }
     }
 
@@ -360,9 +364,9 @@ impl RouterForwarder {
 
     fn wire_submission(submission: MessageSubmission) -> WireMessageSubmission {
         WireMessageSubmission {
-            recipient: MessageRecipient::new(submission.recipient),
+            recipient: MessageRecipient::new(submission.recipient.into_payload()),
             kind: Self::wire_kind(submission.message_kind),
-            body: MessageBody::new(submission.body),
+            body: MessageBody::new(submission.body.into_payload()),
         }
     }
 
@@ -385,33 +389,39 @@ impl RouterForwarder {
     /// `Output` the emitted Signal plane replies with.
     fn schema_output(reply: SignalMessageOutput) -> Output {
         match reply {
-            SignalMessageOutput::SubmissionAccepted(acceptance) => Output::SubmissionAccepted(
-                SubmissionAcceptance(acceptance.into_payload().into_u64() as MessageSlot),
-            ),
-            SignalMessageOutput::SubmissionRejected(rejection) => Output::SubmissionRejected(
-                SubmissionRejection(Self::schema_rejection_reason(rejection.into_payload())),
-            ),
-            SignalMessageOutput::InboxListing(listing) => Output::InboxListing(InboxContents(
-                listing
-                    .into_payload()
-                    .into_iter()
-                    .map(Self::schema_inbox_entry)
-                    .collect(),
-            )),
-            SignalMessageOutput::MessageRequestUnimplemented(unimplemented) => {
-                Output::Error(crate::schema::signal::ErrorReport(format!(
-                    "router rejected operation {:?}: {:?}",
-                    unimplemented.operation, unimplemented.reason
+            SignalMessageOutput::SubmissionAccepted(acceptance) => {
+                Output::SubmissionAccepted(SubmissionAccepted::new(SubmissionAcceptance::new(
+                    MessageSlot::new(acceptance.into_payload().into_u64()),
                 )))
             }
+            SignalMessageOutput::SubmissionRejected(rejection) => {
+                Output::SubmissionRejected(SubmissionRejected::new(SubmissionRejection::new(
+                    Self::schema_rejection_reason(rejection.into_payload()),
+                )))
+            }
+            SignalMessageOutput::InboxListing(listing) => {
+                Output::InboxListing(InboxListing::new(InboxContents::new(InboxEntries::new(
+                    listing
+                        .into_payload()
+                        .into_iter()
+                        .map(Self::schema_inbox_entry)
+                        .collect(),
+                ))))
+            }
+            SignalMessageOutput::MessageRequestUnimplemented(unimplemented) => Output::Error(
+                SignalError::new(ErrorReport::new(ErrorMessage::new(format!(
+                    "router rejected operation {:?}: {:?}",
+                    unimplemented.operation, unimplemented.reason
+                )))),
+            ),
         }
     }
 
     fn schema_inbox_entry(entry: WireInboxEntry) -> InboxEntry {
         InboxEntry {
-            message_slot: entry.message_slot.into_u64() as MessageSlot,
-            sender: entry.sender.as_str().to_owned() as Sender,
-            body: entry.body.as_str().to_owned() as Body,
+            message_slot: MessageSlot::new(entry.message_slot.into_u64()),
+            sender: Sender::new(entry.sender.as_str().to_owned()),
+            body: Body::new(entry.body.as_str().to_owned()),
         }
     }
 

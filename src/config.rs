@@ -2,7 +2,7 @@
 //! from the single argv argument (the single-argument rule).
 //!
 //! The emitted daemon (`schema/daemon.rs`) reads its socket layout through the
-//! `triad_runtime::DaemonConfiguration` trait. Message extends the uniform
+//! `triad_runtime::BindingSurface` trait. Message extends the uniform
 //! surface with the two fields its forward-only runtime needs that no durable
 //! store would supply: the router socket it forwards stamped submissions to,
 //! the owner identity gate and local instance name it stamps onto submissions.
@@ -13,7 +13,7 @@
 use std::{fs, path::Path};
 
 use thiserror::Error;
-use triad_runtime::DaemonConfiguration;
+use triad_runtime::BindingSurface;
 
 /// Binary rkyv startup configuration for `message-daemon`.
 ///
@@ -107,7 +107,7 @@ impl Configuration {
     }
 }
 
-impl DaemonConfiguration for Configuration {
+impl BindingSurface for Configuration {
     fn socket_path(&self) -> &Path {
         Configuration::socket_path(self)
     }

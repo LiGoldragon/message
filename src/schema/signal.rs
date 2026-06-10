@@ -14,49 +14,79 @@ pub type Path = std::string::String;
 pub use nota_next::{NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
 
 #[rustfmt::skip]
-pub type Submit = MessageSubmission;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Submit(MessageSubmission);
 
 #[rustfmt::skip]
-pub type SubmitStamped = StampedMessageSubmission;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SubmitStamped(StampedMessageSubmission);
 
 #[rustfmt::skip]
-pub type QueryInbox = InboxQuery;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct QueryInbox(InboxQuery);
 
 #[rustfmt::skip]
-pub type SubmissionAccepted = SubmissionAcceptance;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SubmissionAccepted(SubmissionAcceptance);
 
 #[rustfmt::skip]
-pub type SubmissionRejected = SubmissionRejection;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SubmissionRejected(SubmissionRejection);
 
 #[rustfmt::skip]
-pub type InboxListing = InboxContents;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct InboxListing(InboxContents);
 
 #[rustfmt::skip]
-pub type Unimplemented = RequestUnimplemented;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Unimplemented(RequestUnimplemented);
 
 #[rustfmt::skip]
-pub type Error = ErrorReport;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Error(ErrorReport);
 
 #[rustfmt::skip]
-pub type Recipient = String;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Recipient(String);
 
 #[rustfmt::skip]
-pub type Sender = String;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Sender(String);
 
 #[rustfmt::skip]
-pub type Body = String;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Body(String);
 
 #[rustfmt::skip]
-pub type MessageSlot = Integer;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct MessageSlot(Integer);
 
 #[rustfmt::skip]
-pub type OwnerName = String;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct OwnerName(String);
 
 #[rustfmt::skip]
-pub type TimestampNanos = Integer;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct TimestampNanos(Integer);
 
 #[rustfmt::skip]
-pub type ErrorMessage = String;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ErrorMessage(String);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -122,7 +152,7 @@ pub struct StampedMessageSubmission {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct InboxQuery(pub Recipient);
+pub struct InboxQuery(Recipient);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -134,17 +164,19 @@ pub struct InboxEntry {
 }
 
 #[rustfmt::skip]
-pub type InboxEntries = Vec<InboxEntry>;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct InboxEntries(Vec<InboxEntry>);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct InboxContents(pub InboxEntries);
+pub struct InboxContents(InboxEntries);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct SubmissionAcceptance(pub MessageSlot);
+pub struct SubmissionAcceptance(MessageSlot);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -166,7 +198,7 @@ pub enum SubmissionRejectionReason {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct SubmissionRejection(pub SubmissionRejectionReason);
+pub struct SubmissionRejection(SubmissionRejectionReason);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -214,7 +246,7 @@ pub struct RequestUnimplemented {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ErrorReport(pub ErrorMessage);
+pub struct ErrorReport(ErrorMessage);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -237,6 +269,291 @@ pub enum Output {
 }
 
 #[rustfmt::skip]
+impl Submit {
+    pub fn new(payload: MessageSubmission) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &MessageSubmission {
+        &self.0
+    }
+    pub fn into_payload(self) -> MessageSubmission {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<MessageSubmission> for Submit {
+    fn from(payload: MessageSubmission) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl SubmitStamped {
+    pub fn new(payload: StampedMessageSubmission) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &StampedMessageSubmission {
+        &self.0
+    }
+    pub fn into_payload(self) -> StampedMessageSubmission {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<StampedMessageSubmission> for SubmitStamped {
+    fn from(payload: StampedMessageSubmission) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl QueryInbox {
+    pub fn new(payload: InboxQuery) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &InboxQuery {
+        &self.0
+    }
+    pub fn into_payload(self) -> InboxQuery {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<InboxQuery> for QueryInbox {
+    fn from(payload: InboxQuery) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl SubmissionAccepted {
+    pub fn new(payload: SubmissionAcceptance) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &SubmissionAcceptance {
+        &self.0
+    }
+    pub fn into_payload(self) -> SubmissionAcceptance {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<SubmissionAcceptance> for SubmissionAccepted {
+    fn from(payload: SubmissionAcceptance) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl SubmissionRejected {
+    pub fn new(payload: SubmissionRejection) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &SubmissionRejection {
+        &self.0
+    }
+    pub fn into_payload(self) -> SubmissionRejection {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<SubmissionRejection> for SubmissionRejected {
+    fn from(payload: SubmissionRejection) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl InboxListing {
+    pub fn new(payload: InboxContents) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &InboxContents {
+        &self.0
+    }
+    pub fn into_payload(self) -> InboxContents {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<InboxContents> for InboxListing {
+    fn from(payload: InboxContents) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Unimplemented {
+    pub fn new(payload: RequestUnimplemented) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &RequestUnimplemented {
+        &self.0
+    }
+    pub fn into_payload(self) -> RequestUnimplemented {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<RequestUnimplemented> for Unimplemented {
+    fn from(payload: RequestUnimplemented) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Error {
+    pub fn new(payload: ErrorReport) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &ErrorReport {
+        &self.0
+    }
+    pub fn into_payload(self) -> ErrorReport {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<ErrorReport> for Error {
+    fn from(payload: ErrorReport) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Recipient {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for Recipient {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Sender {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for Sender {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Body {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for Body {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl MessageSlot {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Integer {
+        &self.0
+    }
+    pub fn into_payload(self) -> Integer {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Integer> for MessageSlot {
+    fn from(payload: Integer) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl OwnerName {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for OwnerName {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl TimestampNanos {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Integer {
+        &self.0
+    }
+    pub fn into_payload(self) -> Integer {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Integer> for TimestampNanos {
+    fn from(payload: Integer) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl ErrorMessage {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for ErrorMessage {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl InboxQuery {
     pub fn new(payload: Recipient) -> Self {
         Self(payload)
@@ -251,6 +568,25 @@ impl InboxQuery {
 #[rustfmt::skip]
 impl From<Recipient> for InboxQuery {
     fn from(payload: Recipient) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl InboxEntries {
+    pub fn new(payload: Vec<InboxEntry>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Vec<InboxEntry> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Vec<InboxEntry> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Vec<InboxEntry>> for InboxEntries {
+    fn from(payload: Vec<InboxEntry>) -> Self {
         Self::new(payload)
     }
 }
@@ -333,33 +669,254 @@ impl From<ErrorMessage> for ErrorReport {
 
 #[rustfmt::skip]
 impl Input {
-    pub fn submit(payload: Submit) -> Self {
-        Self::Submit(payload)
+    pub fn submit(payload: MessageSubmission) -> Self {
+        Self::Submit(Submit::new(payload))
     }
-    pub fn submit_stamped(payload: SubmitStamped) -> Self {
-        Self::SubmitStamped(payload)
+    pub fn submit_stamped(payload: StampedMessageSubmission) -> Self {
+        Self::SubmitStamped(SubmitStamped::new(payload))
     }
-    pub fn query_inbox(payload: QueryInbox) -> Self {
-        Self::QueryInbox(payload)
+    pub fn query_inbox(payload: InboxQuery) -> Self {
+        Self::QueryInbox(QueryInbox::new(payload))
     }
 }
 
 #[rustfmt::skip]
 impl Output {
-    pub fn submission_accepted(payload: SubmissionAccepted) -> Self {
+    pub fn submission_accepted(payload: SubmissionAcceptance) -> Self {
+        Self::SubmissionAccepted(SubmissionAccepted::new(payload))
+    }
+    pub fn submission_rejected(payload: SubmissionRejection) -> Self {
+        Self::SubmissionRejected(SubmissionRejected::new(payload))
+    }
+    pub fn inbox_listing(payload: InboxContents) -> Self {
+        Self::InboxListing(InboxListing::new(payload))
+    }
+    pub fn unimplemented(payload: RequestUnimplemented) -> Self {
+        Self::Unimplemented(Unimplemented::new(payload))
+    }
+    pub fn error(payload: ErrorReport) -> Self {
+        Self::Error(Error::new(payload))
+    }
+}
+
+#[rustfmt::skip]
+impl From<Submit> for Input {
+    fn from(payload: Submit) -> Self {
+        Self::Submit(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<SubmitStamped> for Input {
+    fn from(payload: SubmitStamped) -> Self {
+        Self::SubmitStamped(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<QueryInbox> for Input {
+    fn from(payload: QueryInbox) -> Self {
+        Self::QueryInbox(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<SubmissionAccepted> for Output {
+    fn from(payload: SubmissionAccepted) -> Self {
         Self::SubmissionAccepted(payload)
     }
-    pub fn submission_rejected(payload: SubmissionRejected) -> Self {
+}
+
+#[rustfmt::skip]
+impl From<SubmissionRejected> for Output {
+    fn from(payload: SubmissionRejected) -> Self {
         Self::SubmissionRejected(payload)
     }
-    pub fn inbox_listing(payload: InboxListing) -> Self {
+}
+
+#[rustfmt::skip]
+impl From<InboxListing> for Output {
+    fn from(payload: InboxListing) -> Self {
         Self::InboxListing(payload)
     }
-    pub fn unimplemented(payload: Unimplemented) -> Self {
+}
+
+#[rustfmt::skip]
+impl From<Unimplemented> for Output {
+    fn from(payload: Unimplemented) -> Self {
         Self::Unimplemented(payload)
     }
-    pub fn error(payload: Error) -> Self {
+}
+
+#[rustfmt::skip]
+impl From<Error> for Output {
+    fn from(payload: Error) -> Self {
         Self::Error(payload)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl Submit {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl SubmitStamped {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl QueryInbox {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl SubmissionAccepted {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl SubmissionRejected {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl InboxListing {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl Unimplemented {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl Error {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl Recipient {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl Sender {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl Body {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl MessageSlot {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl OwnerName {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl TimestampNanos {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl ErrorMessage {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
     }
 }
 
@@ -432,6 +989,17 @@ impl InboxQuery {
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
 impl InboxEntry {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl InboxEntries {
     pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
         <Self as NotaDecode>::from_nota_block(block)
     }
@@ -979,7 +1547,16 @@ impl TraceEvent {
     PartialEq,
     Eq,
 )]
-pub struct MessageIdentifier(pub Integer);
+pub struct MessageIdentifier(Integer);
+#[rustfmt::skip]
+impl MessageIdentifier {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> Integer {
+        self.0
+    }
+}
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
 impl MessageIdentifier {
@@ -1003,7 +1580,16 @@ impl MessageIdentifier {
     PartialEq,
     Eq,
 )]
-pub struct OriginRoute(pub Integer);
+pub struct OriginRoute(Integer);
+#[rustfmt::skip]
+impl OriginRoute {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> Integer {
+        self.0
+    }
+}
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
 impl OriginRoute {

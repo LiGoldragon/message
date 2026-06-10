@@ -5,7 +5,7 @@ use thiserror::Error;
 use triad_runtime::{
     AcceptedConnection, AsyncListenerError, AsyncConnectionRuntime,
     AsyncSingleListenerDaemon, AsyncSingleListenerDaemonError, ArgumentError,
-    ComponentArgument, ComponentCommand, DaemonConfiguration, ExitReport, RequestErrorLog,
+    ComponentArgument, ComponentCommand, BindingSurface, ExitReport, RequestErrorLog,
 };
 #[rustfmt::skip]
 use triad_runtime::EngineRequestError;
@@ -32,7 +32,7 @@ use crate::schema::signal::{Input, Output, SignalFrameError};
 /// emitter cannot know how to open the component's Store/Engine) plus the
 /// typed working-input handler.
 pub trait ComponentDaemon: Sized + 'static {
-    type Configuration: DaemonConfiguration;
+    type Configuration: BindingSurface;
     type ConfigurationError: std::error::Error;
     type Engine: Send + Sync + 'static;
     type Error: std::fmt::Debug

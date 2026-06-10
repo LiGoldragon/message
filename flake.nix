@@ -67,6 +67,19 @@
                 cargoTestExtraArgs = "--test ${testFile} ${testName} -- --exact";
               }
             );
+          cargoTestFileWithFeatures =
+            testFile: testName: features: craneLib.cargoTest (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                nativeBuildInputs = [ pkgs.ripgrep ];
+                preCheck = ''
+                  rg --fixed-strings ${pkgs.lib.escapeShellArg "fn ${testName}("} \
+                    tests/${testFile}.rs
+                '';
+                cargoTestExtraArgs = "--features ${features} --test ${testFile} ${testName} -- --exact";
+              }
+            );
           context = {
             inherit
               pkgs
@@ -76,6 +89,7 @@
               cargoArtifacts
               sourceConstraintCheck
               cargoTestFile
+              cargoTestFileWithFeatures
               ;
           };
         in
@@ -145,8 +159,9 @@
           # encode -> wire reply. The already-stamped submission replies
           # Unimplemented straight from the Nexus decision, no router needed.
           message-emitted-daemon-replies-unimplemented-for-already-stamped-submission =
-            context.cargoTestFile "process_boundary"
-              "daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket";
+            context.cargoTestFileWithFeatures "process_boundary"
+              "daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket"
+              "nota-text";
           # The Nexus forward-to-router effect against a stub router: a submit is
           # stamped from the configured owner and forwarded, and the router
           # acceptance is translated back into the Signal output.

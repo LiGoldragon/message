@@ -15,13 +15,16 @@
 //! daemon skeleton itself is emitted into `schema/daemon.rs`.
 
 pub mod client;
+#[cfg(feature = "nota-text")]
 pub mod command;
 pub mod config;
 pub mod daemon;
 pub mod engine;
 pub mod error;
+#[cfg(feature = "nota-text")]
 pub mod output_validator;
 pub mod router;
+#[cfg(feature = "nota-text")]
 pub mod surface;
 
 pub mod schema {

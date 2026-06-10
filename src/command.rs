@@ -30,15 +30,17 @@ impl Input {
 
     fn into_signal_input(self) -> signal_schema::Input {
         match self {
-            Self::Send(recipient, body) => {
-                signal_schema::Input::Submit(signal_schema::MessageSubmission {
-                    recipient: recipient.as_str().to_owned(),
+            Self::Send(recipient, body) => signal_schema::Input::Submit(
+                signal_schema::Submit::new(signal_schema::MessageSubmission {
+                    recipient: signal_schema::Recipient::new(recipient.as_str().to_owned()),
                     message_kind: signal_schema::MessageKind::Send,
-                    body,
-                })
-            }
+                    body: signal_schema::Body::new(body),
+                }),
+            ),
             Self::Inbox(recipient) => signal_schema::Input::QueryInbox(
-                signal_schema::InboxQuery::new(recipient.as_str().to_owned()),
+                signal_schema::QueryInbox::new(signal_schema::InboxQuery::new(
+                    signal_schema::Recipient::new(recipient.as_str().to_owned()),
+                )),
             ),
         }
     }
@@ -161,23 +163,30 @@ impl Output {
     pub fn from_signal_output(reply: signal_schema::Output) -> Self {
         match reply {
             signal_schema::Output::SubmissionAccepted(acceptance) => {
-                Self::SubmissionAccepted(acceptance.into_payload())
+                Self::SubmissionAccepted(acceptance.into_payload().into_payload().into_payload())
             }
             signal_schema::Output::SubmissionRejected(rejection) => Self::SubmissionRejected(
-                SubmissionRejectionReason::from_signal(rejection.into_payload()),
+                SubmissionRejectionReason::from_signal(rejection.into_payload().into_payload()),
             ),
             signal_schema::Output::InboxListing(listing) => Self::InboxListing(
                 listing
+                    .into_payload()
+                    .into_payload()
                     .into_payload()
                     .into_iter()
                     .map(InboxEntry::from_signal)
                     .collect(),
             ),
-            signal_schema::Output::Unimplemented(unimplemented) => Self::Unimplemented(
-                OperationKind::from_signal(unimplemented.operation_kind),
-                UnimplementedReason::from_signal(unimplemented.unimplemented_reason),
-            ),
-            signal_schema::Output::Error(error) => Self::Error(error.into_payload()),
+            signal_schema::Output::Unimplemented(unimplemented) => {
+                let unimplemented = unimplemented.into_payload();
+                Self::Unimplemented(
+                    OperationKind::from_signal(unimplemented.operation_kind),
+                    UnimplementedReason::from_signal(unimplemented.unimplemented_reason),
+                )
+            }
+            signal_schema::Output::Error(error) => {
+                Self::Error(error.into_payload().into_payload().into_payload())
+            }
         }
     }
 }
@@ -280,9 +289,9 @@ impl SubmissionRejectionReason {
 impl InboxEntry {
     fn from_signal(entry: signal_schema::InboxEntry) -> Self {
         Self {
-            message_slot: entry.message_slot,
-            sender: RecipientName::new(entry.sender),
-            body: entry.body,
+            message_slot: entry.message_slot.into_payload(),
+            sender: RecipientName::new(entry.sender.into_payload()),
+            body: entry.body.into_payload(),
         }
     }
 }

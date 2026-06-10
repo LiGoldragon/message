@@ -13,7 +13,7 @@
 //! owns the recursion: it runs the effect, feeds the `EffectCompleted` work
 //! back into `decide`, and stops on the Signal `Output`.
 
-use triad_runtime::{ConnectionContext, ContinuationExhausted};
+use triad_runtime::ConnectionContext;
 
 use crate::{
     config::Configuration,
@@ -29,15 +29,11 @@ use crate::{
             Stateless, WriteInput as SemaWriteInput, WriteOutput as SemaWriteOutput,
         },
         signal::{
-            ErrorReport, Input, OperationKind, Output, RequestUnimplemented, UnimplementedReason,
+            Error as SignalError, ErrorMessage, ErrorReport, Input, OperationKind, Output,
+            RequestUnimplemented, Unimplemented, UnimplementedReason,
         },
     },
 };
-
-/// The single origin route message stamps onto every in-flight mail. Message
-/// serves one request per connection on its own call stack, so there is no
-/// concurrent in-flight mail to disambiguate; the route is a constant.
-const FORWARD_ORIGIN_ROUTE: OriginRoute = OriginRoute(1);
 
 /// The daemon runtime: the router forwarder the Nexus effect drives.
 ///
@@ -58,7 +54,6 @@ pub struct MessageEngine {
 #[derive(Debug)]
 struct RequestEngine<'request> {
     engine: &'request MessageEngine,
-    connection: &'request ConnectionContext,
 }
 
 impl MessageEngine {
@@ -74,8 +69,8 @@ impl MessageEngine {
     ///
     /// This is the forward-only realization of the Signal -> Nexus -> effect ->
     /// Nexus -> Signal pipeline. The generated `NexusEngine::execute` method
-    /// owns the recursive runner loop and continuation budget; message supplies
-    /// only decision and effect hooks.
+    /// owns the typed decision entry; message sequences its one router effect
+    /// explicitly and feeds the typed result back through that generated entry.
     ///
     /// `connection` carries the accepted stream's peer credentials; the router
     /// forward stamps the provenance origin minted from them.
@@ -84,16 +79,31 @@ impl MessageEngine {
         input: Input,
         connection: &ConnectionContext,
     ) -> Result<Output, Error> {
-        let mut request_engine = RequestEngine::new(self, connection);
-        let action = request_engine
-            .execute(NexusWork::signal_arrived(input).with_origin_route(FORWARD_ORIGIN_ROUTE))
+        let mut request_engine = RequestEngine::new(self);
+        let signal_action = request_engine
+            .execute(
+                NexusWork::signal_arrived(input).with_origin_route(Self::forward_origin_route()),
+            )
             .await
             .into_root();
+        let action = match signal_action {
+            NexusAction::CommandEffect(command) => {
+                let effect_result = self.run_forward_effect(command.into_payload(), connection);
+                request_engine
+                    .execute(
+                        NexusWork::effect_completed(effect_result)
+                            .with_origin_route(Self::forward_origin_route()),
+                    )
+                    .await
+                    .into_root()
+            }
+            other => other,
+        };
         match action {
-            NexusAction::ReplyToSignal(output) => Ok(output),
-            other => Ok(Output::Error(ErrorReport(format!(
+            NexusAction::ReplyToSignal(output) => Ok(output.into_payload()),
+            other => Ok(Self::error_output(format!(
                 "nexus runner returned non-reply action: {other:?}"
-            )))),
+            ))),
         }
     }
 
@@ -107,13 +117,14 @@ impl MessageEngine {
         connection: &ConnectionContext,
     ) -> NexusEffectResult {
         let NexusEffectCommand::ForwardToRouter(request) = effect;
+        let request = request.into_payload();
         match self.forwarder.forward(request, connection) {
-            Ok(RouterForwardOutcome::Replied(reply)) => NexusEffectResult::Forwarded(reply),
+            Ok(RouterForwardOutcome::Replied(reply)) => NexusEffectResult::forwarded(reply),
             Ok(RouterForwardOutcome::Unreachable) => {
-                NexusEffectResult::RouterUnavailable(UnimplementedReason::RouterUnreachable)
+                NexusEffectResult::router_unavailable(UnimplementedReason::RouterUnreachable)
             }
-            Err(error) => NexusEffectResult::ForwardFailed(ErrorReport(format!(
-                "router forward failed: {error}"
+            Err(error) => NexusEffectResult::forward_failed(ErrorReport::new(ErrorMessage::new(
+                format!("router forward failed: {error}"),
             ))),
         }
     }
@@ -127,30 +138,36 @@ impl MessageEngine {
     ///   daemon mints provenance; it does not accept it from a peer).
     fn decide_signal(&self, input: Input) -> NexusAction {
         match input {
-            Input::Submit(submission) => NexusAction::CommandEffect(
-                NexusEffectCommand::ForwardToRouter(ForwardRequest::StampAndForward(submission)),
-            ),
-            Input::QueryInbox(query) => NexusAction::CommandEffect(
-                NexusEffectCommand::ForwardToRouter(ForwardRequest::ForwardInboxQuery(query)),
-            ),
-            Input::SubmitStamped(_) => {
-                NexusAction::ReplyToSignal(Output::Unimplemented(RequestUnimplemented {
+            Input::Submit(submission) => {
+                NexusAction::command_effect(NexusEffectCommand::forward_to_router(
+                    ForwardRequest::stamp_and_forward(submission.into_payload()),
+                ))
+            }
+            Input::QueryInbox(query) => {
+                NexusAction::command_effect(NexusEffectCommand::forward_to_router(
+                    ForwardRequest::forward_inbox_query(query.into_payload()),
+                ))
+            }
+            Input::SubmitStamped(_) => NexusAction::reply_to_signal(Output::Unimplemented(
+                Unimplemented::new(RequestUnimplemented {
                     operation_kind: OperationKind::SubmitStamped,
                     unimplemented_reason: UnimplementedReason::NotInPrototypeScope,
-                }))
-            }
+                }),
+            )),
         }
     }
 
     /// Turn a completed router forward into the Signal `Output` to reply with.
     fn decide_effect_completed(&self, result: NexusEffectResult) -> NexusAction {
         match result {
-            NexusEffectResult::Forwarded(reply) => NexusAction::ReplyToSignal(reply),
-            NexusEffectResult::RouterUnavailable(reason) => NexusAction::ReplyToSignal(
-                Output::Error(ErrorReport(Self::router_unavailable_text(reason))),
+            NexusEffectResult::Forwarded(reply) => {
+                NexusAction::reply_to_signal(reply.into_payload())
+            }
+            NexusEffectResult::RouterUnavailable(reason) => NexusAction::reply_to_signal(
+                Self::error_output(Self::router_unavailable_text(reason.into_payload())),
             ),
             NexusEffectResult::ForwardFailed(report) => {
-                NexusAction::ReplyToSignal(Output::Error(report))
+                NexusAction::reply_to_signal(Output::Error(SignalError::new(report.into_payload())))
             }
         }
     }
@@ -165,11 +182,24 @@ impl MessageEngine {
             }
         }
     }
+
+    /// The single origin route message stamps onto every in-flight mail.
+    /// Message serves one request per connection on its own call stack, so
+    /// there is no concurrent in-flight mail to disambiguate.
+    fn forward_origin_route() -> OriginRoute {
+        OriginRoute::new(1)
+    }
+
+    fn error_output(message: impl Into<String>) -> Output {
+        Output::Error(SignalError::new(ErrorReport::new(ErrorMessage::new(
+            message,
+        ))))
+    }
 }
 
 impl<'request> RequestEngine<'request> {
-    fn new(engine: &'request MessageEngine, connection: &'request ConnectionContext) -> Self {
-        Self { engine, connection }
+    fn new(engine: &'request MessageEngine) -> Self {
+        Self { engine }
     }
 }
 
@@ -180,22 +210,14 @@ impl NexusEngine for RequestEngine<'_> {
     ) -> nexus_schema::nexus::Nexus<nexus_schema::nexus::Action> {
         let origin_route = input.origin_route();
         let action = match input.into_root() {
-            NexusWork::SignalArrived(signal_input) => self.engine.decide_signal(signal_input),
-            NexusWork::EffectCompleted(result) => self.engine.decide_effect_completed(result),
+            NexusWork::SignalArrived(signal_input) => {
+                self.engine.decide_signal(signal_input.into_payload())
+            }
+            NexusWork::EffectCompleted(result) => {
+                self.engine.decide_effect_completed(result.into_payload())
+            }
         };
         action.with_origin_route(origin_route)
-    }
-
-    async fn run_effect(&mut self, input: NexusEffectCommand) -> NexusEffectResult {
-        self.engine.run_forward_effect(input, self.connection)
-    }
-
-    fn budget_exhausted_reply(&self, exhausted: ContinuationExhausted) -> Output {
-        Output::Error(ErrorReport(format!(
-            "nexus continuation budget exhausted after {} steps (limit {})",
-            exhausted.completed_step_count(),
-            exhausted.limit().count()
-        )))
     }
 }
 

@@ -13,7 +13,7 @@ use message::router::{SignalRouterFrameCodec, SignalRouterSocket};
 use message::{
     MessageEngine, RouterForwarder,
     router::OriginPolicy,
-    schema::signal::{Input, MessageKind, MessageSubmission, Output},
+    schema::signal::{Body, Input, MessageKind, MessageSubmission, Output, Recipient, Submit},
 };
 use signal_message::{
     ComponentInstanceName, ComponentName, ConnectionClass, Input as SignalMessageInput,
@@ -82,6 +82,14 @@ fn engine_for(router_socket_path: PathBuf) -> MessageEngine {
     ))
 }
 
+fn send_input(recipient: &str, body: &str) -> Input {
+    Input::Submit(Submit::new(MessageSubmission {
+        recipient: Recipient::new(recipient.to_owned()),
+        message_kind: MessageKind::Send,
+        body: Body::new(body.to_owned()),
+    }))
+}
+
 #[test]
 fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_the_owner() {
     let temp = TempDir::new().expect("tempdir");
@@ -92,18 +100,13 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
     let engine = engine_for(router_socket_path);
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
-        .block_on(engine.handle(
-            Input::Submit(MessageSubmission {
-                recipient: "designer".to_owned(),
-                message_kind: MessageKind::Send,
-                body: "hello".to_owned(),
-            }),
-            &owner_connection(),
-        ))
+        .block_on(engine.handle(send_input("designer", "hello"), &owner_connection()))
         .expect("handle submit");
 
     match output {
-        Output::SubmissionAccepted(acceptance) => assert_eq!(acceptance.0, 7),
+        Output::SubmissionAccepted(acceptance) => {
+            assert_eq!(acceptance.into_payload().into_payload().into_payload(), 7);
+        }
         other => panic!("expected SubmissionAccepted translated from router, got {other:?}"),
     }
 
@@ -138,11 +141,7 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
         .block_on(engine.handle(
-            Input::Submit(MessageSubmission {
-                recipient: "designer".to_owned(),
-                message_kind: MessageKind::Send,
-                body: "from a stranger".to_owned(),
-            }),
+            send_input("designer", "from a stranger"),
             &non_owner_connection(),
         ))
         .expect("handle submit");
@@ -174,14 +173,7 @@ fn router_unreachable_yields_typed_error_output() {
     let engine = engine_for(router_socket_path);
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
-        .block_on(engine.handle(
-            Input::Submit(MessageSubmission {
-                recipient: "designer".to_owned(),
-                message_kind: MessageKind::Send,
-                body: "no router".to_owned(),
-            }),
-            &owner_connection(),
-        ))
+        .block_on(engine.handle(send_input("designer", "no router"), &owner_connection()))
         .expect("handle submit without router");
 
     assert!(

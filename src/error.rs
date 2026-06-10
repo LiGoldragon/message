@@ -5,6 +5,7 @@ pub enum Error {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 
+    #[cfg(feature = "nota-text")]
     #[error("nota: {0}")]
     Nota(#[from] nota_next::NotaDecodeError),
 
@@ -17,21 +18,27 @@ pub enum Error {
     #[error("schema signal frame: {0}")]
     SchemaSignalFrame(#[from] crate::schema::signal::SignalFrameError),
 
+    #[cfg(feature = "nota-text")]
     #[error("inline Nota argument must be UTF-8: {got:?}")]
     InvalidInlineNotaArgument { got: String },
 
+    #[cfg(feature = "nota-text")]
     #[error("missing NOTA input; pass one record such as '(Send designer [hello])'")]
     MissingInput,
 
+    #[cfg(feature = "nota-text")]
     #[error("unexpected command-line argument: {got:?}")]
     UnexpectedArgument { got: String },
 
+    #[cfg(feature = "nota-text")]
     #[error("invalid validator argument: {detail}")]
     InvalidValidatorArgument { detail: String },
 
+    #[cfg(feature = "nota-text")]
     #[error("message output validation failed: {detail}")]
     OutputValidation { detail: String },
 
+    #[cfg(feature = "nota-text")]
     #[error("message daemon socket is not configured; set MESSAGE_SOCKET")]
     SignalMessageSocketMissing,
 

@@ -16,10 +16,13 @@ Message's runtime is the three schema-driven planes (`schema/signal.schema`,
   `QueryInbox(InboxQuery)`. Replies: `SubmissionAccepted` / `SubmissionRejected`
   / `InboxListing` / `Unimplemented` / `Error`.
 - **Nexus** — the internal-feature catalog (z6qu). Message's one internal
-  feature is the forward-to-router decision plus the `ForwardToRouter` effect.
-  The Nexus `decide` stamps and forwards `Submit`/`QueryInbox`, and replies
-  `Unimplemented` to an already-stamped submission (the daemon mints provenance;
-  it never accepts it from a peer).
+  feature is the forward-to-router decision plus the `ForwardToRouter` effect
+  vocabulary. The generated `NexusEngine::execute` surface performs one typed
+  decision step; Message explicitly sequences its one router effect and feeds
+  the typed effect result back through the generated decision surface.
+  `Submit`/`QueryInbox` stamp and forward, and `SubmitStamped` replies
+  `Unimplemented` (the daemon mints provenance; it never accepts it from a
+  peer).
 - **SEMA** — honestly empty. Message owns no durable state, so its SEMA engine
   is a no-op returning `Stateless`. The plane exists only to satisfy the uniform
   three-plane shape.

@@ -21,7 +21,9 @@ pub enum WriteInput {
 }
 
 #[rustfmt::skip]
-pub type NoDurableState = Stateless;
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct NoDurableState(Stateless);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -66,16 +68,35 @@ pub enum Output {
 }
 
 #[rustfmt::skip]
+impl NoDurableState {
+    pub fn new(payload: Stateless) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Stateless {
+        &self.0
+    }
+    pub fn into_payload(self) -> Stateless {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Stateless> for NoDurableState {
+    fn from(payload: Stateless) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl WriteInput {
-    pub fn no_durable_state(payload: NoDurableState) -> Self {
-        Self::NoDurableState(payload)
+    pub fn no_durable_state(payload: Stateless) -> Self {
+        Self::NoDurableState(NoDurableState::new(payload))
     }
 }
 
 #[rustfmt::skip]
 impl ReadInput {
-    pub fn no_durable_state(payload: NoDurableState) -> Self {
-        Self::NoDurableState(payload)
+    pub fn no_durable_state(payload: Stateless) -> Self {
+        Self::NoDurableState(NoDurableState::new(payload))
     }
 }
 
@@ -110,6 +131,20 @@ impl Output {
     }
     pub fn read_output(payload: ReadOutput) -> Self {
         Self::ReadOutput(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<NoDurableState> for WriteInput {
+    fn from(payload: NoDurableState) -> Self {
+        Self::NoDurableState(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<NoDurableState> for ReadInput {
+    fn from(payload: NoDurableState) -> Self {
+        Self::NoDurableState(payload)
     }
 }
 
@@ -158,6 +193,17 @@ impl From<ReadOutput> for Output {
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
 impl WriteInput {
+    pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
+        <Self as NotaDecode>::from_nota_block(block)
+    }
+    pub fn to_nota(&self) -> String {
+        <Self as NotaEncode>::to_nota(self)
+    }
+}
+
+#[rustfmt::skip]
+#[cfg(feature = "nota-text")]
+impl NoDurableState {
     pub fn from_nota_block(block: &nota_next::Block) -> Result<Self, NotaDecodeError> {
         <Self as NotaDecode>::from_nota_block(block)
     }
@@ -479,7 +525,16 @@ impl TraceEvent {
     PartialEq,
     Eq,
 )]
-pub struct OriginRoute(pub Integer);
+pub struct OriginRoute(Integer);
+#[rustfmt::skip]
+impl OriginRoute {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> Integer {
+        self.0
+    }
+}
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
 impl OriginRoute {
