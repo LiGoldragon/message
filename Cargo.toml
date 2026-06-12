@@ -1,6 +1,6 @@
 [package]
 name         = "message"
-version      = "0.4.0"
+version      = "0.5.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -21,6 +21,11 @@ name = "message-daemon"
 path = "src/bin/message_daemon.rs"
 
 [[bin]]
+name = "meta-message"
+path = "src/bin/meta_message.rs"
+required-features = ["nota-text"]
+
+[[bin]]
 name = "message-validate-output"
 path = "src/bin/message_validate_output.rs"
 required-features = ["nota-text"]
@@ -32,15 +37,16 @@ required-features = ["nota-text"]
 
 [features]
 default = []
-nota-text = ["dep:nota-next"]
+nota-text = ["dep:nota-next", "meta-signal-message/nota-text"]
 
 [dependencies]
 nota-next       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main", optional = true }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", branch = "main", default-features = false }
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main", default-features = false }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", branch = "main", default-features = false }
 thiserror       = "2"
-tokio           = { version = "1", features = ["io-util", "rt-multi-thread"] }
+tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread"] }
 triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
 
 [build-dependencies]

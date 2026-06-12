@@ -207,8 +207,8 @@ impl<'arguments> OutputValidatorArguments<'arguments> {
 
     fn expect_finished(&self) -> Result<()> {
         if let Some(extra) = self.arguments.get(self.index) {
-            return Err(Error::UnexpectedArgument {
-                got: extra.to_string_lossy().to_string(),
+            return Err(Error::InvalidValidatorArgument {
+                detail: format!("unexpected argument {:?}", extra.to_string_lossy()),
             });
         }
         Ok(())

@@ -21,6 +21,8 @@ pub mod config;
 pub mod daemon;
 pub mod engine;
 pub mod error;
+pub(crate) mod frame_bytes;
+pub mod meta;
 #[cfg(feature = "nota-text")]
 pub mod output_validator;
 pub mod router;
@@ -42,5 +44,8 @@ pub use config::{Configuration, ConfigurationError};
 pub use daemon::{MessageDaemon, MessageDaemonError};
 pub use engine::MessageEngine;
 pub use error::{Error, Result};
+pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};
+#[cfg(feature = "nota-text")]
+pub use meta::{MetaMessageCommand, MetaMessageCommandEnvironment};
 pub use router::{RouterForwardOutcome, RouterForwarder};
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};

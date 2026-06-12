@@ -1,9 +1,11 @@
 use std::{env, path::PathBuf};
 
 use schema_rust_next::{
-    NexusDaemonShape, WorkingListenerTier,
+    MetaListenerTier, NexusDaemonShape, SocketModeBits, WorkingListenerTier,
     build::{GenerationDriver, GenerationPlan, ModuleEmission},
 };
+
+const OWNER_ONLY_SOCKET_MODE: u32 = 0o600;
 
 fn main() {
     SchemaBuild::from_environment().run();
@@ -29,7 +31,7 @@ impl SchemaBuild {
         println!("cargo:rerun-if-changed=src/schema/sema.rs");
         println!("cargo:rerun-if-changed=src/schema/daemon.rs");
 
-        let plan = GenerationPlan::new(&self.crate_root, "message", "0.4.0")
+        let plan = GenerationPlan::new(&self.crate_root, "message", "0.5.0")
             .with_module(ModuleEmission::signal_runtime_module("signal"))
             .with_module(ModuleEmission::nexus_runtime())
             .with_module(ModuleEmission::sema_runtime())
@@ -41,11 +43,11 @@ impl SchemaBuild {
             .expect("checked-in message schema artifacts are fresh");
     }
 
-    /// Message's daemon shape: the `message-daemon` process bound to a single
-    /// working signal listener (`schema/signal.schema`). Message has no
-    /// owner-only meta tier — it is a stateless stamp-and-forward ingress with
-    /// one peer-callable socket, so no `with_meta_tier`.
+    /// Message's daemon shape: the `message-daemon` process bound to a working
+    /// signal listener (`schema/signal.schema`) plus the owner-only meta tier.
     fn daemon_shape(&self) -> NexusDaemonShape {
-        NexusDaemonShape::new("message-daemon", WorkingListenerTier::new("signal"))
+        NexusDaemonShape::new("message-daemon", WorkingListenerTier::new("signal")).with_meta_tier(
+            MetaListenerTier::new(SocketModeBits::new(OWNER_ONLY_SOCKET_MODE)),
+        )
     }
 }

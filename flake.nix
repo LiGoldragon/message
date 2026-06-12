@@ -162,6 +162,12 @@
             context.cargoTestFileWithFeatures "process_boundary"
               "daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket"
               "nota-text";
+          # Owner-side meta CLI over the meta socket: one meta-signal-message
+          # Configure request receives typed skeleton-honest unimplemented.
+          message-meta-cli-reaches-owner-policy-socket =
+            context.cargoTestFileWithFeatures "process_boundary"
+              "meta_cli_reaches_owner_policy_socket_and_gets_typed_unimplemented_reply"
+              "nota-text";
           # The Nexus forward-to-router effect against a stub router: a submit is
           # stamped from the configured owner and forwarded, and the router
           # acceptance is translated back into the Signal output.

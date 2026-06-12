@@ -3,9 +3,10 @@
 use thiserror::Error;
 #[rustfmt::skip]
 use triad_runtime::{
-    AcceptedConnection, AsyncListenerError, AsyncConnectionRuntime,
-    AsyncSingleListenerDaemon, AsyncSingleListenerDaemonError, ArgumentError,
-    ComponentArgument, ComponentCommand, BindingSurface, ExitReport, RequestErrorLog,
+    AcceptedConnection, AsyncListenerError, AsyncListenerSocket,
+    AsyncMultiConnectionRuntime, AsyncMultiListenerDaemon, AsyncMultiListenerDaemonError,
+    SocketMode, ArgumentError, ComponentArgument, ComponentCommand, BindingSurface,
+    ExitReport, RequestErrorLog,
 };
 #[rustfmt::skip]
 use triad_runtime::EngineRequestError;
@@ -76,6 +77,19 @@ pub trait ComponentDaemon: Sized + 'static {
     ) -> impl std::future::Future<
         Output = Result<Output, Self::Error>,
     > + Send + 'connection;
+    /// Run one accepted meta connection. The meta tier is async task-backed,
+    /// but this hook remains the explicit component escape hatch until
+    /// the daemon shape names the meta signal contract path.
+    fn handle_meta_connection(
+        engine: &mut Self::Engine,
+        connection: AcceptedConnection,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send + '_ {
+        async move {
+            let _ = engine;
+            let _ = connection;
+            Ok(())
+        }
+    }
 }
 #[rustfmt::skip]
 /// argv -> binary `Configuration` -> the bound daemon. The single-argument
@@ -125,6 +139,21 @@ impl<Daemon: ComponentDaemon> DaemonCommand<Daemon> {
     }
 }
 #[rustfmt::skip]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ListenerTier {
+    Working,
+    Meta,
+}
+#[rustfmt::skip]
+impl std::fmt::Display for ListenerTier {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Working => formatter.write_str("working"),
+            Self::Meta => formatter.write_str("meta"),
+        }
+    }
+}
+#[rustfmt::skip]
 /// The bound daemon constructor on the component trait: builds the engine,
 /// wraps it in the generated actor connection runtime, and returns the
 /// async task-backed listener shell the `DaemonCommand` drives. The component
@@ -134,23 +163,37 @@ pub trait DaemonBinder: ComponentDaemon {
     fn bind(
         configuration: Self::Configuration,
     ) -> Result<
-        AsyncSingleListenerDaemon<GeneratedDaemonRuntime<Self>>,
+        AsyncMultiListenerDaemon<GeneratedDaemonRuntime<Self>>,
         DaemonError<Self>,
     > {
         let engine = Self::build_runtime(&configuration)
             .map_err(DaemonError::Component)?;
         let runtime = GeneratedDaemonRuntime::<Self>::new(engine);
-        let daemon = AsyncSingleListenerDaemon::new(
-                configuration.socket_path().to_path_buf(),
-                runtime,
-                RequestErrorLog::new(Self::PROCESS_NAME),
-            )
-            .with_concurrency_limit(configuration.request_concurrency_limit());
+        let working_socket = AsyncListenerSocket::new(
+            ListenerTier::Working,
+            configuration.socket_path().to_path_buf(),
+        );
+        let working_socket = match configuration.socket_mode() {
+            Some(socket_mode) => working_socket.with_socket_mode(socket_mode),
+            None => working_socket,
+        };
+        let mut listener_sockets = std::vec![working_socket];
+        let meta_socket_path = configuration
+            .meta_socket_path()
+            .ok_or(DaemonError::MissingMetaSocket)?
+            .to_path_buf();
+        listener_sockets
+            .push(
+                AsyncListenerSocket::new(ListenerTier::Meta, meta_socket_path)
+                    .with_socket_mode(SocketMode::new(0o600)),
+            );
         Ok(
-            match configuration.socket_mode() {
-                Some(socket_mode) => daemon.with_socket_mode(socket_mode),
-                None => daemon,
-            },
+            AsyncMultiListenerDaemon::new(
+                    listener_sockets,
+                    runtime,
+                    RequestErrorLog::new(Self::PROCESS_NAME),
+                )
+                .with_concurrency_limit(configuration.request_concurrency_limit()),
         )
     }
 }
@@ -231,6 +274,21 @@ impl<Daemon: ComponentDaemon> Message<WorkingInput> for EngineActor<Daemon> {
     }
 }
 #[rustfmt::skip]
+pub struct MetaConnection {
+    connection: AcceptedConnection,
+}
+#[rustfmt::skip]
+impl<Daemon: ComponentDaemon> Message<MetaConnection> for EngineActor<Daemon> {
+    type Reply = Result<(), Daemon::Error>;
+    async fn handle(
+        &mut self,
+        message: MetaConnection,
+        _context: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        Daemon::handle_meta_connection(&mut self.engine, message.connection).await
+    }
+}
+#[rustfmt::skip]
 /// The generated runtime struct holds an `ActorRef` to the engine
 /// actor. Its `handle_connection` IS the async decode -> ask -> encode
 /// spine; the engine state lives behind the actor mailbox.
@@ -281,9 +339,35 @@ impl<Daemon: ComponentDaemon> GeneratedDaemonRuntime<Daemon> {
             Err(error) => Err(Self::engine_send_error(error)),
         }
     }
+    async fn handle_meta_connection(
+        &self,
+        connection: AcceptedConnection,
+    ) -> Result<(), Daemon::Error> {
+        match self.engine.ask(MetaConnection { connection }).await {
+            Ok(()) => Ok(()),
+            Err(SendError::HandlerError(error)) => Err(error),
+            Err(SendError::ActorNotRunning(_)) => {
+                Err(EngineRequestError::new("engine actor is not running").into())
+            }
+            Err(SendError::ActorStopped) => {
+                Err(
+                    EngineRequestError::new("engine actor stopped before replying")
+                        .into(),
+                )
+            }
+            Err(SendError::MailboxFull(_)) => {
+                Err(EngineRequestError::new("engine actor mailbox is full").into())
+            }
+            Err(SendError::Timeout(_)) => {
+                Err(EngineRequestError::new("engine actor request timed out").into())
+            }
+        }
+    }
 }
 #[rustfmt::skip]
-impl<Daemon: ComponentDaemon> AsyncConnectionRuntime for GeneratedDaemonRuntime<Daemon> {
+impl<Daemon: ComponentDaemon> AsyncMultiConnectionRuntime
+for GeneratedDaemonRuntime<Daemon> {
+    type Listener = ListenerTier;
     type Error = Daemon::Error;
     async fn start(&self) -> Result<(), Daemon::Error> {
         self.engine
@@ -313,9 +397,13 @@ impl<Daemon: ComponentDaemon> AsyncConnectionRuntime for GeneratedDaemonRuntime<
     }
     async fn handle_connection(
         &self,
+        listener: Self::Listener,
         connection: AcceptedConnection,
     ) -> Result<(), Self::Error> {
-        self.handle_working_connection(connection).await
+        match listener {
+            ListenerTier::Working => self.handle_working_connection(connection).await,
+            ListenerTier::Meta => self.handle_meta_connection(connection).await,
+        }
     }
 }
 #[rustfmt::skip]
@@ -331,6 +419,8 @@ pub enum DaemonError<Daemon: ComponentDaemon> {
     Runtime(std::io::Error),
     #[error("daemon listener error: {0}")]
     Listener(AsyncListenerError),
+    #[error("daemon meta socket path missing from configuration")]
+    MissingMetaSocket,
     #[error("component error: {0}")]
     Component(Daemon::Error),
 }
@@ -341,13 +431,13 @@ impl<Daemon: ComponentDaemon> From<ArgumentError> for DaemonError<Daemon> {
     }
 }
 #[rustfmt::skip]
-impl<Daemon: ComponentDaemon> From<AsyncSingleListenerDaemonError<Daemon::Error>>
+impl<Daemon: ComponentDaemon> From<AsyncMultiListenerDaemonError<Daemon::Error>>
 for DaemonError<Daemon> {
-    fn from(error: AsyncSingleListenerDaemonError<Daemon::Error>) -> Self {
+    fn from(error: AsyncMultiListenerDaemonError<Daemon::Error>) -> Self {
         match error {
-            AsyncSingleListenerDaemonError::Listener(error) => Self::Listener(error),
-            AsyncSingleListenerDaemonError::Start(error)
-            | AsyncSingleListenerDaemonError::Stop(error) => Self::Component(error),
+            AsyncMultiListenerDaemonError::Listener(error) => Self::Listener(error),
+            AsyncMultiListenerDaemonError::Start(error)
+            | AsyncMultiListenerDaemonError::Stop(error) => Self::Component(error),
         }
     }
 }

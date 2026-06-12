@@ -1,9 +1,10 @@
 # INTENT — message
 
 `message` is a schema-derived triad component on the emitted daemon runtime. It
-owns two binaries: the `message` CLI (thin client) and `message-daemon` (the
-stamp-and-forward ingress). Neither carries a durable message ledger — message
-is a stateless boundary surface. Routing policy, delivery state, and channel
+owns three binaries: the `message` CLI (ordinary thin client), `meta-message`
+(owner meta-policy client), and `message-daemon` (the stamp-and-forward
+ingress). Neither CLI nor daemon carries a durable message ledger — message is a
+stateless boundary surface. Routing policy, delivery state, and channel
 authority remain in router.
 
 ## The three planes
@@ -30,14 +31,17 @@ Message's runtime is the three schema-driven planes (`schema/signal.schema`,
 ## The emitted daemon
 
 The async task-backed daemon skeleton is emitted into `src/schema/daemon.rs` from the
-`NexusDaemonShape` in `build.rs` (process `message-daemon`, single working
-listener, no meta tier). The only daemon code message hand-writes is `impl
+`NexusDaemonShape` in `build.rs` (process `message-daemon`, working listener
+plus owner-only meta listener). The only daemon code message hand-writes is `impl
 ComponentDaemon for MessageDaemon` in `src/daemon.rs`: `Configuration` /
 `Engine` / `Error` / `PROCESS_NAME` + `build_runtime` + `handle_working_input`.
 The daemon bin is the one-liner `MessageDaemon::run_to_exit_code()`. The daemon
 reads a binary rkyv `Configuration` from its single argv argument (socket path,
-router socket path, database path, owner name, owner uid) — no environment
-variables on the production path, no flags.
+meta socket path, router socket path, database path, owner name, owner uid) —
+no environment variables on the production path, no flags. The meta listener
+accepts `meta-signal-message` frames; `Configure` currently replies typed
+`RequestUnimplemented(NotBuiltYet)` until runtime reconfiguration is wired to
+the daemon's local configuration type.
 
 ## Wire translation to router
 

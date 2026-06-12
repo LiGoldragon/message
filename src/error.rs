@@ -1,9 +1,23 @@
+#[cfg(feature = "nota-text")]
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("component argument error: {0}")]
+    Argument(#[from] triad_runtime::ArgumentError),
+
+    #[cfg(feature = "nota-text")]
+    #[error("failed to read NOTA file {}: {source}", path.display())]
+    ReadNotaFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[cfg(feature = "nota-text")]
     #[error("nota: {0}")]
@@ -17,18 +31,6 @@ pub enum Error {
 
     #[error("schema signal frame: {0}")]
     SchemaSignalFrame(#[from] crate::schema::signal::SignalFrameError),
-
-    #[cfg(feature = "nota-text")]
-    #[error("inline Nota argument must be UTF-8: {got:?}")]
-    InvalidInlineNotaArgument { got: String },
-
-    #[cfg(feature = "nota-text")]
-    #[error("missing NOTA input; pass one record such as '(Send designer [hello])'")]
-    MissingInput,
-
-    #[cfg(feature = "nota-text")]
-    #[error("unexpected command-line argument: {got:?}")]
-    UnexpectedArgument { got: String },
 
     #[cfg(feature = "nota-text")]
     #[error("invalid validator argument: {detail}")]
@@ -50,6 +52,15 @@ pub enum Error {
 
     #[error("daemon input was not a request frame: {got}")]
     UnexpectedDaemonInput { got: String },
+
+    #[error("unexpected meta message frame: {0}")]
+    UnexpectedMetaFrame(&'static str),
+
+    #[error("unexpected meta message sub-reply: {0}")]
+    UnexpectedMetaSubReply(String),
+
+    #[error("meta message reply rejected before execution: {0}")]
+    MetaReplyRejected(signal_frame::RequestRejectionReason),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

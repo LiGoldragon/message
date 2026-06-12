@@ -1,29 +1,35 @@
 # message — architecture
 
 *Engine message ingress / text boundary. Owns the
-`message` CLI and the `message` daemon (binary:
-`message-daemon`), the supervised first-stack
-component.*
+`message` and `meta-message` CLIs plus the supervised `message`
+daemon (binary: `message-daemon`).*
 
-`message` owns two binaries:
+`message` owns three binaries:
 
 - The `message` CLI — one NOTA in, one NOTA out. Validates a
   user-typed NOTA record through Rust types, projects to a
   schema-derived signal frame, sends it to `message`
   on the engine's user-writable socket (`message.sock`, mode
   0660), reads one reply frame, prints the NOTA reply.
+- The `meta-message` CLI — one owner-side `meta-signal-message`
+  NOTA request in, one NOTA reply out. It connects to the owner
+  meta socket from `MESSAGE_META_SOCKET` and currently receives
+  typed skeleton-honest `RequestUnimplemented(NotBuiltYet)` replies
+  for `Configure`.
 - The `message` daemon (binary file: `message-daemon`) — a
   schema-derived triad daemon on the emitted `triad-runtime`
   runtime. The daemon skeleton is EMITTED into
   `src/schema/daemon.rs` from the `NexusDaemonShape` in
   `build.rs`; message hand-writes only `impl ComponentDaemon for
   MessageDaemon`. It reads a binary rkyv `Configuration` from its
-  single argv argument (socket path, router socket path, database
+  single argv argument (socket path, meta socket path, router socket path, database
   path, owner name, owner uid), binds `message.sock`, decodes schema-derived
-  signal frames, runs the generated Nexus decision step, and forwards the
-  translated request to `router`'s internal socket
-  (`router.sock`) over the `signal-message` wire as a
-  `StampedMessageSubmission`.
+  signal frames, binds the owner-only meta socket, runs the generated Nexus
+  decision step, and forwards the translated request to `router`'s internal
+  socket (`router.sock`) over the `signal-message` wire as a
+  `StampedMessageSubmission`. The owner meta socket accepts
+  `meta-signal-message` frames and currently returns typed unimplemented
+  replies.
 
 There is no `MessageProxy` component here. The supervised
 first-stack component is named `message`; the long-lived
@@ -32,10 +38,9 @@ binary is `message-daemon`.
 ## 0 · TL;DR
 
 This repo owns the engine's message-ingress boundary: a
-small supervised daemon plus a CLI client. Neither carries
-a durable message ledger; both are stateless boundary
-surfaces. Routing policy, delivery state, and channel
-authority remain in `router`.
+small supervised daemon plus ordinary and owner-side CLI clients. None carries
+a durable message ledger; all are stateless boundary surfaces. Routing policy,
+delivery state, and channel authority remain in `router`.
 
 ```mermaid
 flowchart LR
@@ -45,6 +50,8 @@ flowchart LR
     "router" -->|"length-prefixed reply frame"| "message"
     "message" -->|"length-prefixed reply frame"| "message CLI"
     "message CLI" -->|"one NOTA reply"| "human or harness"
+    "meta-message CLI" -->|"meta-signal-message Configure"| "message meta socket"
+    "message meta socket" -->|"RequestUnimplemented(NotBuiltYet)"| "meta-message CLI"
 ```
 
 ## 1 · Component Surface
@@ -52,10 +59,12 @@ flowchart LR
 `message` exposes:
 
 - a `message` binary;
+- a `meta-message` binary;
 - a `message-daemon` binary;
 - NOTA `Send` and `Inbox` input records;
 - one length-prefixed schema signal request frame per CLI invocation;
 - one daemon-bound `message.sock` for working ingress;
+- one owner-only meta socket for `meta-signal-message`;
 - one router client path to internal `router.sock`;
 - one NOTA reply projection per invocation;
 - no caller-provided identity and no local actor index.
@@ -87,9 +96,11 @@ flowchart LR
   plane exists only to satisfy the uniform three-plane shape.
 
 The emitted daemon (`src/schema/daemon.rs`) owns the argv-config load, the
-single working-socket bind, and the decode → `handle_working_input` → encode
-spine. `MessageDaemon` (`src/daemon.rs`) supplies only the `ComponentDaemon`
-escape hatches. The daemon is single-listener (no meta tier) and stateless
+working-socket and owner-meta-socket binds, and the decode →
+`handle_working_input` → encode spine. `MessageDaemon` (`src/daemon.rs`)
+supplies only the `ComponentDaemon` escape hatches. The owner meta hook decodes
+`meta-signal-message` frames and returns typed `RequestUnimplemented(NotBuiltYet)`
+for `Configure` until live reconfiguration is wired. The daemon is stateless
 across requests — no redb, no durable message ledger.
 
 `RouterForwarder` (`src/router.rs`) is the translation seam between the
@@ -105,10 +116,10 @@ caller payload.
 The message component owns no durable message state. The CLI requires
 `MESSAGE_SOCKET` or `PERSONA_SOCKET_PATH` and exits if the message
 daemon socket is absent. The daemon requires a typed binary rkyv
-`Configuration` on argv (socket path, router socket path, database path,
-owner name) whose `router_socket_path` names the router's internal socket;
-the emitted spine exits at decode time if the configuration is missing or
-malformed.
+`Configuration` on argv (socket path, meta socket path, router socket path,
+database path, owner name) whose `router_socket_path` names the router's
+internal socket and whose `meta_socket_path` names the owner-only socket; the
+emitted spine exits at decode time if the configuration is missing or malformed.
 
 Caller identity is not accepted from the model or CLI payload.
 `MessageSubmission` and `InboxQuery` stay sender-free, and the component sends
@@ -126,7 +137,8 @@ setting (socket paths, owner identity, router socket) arrives as a typed
 `Configuration` field decoded from the single argv argument by
 `Configuration::from_binary_path`. The `SignalMessageSocket::from_environment`
 constructor on the CLI side reads `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH` as
-the CLI's socket discovery; the daemon path reads no environment variables.
+the ordinary CLI's socket discovery. `meta-message` reads `MESSAGE_META_SOCKET`
+for the owner meta socket. The daemon path reads no environment variables.
 
 Actor registration, actor listing, pending delivery, retry, delivery results,
 and message ledger state are router or engine-manager concerns, not message
@@ -137,9 +149,14 @@ state.
 This repo owns:
 
 - NOTA parsing for the `message` command;
+- NOTA parsing for the `meta-message` command;
 - projection from NOTA `Send` / `Inbox` to `signal-message`;
+- projection from NOTA `meta-signal-message` requests to owner meta frames;
 - projection from `signal-message` replies back to NOTA;
+- projection from `meta-signal-message` replies back to NOTA;
 - length-prefixed Signal frame transport from CLI to `message.sock`;
+- length-prefixed meta-signal frame transport from `meta-message` to the owner
+  meta socket;
 - frame-level exchange echoing for the current one-operation request/reply
 - daemon stamping from `MessageSubmission` to `StampedMessageSubmission`
   using the accepted connection's peer credentials;
@@ -160,13 +177,19 @@ This repo does not own:
 
 - The CLI accepts exactly one NOTA input record.
 - The CLI prints exactly one NOTA reply record.
+- The `meta-message` CLI accepts exactly one `meta-signal-message` NOTA request.
+- The `meta-message` CLI prints exactly one `meta-signal-message` NOTA reply.
 - Supported input variants are `Send` and `Inbox`.
 - The message daemon socket is mandatory for the CLI.
+- The owner meta socket is mandatory for the `meta-message` CLI.
 - The router socket is mandatory for the daemon.
-- The daemon is single-listener: the emitted spine binds one working
-  `message.sock` from the `NexusDaemonShape` in `build.rs`. Message has no
-  meta tier.
-- The daemon uses the emitted `triad-runtime` `AsyncSingleListenerDaemon` spine
+- The daemon is multi-listener: the emitted spine binds one working
+  `message.sock` and one owner-only meta socket from the `NexusDaemonShape` in
+  `build.rs`.
+- The owner meta socket accepts `meta-signal-message` frames and replies typed
+  `RequestUnimplemented(NotBuiltYet)` for `Configure` until live
+  reconfiguration is built.
+- The daemon uses the emitted `triad-runtime` `AsyncMultiListenerDaemon` spine
   (the `ComponentDaemon` / `DaemonBinder` default methods in
   `src/schema/daemon.rs`) for ingress instead of owning a hand-written accept
   loop.
@@ -218,11 +241,14 @@ src/schema/nexus.rs            generated Nexus plane (NexusEngine)
 src/schema/sema.rs             generated SEMA plane (SemaEngine)
 src/schema/daemon.rs           EMITTED daemon skeleton (ComponentDaemon, the spine)
 src/main.rs                    message CLI entry
+src/bin/meta_message.rs        owner meta CLI entry
 src/bin/message_daemon.rs      daemon entry (one-liner: MessageDaemon::run_to_exit_code())
 src/bin/message_validate_output.rs test/debug validator for message CLI NOTA replies
 src/config.rs                  binary rkyv daemon Configuration (impl BindingSurface)
 src/daemon.rs                  impl ComponentDaemon for MessageDaemon (the only daemon code)
 src/engine.rs                  MessageEngine + request-scoped generated Nexus runner hooks
+src/meta.rs                    meta-message client, codec, command, and skeleton replies
+src/frame_bytes.rs             preserved length-prefixed frame bytes for signal_channel contracts
 src/command.rs                 CLI NOTA input/output projection
 src/output_validator.rs        structured validator for sandbox message artifacts
 src/router.rs                  RouterForwarder + signal-message contract client/codec
@@ -237,6 +263,7 @@ tests/forward_to_router.rs     Nexus forward effect against a stub router
 | Constraint | Test |
 |---|---|
 | The emitted daemon spine serves over a real socket and replies `Unimplemented` straight from the Nexus decision for an already-stamped submission. | `nix build .#checks.x86_64-linux.message-emitted-daemon-replies-unimplemented-for-already-stamped-submission` |
+| The owner meta CLI reaches the meta socket and receives a typed `RequestUnimplemented(NotBuiltYet)` reply for `Configure`. | `nix build .#checks.x86_64-linux.message-meta-cli-reaches-owner-policy-socket` |
 | The daemon stamps an owner-peer submission as the configured harness component instance from SO_PEERCRED + config and forwards it to the router, translating the acceptance back. | `nix build .#checks.x86_64-linux.message-daemon-stamps-owner-submission-to-router` |
 | The daemon stamps a non-owner peer as `NonOwnerUser(uid)`, proving peer credentials survive the generated-runner hook path. | `nix build .#checks.x86_64-linux.message-daemon-stamps-non-owner-submission-to-router` |
 | A router-unreachable forward yields a typed `Error` output. | `nix build .#checks.x86_64-linux.message-router-unreachable-yields-typed-error` |

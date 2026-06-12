@@ -1,7 +1,8 @@
 # message skill
 
 Work here when the change concerns the `message` CLI, `message-daemon`,
-NOTA message projection, message ingress, or real harness message tests.
+`meta-message` CLI, NOTA message projection, message ingress, or real harness
+message tests.
 
 Rules for work here:
 
@@ -10,9 +11,12 @@ Rules for work here:
 - `message` sends length-prefixed rkyv Signal frames to
   `message-daemon` through `MESSAGE_SOCKET` and prints one NOTA
   reply projection.
+- `meta-message` sends one `meta-signal-message` request to the owner meta
+  socket through `MESSAGE_META_SOCKET` and prints one NOTA reply projection.
 - `message-daemon` binds the supervised `message.sock`, stamps
   `MessageSubmission` frames into `StampedMessageSubmission`, forwards typed
-  frames to `router`, and owns no durable message state.
+  frames to `router`, binds the owner meta socket, and owns no durable message
+  state.
 - The component must not write local message ledgers, pending logs, or
   actor-registration files. Router-owned Sema tables are the durable message
   owner.

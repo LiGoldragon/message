@@ -312,8 +312,9 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
+ "meta-signal-message",
  "nota-next",
  "rkyv",
  "rustix",
@@ -324,6 +325,18 @@ dependencies = [
  "thiserror",
  "tokio",
  "triad-runtime",
+]
+
+[[package]]
+name = "meta-signal-message"
+version = "0.1.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?branch=main#a7c810e56dcd9b5fea28995f9adfe825d15755a6"
+dependencies = [
+ "nota-next",
+ "rkyv",
+ "signal-frame",
+ "signal-message",
+ "thiserror",
 ]
 
 [[package]]
@@ -360,7 +373,7 @@ dependencies = [
 [[package]]
 name = "nota-next"
 version = "0.4.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#af6a2080d52b88ef5c6c89755ecfd3e818ffdea4"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#065fa2ad2fa05bac87677f0bfa826bd92dbd139a"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -369,7 +382,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#af6a2080d52b88ef5c6c89755ecfd3e818ffdea4"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#065fa2ad2fa05bac87677f0bfa826bd92dbd139a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -518,7 +531,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "schema-next"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#9a9b769bacd6f24517dce98d341ee63cbb332cf0"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#2397d5b2a4a8f35da1ba5957f48337f9a579db00"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -527,7 +540,7 @@ dependencies = [
 [[package]]
 name = "schema-rust-next"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#b1c36e1ab61756d4f6afc9fafe7b9c9a3ab68611"
+source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#cedb2e0652b2d8e3aa24c96a82b6daee6af785ad"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -591,6 +604,7 @@ name = "signal-frame"
 version = "0.2.1"
 source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#166bda84dc63bf8461fff11a41c43d6a1c92a941"
 dependencies = [
+ "nota-next",
  "paste",
  "rkyv",
  "signal-frame-macros",
@@ -610,8 +624,9 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#fbdc675d0850adf0144909770d8106e9936af6a6"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#ef73a85b96ceb37072050b93dd6756f2f9857172"
 dependencies = [
+ "nota-next",
  "rkyv",
  "schema-rust-next",
  "signal-frame",

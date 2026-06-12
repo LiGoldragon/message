@@ -34,11 +34,15 @@ use message::{
         OwnerName, Recipient, StampedMessageSubmission, SubmitStamped, TimestampNanos,
     },
 };
+use meta_signal_message::Operation as MetaMessageOperation;
+use nota_next::NotaEncode;
+use signal_frame::RequestPayload;
 use signal_message::{
     ComponentInstanceName as RouterComponentInstanceName, ComponentName as RouterComponentName,
     Input as SignalMessageInput, InternalComponentInstanceOrigin as RouterInstanceOrigin,
-    MessageOrigin as RouterMessageOrigin, MessageSlot, Output as SignalMessageOutput,
-    SubmissionAcceptance,
+    MessageDaemonConfiguration as MetaConfiguration, MessageOrigin as RouterMessageOrigin,
+    MessageSlot, Output as SignalMessageOutput, OwnerIdentity, SocketMode, SubmissionAcceptance,
+    UnixUserIdentifier, WirePath,
 };
 use tempfile::TempDir;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
@@ -55,10 +59,16 @@ impl Drop for DaemonProcess {
 }
 
 impl DaemonProcess {
-    fn spawn(socket_path: &Path, router_socket_path: &Path, database_path: &Path) -> Self {
+    fn spawn(
+        socket_path: &Path,
+        meta_socket_path: &Path,
+        router_socket_path: &Path,
+        database_path: &Path,
+    ) -> Self {
         let configuration_path = socket_path.with_extension("config.rkyv");
         Configuration::new(
             socket_path,
+            meta_socket_path,
             router_socket_path,
             database_path,
             "owner",
@@ -72,6 +82,7 @@ impl DaemonProcess {
             .expect("spawn message daemon");
         let process = Self { child };
         wait_for_socket(socket_path);
+        wait_for_socket(meta_socket_path);
         process
     }
 }
@@ -144,10 +155,16 @@ impl StubRouter {
 fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket() {
     let temp = TempDir::new().expect("tempdir");
     let socket_path = temp.path().join("message.sock");
+    let meta_socket_path = temp.path().join("meta-message.sock");
     let router_socket_path = temp.path().join("router.sock");
     let database_path = temp.path().join("message.unused");
 
-    let _daemon = DaemonProcess::spawn(&socket_path, &router_socket_path, &database_path);
+    let _daemon = DaemonProcess::spawn(
+        &socket_path,
+        &meta_socket_path,
+        &router_socket_path,
+        &database_path,
+    );
 
     // An already-stamped submission: the daemon mints provenance, it never
     // accepts it from a peer, so this replies Unimplemented straight from the
@@ -181,12 +198,18 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
 fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
     let temp = TempDir::new().expect("tempdir");
     let socket_path = temp.path().join("message.sock");
+    let meta_socket_path = temp.path().join("meta-message.sock");
     let router_socket_path = temp.path().join("router.sock");
     let database_path = temp.path().join("message.unused");
     let router = StubRouter::bind(&router_socket_path);
     let router_thread = router.serve_one_acceptance();
 
-    let _daemon = DaemonProcess::spawn(&socket_path, &router_socket_path, &database_path);
+    let _daemon = DaemonProcess::spawn(
+        &socket_path,
+        &meta_socket_path,
+        &router_socket_path,
+        &database_path,
+    );
 
     let cli_output = Command::new(env!("CARGO_BIN_EXE_message"))
         .env("MESSAGE_SOCKET", &socket_path)
@@ -222,6 +245,57 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
         }
         other => panic!("expected daemon to stamp CLI submission before forwarding, got {other:?}"),
     }
+}
+
+#[test]
+fn meta_cli_reaches_owner_policy_socket_and_gets_typed_unimplemented_reply() {
+    let temp = TempDir::new().expect("tempdir");
+    let socket_path = temp.path().join("message.sock");
+    let meta_socket_path = temp.path().join("meta-message.sock");
+    let router_socket_path = temp.path().join("router.sock");
+    let database_path = temp.path().join("message.unused");
+
+    let _daemon = DaemonProcess::spawn(
+        &socket_path,
+        &meta_socket_path,
+        &router_socket_path,
+        &database_path,
+    );
+
+    let request = MetaMessageOperation::Configure(MetaConfiguration {
+        message_socket_path: WirePath::new(socket_path.to_string_lossy().into_owned()),
+        message_socket_mode: SocketMode::new(0o660),
+        supervision_socket_path: WirePath::new(
+            temp.path()
+                .join("message-supervision.sock")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        supervision_socket_mode: SocketMode::new(0o600),
+        router_socket_path: WirePath::new(router_socket_path.to_string_lossy().into_owned()),
+        component_ingresses: Vec::new(),
+        owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(u64::from(
+            CurrentProcessUser::owner_user_id(),
+        ))),
+    })
+    .into_request()
+    .to_nota();
+
+    let cli_output = Command::new(env!("CARGO_BIN_EXE_meta-message"))
+        .env("MESSAGE_META_SOCKET", &meta_socket_path)
+        .arg(request)
+        .output()
+        .expect("run meta-message CLI");
+
+    assert!(
+        cli_output.status.success(),
+        "meta-message CLI failed: {}",
+        String::from_utf8_lossy(&cli_output.stderr)
+    );
+    let stdout = String::from_utf8(cli_output.stdout).expect("meta CLI stdout is utf8");
+    assert!(stdout.contains("RequestUnimplemented"));
+    assert!(stdout.contains("Configure"));
+    assert!(stdout.contains("NotBuiltYet"));
 }
 
 fn wait_for_socket(path: &Path) {

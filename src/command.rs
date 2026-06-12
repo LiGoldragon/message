@@ -1,9 +1,9 @@
-use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
 
 use nota_next::{Block, Delimiter, NotaBody, NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use triad_runtime::{ComponentArgument, ComponentCommand};
 
 use crate::client::MessageSocket;
 use crate::error::{Error, Result as MessageResult};
@@ -317,53 +317,36 @@ impl UnimplementedReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandLine {
-    arguments: Vec<OsString>,
+    command: ComponentCommand,
 }
 
 impl CommandLine {
     pub fn from_env() -> Self {
-        Self::from_arguments(std::env::args_os().skip(1))
+        Self {
+            command: ComponentCommand::from_environment(),
+        }
     }
 
-    pub fn from_arguments<I, S>(arguments: I) -> Self
+    pub fn from_arguments<Arguments, Argument>(arguments: Arguments) -> Self
     where
-        I: IntoIterator<Item = S>,
-        S: Into<OsString>,
+        Arguments: IntoIterator<Item = Argument>,
+        Argument: Into<String>,
     {
         Self {
-            arguments: arguments.into_iter().map(Into::into).collect(),
+            command: ComponentCommand::from_arguments(arguments),
         }
     }
 
     pub fn decode_input(&self) -> MessageResult<Input> {
-        let Some(first) = self.arguments.first() else {
-            return Err(Error::MissingInput);
-        };
-        self.require_single_argument()?;
-
-        if CommandLineArgument::new(first).starts_inline_record() {
-            let Some(text) = first.to_str() else {
-                return Err(Error::InvalidInlineNotaArgument {
-                    got: format!("{first:?}"),
-                });
-            };
-            Input::from_nota(text)
-        } else {
-            InputFile::from_path(PathBuf::from(first)).decode()
+        match self.command.nota_argument()? {
+            ComponentArgument::InlineNota(argument) => Input::from_nota(&argument.into_string()),
+            ComponentArgument::NotaFile(file) => InputFile::from_path(file.into_path()).decode(),
+            ComponentArgument::SignalFile(file) => InputFile::from_path(file.into_path()).decode(),
         }
     }
 
     pub fn run(&self, output: impl Write) -> MessageResult<()> {
         self.decode_input()?.run(output)
-    }
-
-    fn require_single_argument(&self) -> MessageResult<()> {
-        if let Some(argument) = self.arguments.get(1) {
-            return Err(Error::UnexpectedArgument {
-                got: argument.to_string_lossy().to_string(),
-            });
-        }
-        Ok(())
     }
 }
 
@@ -378,21 +361,10 @@ impl InputFile {
     }
 
     pub fn decode(&self) -> MessageResult<Input> {
-        let text = std::fs::read_to_string(&self.path)?;
+        let text = std::fs::read_to_string(&self.path).map_err(|source| Error::ReadNotaFile {
+            path: self.path.clone(),
+            source,
+        })?;
         Input::from_nota(&text)
-    }
-}
-
-struct CommandLineArgument<'argument> {
-    argument: &'argument OsString,
-}
-
-impl<'argument> CommandLineArgument<'argument> {
-    fn new(argument: &'argument OsString) -> Self {
-        Self { argument }
-    }
-
-    fn starts_inline_record(&self) -> bool {
-        self.argument.to_string_lossy().starts_with('(')
     }
 }

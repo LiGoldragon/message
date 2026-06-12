@@ -28,6 +28,7 @@ use triad_runtime::BindingSurface;
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Configuration {
     socket_path: ConfigurationPath,
+    meta_socket_path: ConfigurationPath,
     router_socket_path: ConfigurationPath,
     database_path: ConfigurationPath,
     owner_name: String,
@@ -50,6 +51,7 @@ impl ConfigurationPath {
 impl Configuration {
     pub fn new(
         socket_path: impl AsRef<Path>,
+        meta_socket_path: impl AsRef<Path>,
         router_socket_path: impl AsRef<Path>,
         database_path: impl AsRef<Path>,
         owner_name: impl Into<String>,
@@ -57,6 +59,7 @@ impl Configuration {
     ) -> Self {
         Self {
             socket_path: ConfigurationPath::new(socket_path),
+            meta_socket_path: ConfigurationPath::new(meta_socket_path),
             router_socket_path: ConfigurationPath::new(router_socket_path),
             database_path: ConfigurationPath::new(database_path),
             owner_name: owner_name.into(),
@@ -66,6 +69,10 @@ impl Configuration {
 
     pub fn socket_path(&self) -> &Path {
         self.socket_path.as_path()
+    }
+
+    pub fn meta_socket_path(&self) -> &Path {
+        self.meta_socket_path.as_path()
     }
 
     pub fn router_socket_path(&self) -> &Path {
@@ -114,6 +121,10 @@ impl BindingSurface for Configuration {
 
     fn database_path(&self) -> &Path {
         Configuration::database_path(self)
+    }
+
+    fn meta_socket_path(&self) -> Option<&Path> {
+        Some(Configuration::meta_socket_path(self))
     }
 }
 

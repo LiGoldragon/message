@@ -6,18 +6,19 @@
 //! schema-rust-next's daemon emitter, driven by the `NexusDaemonShape` in
 //! `build.rs`. Message fills only the record-1488 escape hatches through `impl
 //! ComponentDaemon for MessageDaemon`: how to load its `Configuration`, how to
-//! build its `MessageEngine` (`build_runtime`), and how one working `Input`
-//! becomes one `Output` (`handle_working_input`). Message has no meta tier and
-//! no durable store, so there is no meta hook and no `start`/`stop` resource
-//! setup.
+//! build its `MessageEngine` (`build_runtime`), how one working `Input`
+//! becomes one `Output` (`handle_working_input`), and how the owner meta socket
+//! returns typed skeleton-honest replies until live reconfiguration is wired.
+//! Message has no durable store, so there is no `start`/`stop` resource setup.
 
 use thiserror::Error;
-use triad_runtime::{EngineRequestError, FrameError};
+use triad_runtime::{AcceptedConnection, EngineRequestError, FrameError};
 
 use crate::{
     config::{Configuration, ConfigurationError},
     engine::MessageEngine,
     error::Error as MessageError,
+    meta::{MetaMessageFrameCodec, MetaMessageFrameDecode},
     schema::{
         daemon::ComponentDaemon,
         signal::{Input, Output, SignalFrameError},
@@ -77,5 +78,27 @@ impl ComponentDaemon for MessageDaemon {
         connection: &triad_runtime::ConnectionContext,
     ) -> Result<Output, Self::Error> {
         Ok(engine.handle(input, connection).await?)
+    }
+
+    async fn handle_meta_connection(
+        _engine: &mut Self::Engine,
+        mut connection: AcceptedConnection,
+    ) -> Result<(), Self::Error> {
+        let codec = MetaMessageFrameCodec::default();
+        let first_frame = codec.read_frame_bytes(connection.stream_mut()).await?;
+        match codec.decode_request_frame(&first_frame) {
+            Ok((exchange, operation)) => {
+                codec
+                    .write_unimplemented_reply(connection.stream_mut(), exchange, operation)
+                    .await?;
+                Ok(())
+            }
+            Err(MetaMessageFrameDecode::NotMeta) => {
+                Err(MessageError::UnexpectedMetaFrame("expected meta-signal-message frame").into())
+            }
+            Err(MetaMessageFrameDecode::UnexpectedFrame(message)) => {
+                Err(MessageError::UnexpectedMetaFrame(message).into())
+            }
+        }
     }
 }
