@@ -11,11 +11,12 @@ use signal_message::{
     ComponentInstanceName, ComponentName, ConnectionClass, Frame, FrameBody,
     InboxEntry as WireInboxEntry, InboxQuery as WireInboxQuery, Input as SignalMessageInput,
     InternalComponentInstanceOrigin, MessageBody, MessageKind as WireMessageKind, MessageOrigin,
-    MessageRecipient, MessageSubmission as WireMessageSubmission, Output as SignalMessageOutput,
-    OwnerIdentity, StampedMessageSubmission as WireStampedMessageSubmission,
+    MessageRecipient, MessageSubmission as WireMessageSubmission, NetworkPeer,
+    Output as SignalMessageOutput, OwnerIdentity,
+    StampedMessageSubmission as WireStampedMessageSubmission,
     SubmissionRejectionReason as WireSubmissionRejectionReason, TimestampNanos, UnixUserIdentifier,
 };
-use triad_runtime::ConnectionContext;
+use triad_runtime::{ConnectionContext, PeerIdentity, UnixCredentials};
 
 use crate::error::{Error, Result};
 use crate::schema::nexus::ForwardRequest;
@@ -249,16 +250,26 @@ impl OriginPolicy {
         )
     }
 
-    /// Classify an accepted connection's peer credentials into a typed origin.
+    /// Classify an accepted connection's peer identity into a typed origin.
     ///
     /// A peer uid that matches the owner's Unix uid is the configured local
     /// harness instance; any other local user is a non-owner. A `System`-owned
     /// engine has no Unix owner uid to match against, so every local connection
     /// classifies as a non-owner user — matching the old daemon's uid-gated
     /// trust boundary while preserving the component-instance identity router
-    /// grants need.
+    /// grants need. TCP peers carry no Unix credentials, so they classify as
+    /// network peers by remote address.
     pub fn origin_for_connection(&self, connection: &ConnectionContext) -> MessageOrigin {
-        let peer_user_id = UnixUserIdentifier::new(u64::from(connection.user_id()));
+        match connection.peer() {
+            PeerIdentity::Unix(credentials) => self.origin_for_unix_credentials(credentials),
+            PeerIdentity::Tcp(address) => MessageOrigin::External(ConnectionClass::Network(
+                NetworkPeer::new(address.to_string()),
+            )),
+        }
+    }
+
+    fn origin_for_unix_credentials(&self, credentials: &UnixCredentials) -> MessageOrigin {
+        let peer_user_id = UnixUserIdentifier::new(u64::from(credentials.user_id()));
         match &self.owner_identity {
             OwnerIdentity::UnixUser(owner_user_id) if peer_user_id == *owner_user_id => {
                 MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {

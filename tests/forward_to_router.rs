@@ -7,7 +7,12 @@
 //! the router-independent process-boundary test does not: a successful submit
 //! forward and the router-unreachable fallback.
 
-use std::{os::unix::net::UnixListener, path::PathBuf, thread};
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    os::unix::net::UnixListener,
+    path::PathBuf,
+    thread,
+};
 
 use message::router::{SignalRouterFrameCodec, SignalRouterSocket};
 use message::{
@@ -17,11 +22,11 @@ use message::{
 };
 use signal_message::{
     ComponentInstanceName, ComponentName, ConnectionClass, Input as SignalMessageInput,
-    InternalComponentInstanceOrigin, MessageOrigin, MessageSlot, Output as SignalMessageOutput,
-    SubmissionAcceptance, UnixUserIdentifier,
+    InternalComponentInstanceOrigin, MessageOrigin, MessageSlot, NetworkPeer,
+    Output as SignalMessageOutput, SubmissionAcceptance, UnixUserIdentifier,
 };
 use tempfile::TempDir;
-use triad_runtime::ConnectionContext;
+use triad_runtime::{ConnectionContext, UnixCredentials};
 
 /// The owner uid the in-process engine is configured to recognize, and the
 /// matching/non-matching peer connections the tests stamp with.
@@ -30,11 +35,19 @@ const NON_OWNER_USER_ID: u32 = 4242;
 const OWNER_INSTANCE: &str = "operator";
 
 fn owner_connection() -> ConnectionContext {
-    ConnectionContext::new(OWNER_USER_ID, OWNER_USER_ID, 101)
+    ConnectionContext::from(UnixCredentials::new(OWNER_USER_ID, OWNER_USER_ID, 101))
 }
 
 fn non_owner_connection() -> ConnectionContext {
-    ConnectionContext::new(NON_OWNER_USER_ID, NON_OWNER_USER_ID, 202)
+    ConnectionContext::from(UnixCredentials::new(
+        NON_OWNER_USER_ID,
+        NON_OWNER_USER_ID,
+        202,
+    ))
+}
+
+fn tcp_connection() -> ConnectionContext {
+    ConnectionContext::from(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4242)))
 }
 
 /// A one-shot router stub: accepts one connection, decodes one `signal-message`
@@ -157,6 +170,35 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
                 stamped.origin,
                 MessageOrigin::External(ConnectionClass::NonOwnerUser(UnixUserIdentifier::new(
                     u64::from(NON_OWNER_USER_ID)
+                )))
+            );
+        }
+        other => panic!("expected daemon to stamp the submission before forwarding, got {other:?}"),
+    }
+}
+
+#[test]
+fn submit_from_a_tcp_peer_is_stamped_with_a_network_origin() {
+    let temp = TempDir::new().expect("tempdir");
+    let router_socket_path = temp.path().join("router.sock");
+    let router = StubRouter::bind(&router_socket_path);
+    let router_thread = router.serve_one_acceptance();
+
+    let engine = engine_for(router_socket_path);
+    let output = tokio::runtime::Runtime::new()
+        .expect("tokio runtime")
+        .block_on(engine.handle(send_input("designer", "from tcp"), &tcp_connection()))
+        .expect("handle submit");
+
+    assert!(matches!(output, Output::SubmissionAccepted(_)));
+
+    let forwarded = router_thread.join().expect("router thread");
+    match forwarded {
+        SignalMessageInput::SubmitStamped(stamped) => {
+            assert_eq!(
+                stamped.origin,
+                MessageOrigin::External(ConnectionClass::Network(NetworkPeer::new(
+                    "127.0.0.1:4242"
                 )))
             );
         }
