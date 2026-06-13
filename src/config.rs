@@ -13,7 +13,10 @@
 use std::{fs, path::Path};
 
 use thiserror::Error;
-use triad_runtime::BindingSurface;
+use triad_runtime::{BindingSurface, SocketMode};
+
+const MESSAGE_SOCKET_MODE: u32 = 0o660;
+const META_SOCKET_MODE: u32 = 0o600;
 
 /// Binary rkyv startup configuration for `message-daemon`.
 ///
@@ -28,7 +31,9 @@ use triad_runtime::BindingSurface;
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Configuration {
     socket_path: ConfigurationPath,
+    socket_mode: u32,
     meta_socket_path: ConfigurationPath,
+    meta_socket_mode: u32,
     router_socket_path: ConfigurationPath,
     database_path: ConfigurationPath,
     owner_name: String,
@@ -59,7 +64,9 @@ impl Configuration {
     ) -> Self {
         Self {
             socket_path: ConfigurationPath::new(socket_path),
+            socket_mode: MESSAGE_SOCKET_MODE,
             meta_socket_path: ConfigurationPath::new(meta_socket_path),
+            meta_socket_mode: META_SOCKET_MODE,
             router_socket_path: ConfigurationPath::new(router_socket_path),
             database_path: ConfigurationPath::new(database_path),
             owner_name: owner_name.into(),
@@ -71,8 +78,16 @@ impl Configuration {
         self.socket_path.as_path()
     }
 
+    pub fn socket_mode(&self) -> SocketMode {
+        SocketMode::new(self.socket_mode)
+    }
+
     pub fn meta_socket_path(&self) -> &Path {
         self.meta_socket_path.as_path()
+    }
+
+    pub fn meta_socket_mode(&self) -> SocketMode {
+        SocketMode::new(self.meta_socket_mode)
     }
 
     pub fn router_socket_path(&self) -> &Path {
@@ -119,12 +134,20 @@ impl BindingSurface for Configuration {
         Configuration::socket_path(self)
     }
 
+    fn socket_mode(&self) -> Option<SocketMode> {
+        Some(Configuration::socket_mode(self))
+    }
+
     fn database_path(&self) -> &Path {
         Configuration::database_path(self)
     }
 
     fn meta_socket_path(&self) -> Option<&Path> {
         Some(Configuration::meta_socket_path(self))
+    }
+
+    fn meta_socket_mode(&self) -> Option<SocketMode> {
+        Some(Configuration::meta_socket_mode(self))
     }
 }
 
