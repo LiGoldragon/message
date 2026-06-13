@@ -689,7 +689,7 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#2effe45fa7e97984640f5a2c4e7ed4e935365e0a"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#719bca0278dd2454fd079523413ad376a61f8f53"
 dependencies = [
  "nota-next",
  "rkyv",
