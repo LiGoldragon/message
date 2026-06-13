@@ -169,32 +169,32 @@ pub trait DaemonBinder: ComponentDaemon {
         let engine = Self::build_runtime(&configuration)
             .map_err(DaemonError::Component)?;
         let runtime = GeneratedDaemonRuntime::<Self>::new(engine);
-        let working_socket = AsyncListenerSocket::new(
-            ListenerTier::Working,
-            configuration.socket_path().to_path_buf(),
-        );
-        let working_socket = match configuration.socket_mode() {
-            Some(socket_mode) => working_socket.with_socket_mode(socket_mode),
-            None => working_socket,
-        };
-        let mut listener_sockets = std::vec![working_socket];
-        let meta_socket_path = configuration
-            .meta_socket_path()
-            .ok_or(DaemonError::MissingMetaSocket)?
-            .to_path_buf();
-        listener_sockets
-            .push(
-                AsyncListenerSocket::new(ListenerTier::Meta, meta_socket_path)
-                    .with_socket_mode(SocketMode::new(0o600)),
+        Ok({
+            let working_socket = AsyncListenerSocket::new(
+                ListenerTier::Working,
+                configuration.socket_path().to_path_buf(),
             );
-        Ok(
+            let working_socket = match configuration.socket_mode() {
+                Some(socket_mode) => working_socket.with_socket_mode(socket_mode),
+                None => working_socket,
+            };
+            let mut listener_sockets = std::vec![working_socket];
+            let meta_socket_path = configuration
+                .meta_socket_path()
+                .ok_or(DaemonError::MissingMetaSocket)?
+                .to_path_buf();
+            listener_sockets
+                .push(
+                    AsyncListenerSocket::new(ListenerTier::Meta, meta_socket_path)
+                        .with_socket_mode(SocketMode::new(0o600)),
+                );
             AsyncMultiListenerDaemon::new(
                     listener_sockets,
-                    runtime,
+                    runtime.clone(),
                     RequestErrorLog::new(Self::PROCESS_NAME),
                 )
-                .with_concurrency_limit(configuration.request_concurrency_limit()),
-        )
+                .with_concurrency_limit(configuration.request_concurrency_limit())
+        })
     }
 }
 #[rustfmt::skip]
@@ -202,12 +202,15 @@ impl<Daemon: ComponentDaemon> DaemonBinder for Daemon {}
 #[rustfmt::skip]
 /// The working-tier wire transport over one accepted stream: a
 /// length-prefixed envelope around the schema-emitted signal frame codec.
-struct WorkingTransport<'connection> {
-    connection: &'connection mut AcceptedConnection,
+struct WorkingTransport<'connection, Stream> {
+    connection: &'connection mut AcceptedConnection<Stream>,
 }
 #[rustfmt::skip]
-impl<'connection> WorkingTransport<'connection> {
-    fn new(connection: &'connection mut AcceptedConnection) -> Self {
+impl<'connection, Stream> WorkingTransport<'connection, Stream>
+where
+    Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    fn new(connection: &'connection mut AcceptedConnection<Stream>) -> Self {
         Self { connection }
     }
     fn context(&self) -> &triad_runtime::ConnectionContext {
@@ -323,10 +326,13 @@ impl<Daemon: ComponentDaemon> GeneratedDaemonRuntime<Daemon> {
             }
         }
     }
-    async fn handle_working_connection(
+    async fn handle_working_connection<Stream>(
         &self,
-        mut connection: AcceptedConnection,
-    ) -> Result<(), Daemon::Error> {
+        mut connection: AcceptedConnection<Stream>,
+    ) -> Result<(), Daemon::Error>
+    where
+        Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         let mut transport = WorkingTransport::new(&mut connection);
         let frame = transport.read_frame().await?;
         let (_route, input) = Input::decode_signal_frame(&frame)?;
@@ -361,6 +367,14 @@ impl<Daemon: ComponentDaemon> GeneratedDaemonRuntime<Daemon> {
             Err(SendError::Timeout(_)) => {
                 Err(EngineRequestError::new("engine actor request timed out").into())
             }
+        }
+    }
+}
+#[rustfmt::skip]
+impl<Daemon: ComponentDaemon> Clone for GeneratedDaemonRuntime<Daemon> {
+    fn clone(&self) -> Self {
+        Self {
+            engine: self.engine.clone(),
         }
     }
 }
