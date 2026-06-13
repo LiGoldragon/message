@@ -4,7 +4,7 @@
 `message` and `meta-message` CLIs plus the supervised `message`
 daemon (binary: `message-daemon`).*
 
-`message` owns three binaries:
+`message` owns three runtime binaries plus one bootstrap helper:
 
 - The `message` CLI — one NOTA in, one NOTA out. Validates a
   user-typed NOTA record through Rust types, projects to a
@@ -30,6 +30,9 @@ daemon (binary: `message-daemon`).*
   `StampedMessageSubmission`. The owner meta socket accepts
   `meta-signal-message` frames and currently returns typed unimplemented
   replies.
+- `message-write-configuration` — a text-edge bootstrap helper, not a daemon
+  surface. It accepts one NOTA `ConfigurationWriteRequest` and writes the binary
+  rkyv startup file consumed by `message-daemon`.
 
 There is no `MessageProxy` component here. The supervised
 first-stack component is named `message`; the long-lived
@@ -244,6 +247,7 @@ src/main.rs                    message CLI entry
 src/bin/meta_message.rs        owner meta CLI entry
 src/bin/message_daemon.rs      daemon entry (one-liner: MessageDaemon::run_to_exit_code())
 src/bin/message_validate_output.rs test/debug validator for message CLI NOTA replies
+src/bin/message_write_configuration.rs NOTA -> binary daemon startup helper
 src/config.rs                  binary rkyv daemon Configuration (impl BindingSurface)
 src/daemon.rs                  impl ComponentDaemon for MessageDaemon (the only daemon code)
 src/engine.rs                  MessageEngine + request-scoped generated Nexus runner hooks

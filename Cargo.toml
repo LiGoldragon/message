@@ -30,6 +30,11 @@ name = "message-validate-output"
 path = "src/bin/message_validate_output.rs"
 required-features = ["nota-text"]
 
+[[bin]]
+name = "message-write-configuration"
+path = "src/bin/message_write_configuration.rs"
+required-features = ["nota-text"]
+
 [[test]]
 name = "process_boundary"
 path = "tests/process_boundary.rs"

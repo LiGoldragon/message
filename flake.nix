@@ -114,6 +114,15 @@
               meta.mainProgram = "message";
             }
           );
+          text = context.craneLib.buildPackage (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoExtraArgs = "--features nota-text";
+              pname = "message-text";
+              meta.mainProgram = "message";
+            }
+          );
         }
       );
 

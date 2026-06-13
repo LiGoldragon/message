@@ -1,11 +1,13 @@
 # INTENT — message
 
 `message` is a schema-derived triad component on the emitted daemon runtime. It
-owns three binaries: the `message` CLI (ordinary thin client), `meta-message`
-(owner meta-policy client), and `message-daemon` (the stamp-and-forward
-ingress). Neither CLI nor daemon carries a durable message ledger — message is a
-stateless boundary surface. Routing policy, delivery state, and channel
-authority remain in router.
+owns three runtime binaries: the `message` CLI (ordinary thin client),
+`meta-message` (owner meta-policy client), and `message-daemon` (the
+stamp-and-forward ingress). It also ships `message-write-configuration` as a
+bootstrap helper that turns one NOTA configuration request into the binary rkyv
+startup file required by `message-daemon`. Neither CLI nor daemon carries a
+durable message ledger — message is a stateless boundary surface. Routing
+policy, delivery state, and channel authority remain in router.
 
 ## The three planes
 
