@@ -150,8 +150,8 @@ impl MessageEngine {
             }
             Input::SubmitStamped(_) => NexusAction::reply_to_signal(Output::Unimplemented(
                 Unimplemented::new(RequestUnimplemented {
-                    operation_kind: OperationKind::SubmitStamped,
-                    unimplemented_reason: UnimplementedReason::NotInPrototypeScope,
+                    operation: OperationKind::SubmitStamped,
+                    reason: UnimplementedReason::NotInPrototypeScope,
                 }),
             )),
         }

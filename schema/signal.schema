@@ -21,24 +21,42 @@
   ErrorMessage String
 
   MessageKind [Send Inbox]
-  MessageSubmission { Recipient * MessageKind * Body * }
+  MessageSubmission {
+    recipient Recipient
+    kind MessageKind
+    body Body
+  }
 
   ConnectionClass [Owner NonOwnerUser InternalComponentInstance]
-  MessageOrigin { ConnectionClass * OwnerName * }
-  StampedMessageSubmission { MessageSubmission * MessageOrigin * TimestampNanos * }
+  MessageOrigin {
+    connection_class ConnectionClass
+    owner_name OwnerName
+  }
+  StampedMessageSubmission {
+    submission MessageSubmission
+    origin MessageOrigin
+    stamped_at TimestampNanos
+  }
 
-  InboxQuery { Recipient * }
-  InboxEntry { MessageSlot * Sender * Body * }
-  InboxEntries (Vec InboxEntry)
-  InboxContents { InboxEntries * }
+  InboxQuery Recipient
+  InboxEntry {
+    message_slot MessageSlot
+    sender Sender
+    body Body
+  }
+  InboxEntries (Vector InboxEntry)
+  InboxContents InboxEntries
 
-  SubmissionAcceptance { MessageSlot * }
+  SubmissionAcceptance MessageSlot
   SubmissionRejectionReason [StoreRejected RecipientNotFound]
-  SubmissionRejection { SubmissionRejectionReason * }
+  SubmissionRejection SubmissionRejectionReason
 
   OperationKind [Submit SubmitStamped QueryInbox]
   UnimplementedReason [NotInPrototypeScope RouterUnreachable]
-  RequestUnimplemented { OperationKind * UnimplementedReason * }
+  RequestUnimplemented {
+    operation OperationKind
+    reason UnimplementedReason
+  }
 
-  ErrorReport { ErrorMessage * }
+  ErrorReport ErrorMessage
 }

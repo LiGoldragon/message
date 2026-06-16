@@ -376,7 +376,7 @@ impl RouterForwarder {
     fn wire_submission(submission: MessageSubmission) -> WireMessageSubmission {
         WireMessageSubmission {
             recipient: MessageRecipient::new(submission.recipient.into_payload()),
-            kind: Self::wire_kind(submission.message_kind),
+            kind: Self::wire_kind(submission.kind),
             body: MessageBody::new(submission.body.into_payload()),
         }
     }

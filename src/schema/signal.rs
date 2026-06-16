@@ -110,7 +110,7 @@ pub enum MessageKind {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MessageSubmission {
     pub recipient: Recipient,
-    pub message_kind: MessageKind,
+    pub kind: MessageKind,
     pub body: Body,
 }
 
@@ -144,9 +144,9 @@ pub struct MessageOrigin {
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StampedMessageSubmission {
-    pub message_submission: MessageSubmission,
-    pub message_origin: MessageOrigin,
-    pub timestamp_nanos: TimestampNanos,
+    pub submission: MessageSubmission,
+    pub origin: MessageOrigin,
+    pub stamped_at: TimestampNanos,
 }
 
 #[rustfmt::skip]
@@ -239,8 +239,8 @@ pub enum UnimplementedReason {
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RequestUnimplemented {
-    pub operation_kind: OperationKind,
-    pub unimplemented_reason: UnimplementedReason,
+    pub operation: OperationKind,
+    pub reason: UnimplementedReason,
 }
 
 #[rustfmt::skip]

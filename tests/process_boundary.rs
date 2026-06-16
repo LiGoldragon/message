@@ -170,23 +170,23 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
     // accepts it from a peer, so this replies Unimplemented straight from the
     // Nexus decision — no router contact required.
     let stamped = Input::SubmitStamped(SubmitStamped::new(StampedMessageSubmission {
-        message_submission: MessageSubmission {
+        submission: MessageSubmission {
             recipient: Recipient::new("designer".to_owned()),
-            message_kind: MessageKind::Send,
+            kind: MessageKind::Send,
             body: Body::new("already stamped".to_owned()),
         },
-        message_origin: MessageOrigin {
+        origin: MessageOrigin {
             connection_class: message::schema::signal::ConnectionClass::Owner,
             owner_name: OwnerName::new("peer".to_owned()),
         },
-        timestamp_nanos: TimestampNanos::new(1),
+        stamped_at: TimestampNanos::new(1),
     }));
 
     match exchange(&socket_path, &stamped) {
         SignalOutput::Unimplemented(unimplemented) => {
             let unimplemented = unimplemented.into_payload();
             assert_eq!(
-                unimplemented.operation_kind,
+                unimplemented.operation,
                 message::schema::signal::OperationKind::SubmitStamped
             );
         }

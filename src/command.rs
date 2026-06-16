@@ -33,7 +33,7 @@ impl Input {
             Self::Send(recipient, body) => signal_schema::Input::Submit(
                 signal_schema::Submit::new(signal_schema::MessageSubmission {
                     recipient: signal_schema::Recipient::new(recipient.as_str().to_owned()),
-                    message_kind: signal_schema::MessageKind::Send,
+                    kind: signal_schema::MessageKind::Send,
                     body: signal_schema::Body::new(body),
                 }),
             ),
@@ -180,8 +180,8 @@ impl Output {
             signal_schema::Output::Unimplemented(unimplemented) => {
                 let unimplemented = unimplemented.into_payload();
                 Self::Unimplemented(
-                    OperationKind::from_signal(unimplemented.operation_kind),
-                    UnimplementedReason::from_signal(unimplemented.unimplemented_reason),
+                    OperationKind::from_signal(unimplemented.operation),
+                    UnimplementedReason::from_signal(unimplemented.reason),
                 )
             }
             signal_schema::Output::Error(error) => {
