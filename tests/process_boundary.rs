@@ -40,9 +40,9 @@ use signal_frame::RequestPayload;
 use signal_message::{
     ComponentInstanceName as RouterComponentInstanceName, ComponentName as RouterComponentName,
     Input as SignalMessageInput, InternalComponentInstanceOrigin as RouterInstanceOrigin,
-    MessageDaemonConfiguration as MetaConfiguration, MessageOrigin as RouterMessageOrigin,
-    MessageSlot, Output as SignalMessageOutput, OwnerIdentity, SocketMode, SubmissionAcceptance,
-    UnixUserIdentifier, WirePath,
+    MessageDaemonConfiguration as MetaConfiguration, MessageDaemonConfigurationParts,
+    MessageOrigin as RouterMessageOrigin, MessageSlot, Output as SignalMessageOutput,
+    OwnerIdentity, SocketMode, SubmissionAcceptance, UnixUserIdentifier, WirePath,
 };
 use tempfile::TempDir;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
@@ -262,24 +262,25 @@ fn meta_cli_reaches_owner_policy_socket_and_gets_typed_unimplemented_reply() {
         &database_path,
     );
 
-    let request = MetaMessageOperation::Configure(MetaConfiguration {
-        message_socket_path: WirePath::new(socket_path.to_string_lossy().into_owned()),
-        message_socket_mode: SocketMode::new(0o660),
-        supervision_socket_path: WirePath::new(
-            temp.path()
-                .join("message-supervision.sock")
-                .to_string_lossy()
-                .into_owned(),
-        ),
-        supervision_socket_mode: SocketMode::new(0o600),
-        router_socket_path: WirePath::new(router_socket_path.to_string_lossy().into_owned()),
-        component_ingresses: Vec::new(),
-        owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(u64::from(
-            CurrentProcessUser::owner_user_id(),
-        ))),
-    })
-    .into_request()
-    .to_nota();
+    let request =
+        MetaMessageOperation::Configure(MetaConfiguration::from(MessageDaemonConfigurationParts {
+            message_socket_path: WirePath::new(socket_path.to_string_lossy().into_owned()),
+            message_socket_mode: SocketMode::new(0o660),
+            supervision_socket_path: WirePath::new(
+                temp.path()
+                    .join("message-supervision.sock")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            supervision_socket_mode: SocketMode::new(0o600),
+            router_socket_path: WirePath::new(router_socket_path.to_string_lossy().into_owned()),
+            component_ingresses: Vec::new(),
+            owner_identity: OwnerIdentity::UnixUser(UnixUserIdentifier::new(u64::from(
+                CurrentProcessUser::owner_user_id(),
+            ))),
+        }))
+        .into_request()
+        .to_nota();
 
     let cli_output = Command::new(env!("CARGO_BIN_EXE_meta-message"))
         .env("MESSAGE_META_SOCKET", &meta_socket_path)

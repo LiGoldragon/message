@@ -413,7 +413,7 @@ impl RouterForwarder {
             SignalMessageOutput::InboxListing(listing) => {
                 Output::InboxListing(InboxListing::new(InboxContents::new(InboxEntries::new(
                     listing
-                        .into_payload()
+                        .into_entries()
                         .into_iter()
                         .map(Self::schema_inbox_entry)
                         .collect(),

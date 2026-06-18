@@ -22,27 +22,27 @@
 
   MessageKind [Send Inbox]
   MessageSubmission {
-    recipient Recipient
-    kind MessageKind
-    body Body
+    Recipient
+    kind.MessageKind
+    Body
   }
 
   ConnectionClass [Owner NonOwnerUser InternalComponentInstance]
   MessageOrigin {
-    connection_class ConnectionClass
-    owner_name OwnerName
+    ConnectionClass
+    OwnerName
   }
   StampedMessageSubmission {
-    submission MessageSubmission
-    origin MessageOrigin
-    stamped_at TimestampNanos
+    submission.MessageSubmission
+    origin.MessageOrigin
+    stamped_at.TimestampNanos
   }
 
   InboxQuery Recipient
   InboxEntry {
-    message_slot MessageSlot
-    sender Sender
-    body Body
+    MessageSlot
+    Sender
+    Body
   }
   InboxEntries (Vector InboxEntry)
   InboxContents InboxEntries
@@ -54,8 +54,8 @@
   OperationKind [Submit SubmitStamped QueryInbox]
   UnimplementedReason [NotInPrototypeScope RouterUnreachable]
   RequestUnimplemented {
-    operation OperationKind
-    reason UnimplementedReason
+    operation.OperationKind
+    reason.UnimplementedReason
   }
 
   ErrorReport ErrorMessage
