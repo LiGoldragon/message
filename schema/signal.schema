@@ -21,9 +21,10 @@
   ErrorMessage String
 
   MessageKind [Send Inbox]
+  Kind MessageKind
   MessageSubmission {
     Recipient
-    kind.MessageKind
+    Kind
     Body
   }
 
@@ -32,10 +33,13 @@
     ConnectionClass
     OwnerName
   }
+  Submission MessageSubmission
+  Origin MessageOrigin
+  StampedAt TimestampNanos
   StampedMessageSubmission {
-    submission.MessageSubmission
-    origin.MessageOrigin
-    stamped_at.TimestampNanos
+    Submission
+    Origin
+    StampedAt
   }
 
   InboxQuery Recipient
@@ -53,9 +57,11 @@
 
   OperationKind [Submit SubmitStamped QueryInbox]
   UnimplementedReason [NotInPrototypeScope RouterUnreachable]
+  UnimplementedOperationKind OperationKind
+  Reason UnimplementedReason
   RequestUnimplemented {
-    operation.OperationKind
-    reason.UnimplementedReason
+    UnimplementedOperationKind
+    Reason
   }
 
   ErrorReport ErrorMessage

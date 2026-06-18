@@ -108,9 +108,14 @@ pub enum MessageKind {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Kind(MessageKind);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MessageSubmission {
     pub recipient: Recipient,
-    pub kind: MessageKind,
+    pub kind: Kind,
     pub body: Body,
 }
 
@@ -143,10 +148,25 @@ pub struct MessageOrigin {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Submission(MessageSubmission);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Origin(MessageOrigin);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct StampedAt(TimestampNanos);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StampedMessageSubmission {
-    pub submission: MessageSubmission,
-    pub origin: MessageOrigin,
-    pub stamped_at: TimestampNanos,
+    pub submission: Submission,
+    pub origin: Origin,
+    pub stamped_at: StampedAt,
 }
 
 #[rustfmt::skip]
@@ -238,9 +258,19 @@ pub enum UnimplementedReason {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UnimplementedOperationKind(OperationKind);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Reason(UnimplementedReason);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RequestUnimplemented {
-    pub operation: OperationKind,
-    pub reason: UnimplementedReason,
+    pub unimplemented_operation_kind: UnimplementedOperationKind,
+    pub reason: Reason,
 }
 
 #[rustfmt::skip]
@@ -554,6 +584,82 @@ impl From<String> for ErrorMessage {
 }
 
 #[rustfmt::skip]
+impl Kind {
+    pub fn new(payload: MessageKind) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &MessageKind {
+        &self.0
+    }
+    pub fn into_payload(self) -> MessageKind {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<MessageKind> for Kind {
+    fn from(payload: MessageKind) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Submission {
+    pub fn new(payload: MessageSubmission) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &MessageSubmission {
+        &self.0
+    }
+    pub fn into_payload(self) -> MessageSubmission {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<MessageSubmission> for Submission {
+    fn from(payload: MessageSubmission) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Origin {
+    pub fn new(payload: MessageOrigin) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &MessageOrigin {
+        &self.0
+    }
+    pub fn into_payload(self) -> MessageOrigin {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<MessageOrigin> for Origin {
+    fn from(payload: MessageOrigin) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl StampedAt {
+    pub fn new(payload: TimestampNanos) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &TimestampNanos {
+        &self.0
+    }
+    pub fn into_payload(self) -> TimestampNanos {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<TimestampNanos> for StampedAt {
+    fn from(payload: TimestampNanos) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl InboxQuery {
     pub fn new(payload: Recipient) -> Self {
         Self(payload)
@@ -644,6 +750,44 @@ impl SubmissionRejection {
 #[rustfmt::skip]
 impl From<SubmissionRejectionReason> for SubmissionRejection {
     fn from(payload: SubmissionRejectionReason) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl UnimplementedOperationKind {
+    pub fn new(payload: OperationKind) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &OperationKind {
+        &self.0
+    }
+    pub fn into_payload(self) -> OperationKind {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<OperationKind> for UnimplementedOperationKind {
+    fn from(payload: OperationKind) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Reason {
+    pub fn new(payload: UnimplementedReason) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &UnimplementedReason {
+        &self.0
+    }
+    pub fn into_payload(self) -> UnimplementedReason {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<UnimplementedReason> for Reason {
+    fn from(payload: UnimplementedReason) -> Self {
         Self::new(payload)
     }
 }

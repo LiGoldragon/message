@@ -172,21 +172,23 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
     let stamped = Input::SubmitStamped(SubmitStamped::new(StampedMessageSubmission {
         submission: MessageSubmission {
             recipient: Recipient::new("designer".to_owned()),
-            kind: MessageKind::Send,
+            kind: MessageKind::Send.into(),
             body: Body::new("already stamped".to_owned()),
-        },
+        }
+        .into(),
         origin: MessageOrigin {
             connection_class: message::schema::signal::ConnectionClass::Owner,
             owner_name: OwnerName::new("peer".to_owned()),
-        },
-        stamped_at: TimestampNanos::new(1),
+        }
+        .into(),
+        stamped_at: TimestampNanos::new(1).into(),
     }));
 
     match exchange(&socket_path, &stamped) {
         SignalOutput::Unimplemented(unimplemented) => {
             let unimplemented = unimplemented.into_payload();
             assert_eq!(
-                unimplemented.operation,
+                unimplemented.unimplemented_operation_kind.into_payload(),
                 message::schema::signal::OperationKind::SubmitStamped
             );
         }

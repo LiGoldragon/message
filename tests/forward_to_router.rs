@@ -98,7 +98,7 @@ fn engine_for(router_socket_path: PathBuf) -> MessageEngine {
 fn send_input(recipient: &str, body: &str) -> Input {
     Input::Submit(Submit::new(MessageSubmission {
         recipient: Recipient::new(recipient.to_owned()),
-        kind: MessageKind::Send,
+        kind: MessageKind::Send.into(),
         body: Body::new(body.to_owned()),
     }))
 }
