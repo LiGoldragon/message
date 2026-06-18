@@ -235,13 +235,19 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
     let forwarded = router_thread.join().expect("router thread");
     match forwarded {
         SignalMessageInput::SubmitStamped(stamped) => {
-            assert_eq!(stamped.submission.recipient.as_str(), "designer");
-            assert_eq!(stamped.submission.body.as_str(), "hello from cli");
             assert_eq!(
-                stamped.origin,
+                stamped.message_submission.message_recipient.as_str(),
+                "designer"
+            );
+            assert_eq!(
+                stamped.message_submission.message_body.as_str(),
+                "hello from cli"
+            );
+            assert_eq!(
+                stamped.message_origin,
                 RouterMessageOrigin::InternalComponentInstance(RouterInstanceOrigin {
-                    component: RouterComponentName::Harness,
-                    instance: RouterComponentInstanceName::new("owner".to_owned()),
+                    component_name: RouterComponentName::Harness,
+                    component_instance_name: RouterComponentInstanceName::new("owner".to_owned()),
                 })
             );
         }

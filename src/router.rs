@@ -12,7 +12,7 @@ use signal_message::{
     InboxEntry as WireInboxEntry, InboxQuery as WireInboxQuery, Input as SignalMessageInput,
     InternalComponentInstanceOrigin, MessageBody, MessageKind as WireMessageKind, MessageOrigin,
     MessageRecipient, MessageSubmission as WireMessageSubmission, NetworkPeer,
-    Output as SignalMessageOutput, OwnerIdentity,
+    Output as SignalMessageOutput, OwnerIdentity, StampedAt,
     StampedMessageSubmission as WireStampedMessageSubmission,
     SubmissionRejectionReason as WireSubmissionRejectionReason, TimestampNanos, UnixUserIdentifier,
 };
@@ -273,8 +273,8 @@ impl OriginPolicy {
         match &self.owner_identity {
             OwnerIdentity::UnixUser(owner_user_id) if peer_user_id == *owner_user_id => {
                 MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {
-                    component: ComponentName::Harness,
-                    instance: self.local_instance.clone(),
+                    component_name: ComponentName::Harness,
+                    component_instance_name: self.local_instance.clone(),
                 })
             }
             _ => MessageOrigin::External(ConnectionClass::NonOwnerUser(peer_user_id)),
@@ -367,17 +367,17 @@ impl RouterForwarder {
         connection: &ConnectionContext,
     ) -> WireStampedMessageSubmission {
         WireStampedMessageSubmission {
-            submission: Self::wire_submission(submission),
-            origin: self.origin_policy.origin_for_connection(connection),
-            stamped_at: Self::ingress_timestamp(),
+            message_submission: Self::wire_submission(submission),
+            message_origin: self.origin_policy.origin_for_connection(connection),
+            stamped_at: StampedAt::new(Self::ingress_timestamp()),
         }
     }
 
     fn wire_submission(submission: MessageSubmission) -> WireMessageSubmission {
         WireMessageSubmission {
-            recipient: MessageRecipient::new(submission.recipient.into_payload()),
-            kind: Self::wire_kind(submission.kind.into_payload()),
-            body: MessageBody::new(submission.body.into_payload()),
+            message_recipient: MessageRecipient::new(submission.recipient.into_payload()),
+            message_kind: Self::wire_kind(submission.kind.into_payload()),
+            message_body: MessageBody::new(submission.body.into_payload()),
         }
     }
 
@@ -422,7 +422,8 @@ impl RouterForwarder {
             SignalMessageOutput::MessageRequestUnimplemented(unimplemented) => Output::Error(
                 SignalError::new(ErrorReport::new(ErrorMessage::new(format!(
                     "router rejected operation {:?}: {:?}",
-                    unimplemented.operation, unimplemented.reason
+                    unimplemented.message_operation_kind,
+                    unimplemented.message_unimplemented_reason
                 )))),
             ),
         }
@@ -431,8 +432,8 @@ impl RouterForwarder {
     fn schema_inbox_entry(entry: WireInboxEntry) -> InboxEntry {
         InboxEntry {
             message_slot: MessageSlot::new(entry.message_slot.into_u64()),
-            sender: Sender::new(entry.sender.as_str().to_owned()),
-            body: Body::new(entry.body.as_str().to_owned()),
+            sender: Sender::new(entry.message_sender.as_str().to_owned()),
+            body: Body::new(entry.message_body.as_str().to_owned()),
         }
     }
 

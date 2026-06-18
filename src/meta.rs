@@ -7,7 +7,8 @@ use std::{fs, io::Write};
 use meta_signal_message::Request as MetaMessageRequest;
 use meta_signal_message::{
     Frame as MetaMessageFrame, FrameBody as MetaMessageFrameBody, MetaMessageReply,
-    Operation as MetaMessageOperation, RequestUnimplemented, UnimplementedReason,
+    Operation as MetaMessageOperation, Reason, RequestUnimplemented, UnimplementedOperationKind,
+    UnimplementedReason,
 };
 #[cfg(feature = "nota-text")]
 use nota_next::{NotaEncode, NotaSource};
@@ -141,8 +142,8 @@ impl MetaMessageFrameCodec {
         operation: MetaMessageOperation,
     ) -> Result<MetaMessageReply> {
         let reply = MetaMessageReply::RequestUnimplemented(RequestUnimplemented {
-            operation: operation.kind(),
-            reason: UnimplementedReason::NotBuiltYet,
+            unimplemented_operation_kind: UnimplementedOperationKind::new(operation.kind()),
+            reason: Reason::new(UnimplementedReason::NotBuiltYet),
         });
         let frame = self.reply_frame(exchange, reply.clone());
         self.write_frame(stream, &frame).await?;

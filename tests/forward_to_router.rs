@@ -126,16 +126,19 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
     let forwarded = router_thread.join().expect("router thread");
     match forwarded {
         SignalMessageInput::SubmitStamped(stamped) => {
-            assert_eq!(stamped.submission.recipient.as_str(), "designer");
-            assert_eq!(stamped.submission.body.as_str(), "hello");
+            assert_eq!(
+                stamped.message_submission.message_recipient.as_str(),
+                "designer"
+            );
+            assert_eq!(stamped.message_submission.message_body.as_str(), "hello");
             // The origin is minted from peer credentials plus daemon
             // configuration, NOT from the payload: a trusted owner uid becomes
             // this daemon's configured local harness instance.
             assert_eq!(
-                stamped.origin,
+                stamped.message_origin,
                 MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {
-                    component: ComponentName::Harness,
-                    instance: ComponentInstanceName::new(OWNER_INSTANCE.to_owned()),
+                    component_name: ComponentName::Harness,
+                    component_instance_name: ComponentInstanceName::new(OWNER_INSTANCE.to_owned()),
                 })
             );
         }
@@ -167,7 +170,7 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
             // A peer uid that does not match the owner mints NonOwnerUser(uid) —
             // the peer-credential origin classification the migration regressed.
             assert_eq!(
-                stamped.origin,
+                stamped.message_origin,
                 MessageOrigin::External(ConnectionClass::NonOwnerUser(UnixUserIdentifier::new(
                     u64::from(NON_OWNER_USER_ID)
                 )))
@@ -196,7 +199,7 @@ fn submit_from_a_tcp_peer_is_stamped_with_a_network_origin() {
     match forwarded {
         SignalMessageInput::SubmitStamped(stamped) => {
             assert_eq!(
-                stamped.origin,
+                stamped.message_origin,
                 MessageOrigin::External(ConnectionClass::Network(NetworkPeer::new(
                     "127.0.0.1:4242"
                 )))
