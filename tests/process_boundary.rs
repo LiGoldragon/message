@@ -35,7 +35,7 @@ use message::{
     },
 };
 use meta_signal_message::Operation as MetaMessageOperation;
-use nota_next::NotaEncode;
+use nota::NotaEncode;
 use signal_frame::RequestPayload;
 use signal_message::{
     ComponentInstanceName as RouterComponentInstanceName, ComponentName as RouterComponentName,

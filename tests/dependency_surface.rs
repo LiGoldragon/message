@@ -2,24 +2,24 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[test]
-fn binary_only_runtime_dependency_tree_does_not_contain_nota_next() {
+fn binary_only_runtime_dependency_tree_does_not_contain_nota() {
     let manifest = CargoManifest::from_environment();
     let tree = manifest.cargo_tree(&["--edges", "normal", "--no-default-features"]);
 
     assert!(
-        !tree.contains("nota-next") && !tree.contains("nota_next"),
-        "binary-only runtime dependency tree must not contain nota-next:\n{tree}"
+        !tree.contains("nota v") && !tree.contains("nota ("),
+        "binary-only runtime dependency tree must not contain nota:\n{tree}"
     );
 }
 
 #[test]
-fn nota_text_runtime_dependency_tree_contains_nota_next() {
+fn nota_text_runtime_dependency_tree_contains_nota() {
     let manifest = CargoManifest::from_environment();
     let tree = manifest.cargo_tree(&["--edges", "normal", "--features", "nota-text"]);
 
     assert!(
-        tree.contains("nota-next"),
-        "nota-text runtime dependency tree must contain nota-next:\n{tree}"
+        tree.contains("nota"),
+        "nota-text runtime dependency tree must contain nota:\n{tree}"
     );
 }
 

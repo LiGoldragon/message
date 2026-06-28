@@ -223,7 +223,7 @@ This repo does not own:
 - The daemon hand-writes only `impl ComponentDaemon for MessageDaemon`
   (`src/daemon.rs`): `Configuration` / `Engine` / `Error` / `PROCESS_NAME` +
   `build_runtime` + `handle_working_input`. The daemon spine, request gate,
-  accept loop, and lifecycle are emitted by schema-rust-next into the shared
+  accept loop, and lifecycle are emitted by schema-rust into the shared
   async task-backed triad-runtime shell.
 - A graceful stop exits the daemon, releases the `message.sock` binding, and
   rejects later CLI ingress through the emitted spine's shutdown path.

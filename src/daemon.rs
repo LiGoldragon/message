@@ -3,7 +3,7 @@
 //! The uniform daemon skeleton (the `DaemonCommand` argv parsing, the async
 //! decode -> execute -> encode spine, the async task-backed listener, and the
 //! `ExitReport`-based entry) is EMITTED into `src/schema/daemon.rs` by
-//! schema-rust-next's daemon emitter, driven by the `NexusDaemonShape` in
+//! schema-rust's daemon emitter, driven by the `NexusDaemonShape` in
 //! `build.rs`. Message fills only the record-1488 escape hatches through `impl
 //! ComponentDaemon for MessageDaemon`: how to load its `Configuration`, how to
 //! build its `MessageEngine` (`build_runtime`), how one working `Input`

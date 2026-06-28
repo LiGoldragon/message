@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use nota_next::{Block, Delimiter, NotaBody, NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
+use nota::{Block, Delimiter, NotaBody, NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use triad_runtime::{ComponentArgument, ComponentCommand};
 

@@ -42,10 +42,10 @@ required-features = ["nota-text"]
 
 [features]
 default = []
-nota-text = ["dep:nota-next", "meta-signal-message/nota-text"]
+nota-text = ["dep:nota", "meta-signal-message/nota-text"]
 
 [dependencies]
-nota-next       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main", optional = true }
+nota       = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main", optional = true }
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", branch = "main", default-features = false }
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main", default-features = false }
@@ -55,7 +55,7 @@ tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-m
 triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
 
 [build-dependencies]
-schema-rust-next = { git = "https://github.com/LiGoldragon/schema-rust-next.git", branch = "main" }
+schema-rust = { git = "https://github.com/LiGoldragon/schema-rust-next.git", branch = "main" }
 
 [dev-dependencies]
 rustix = { version = "1", features = ["process"] }
