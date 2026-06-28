@@ -16,7 +16,10 @@ use signal_message::{
     StampedMessageSubmission as WireStampedMessageSubmission,
     SubmissionRejectionReason as WireSubmissionRejectionReason, TimestampNanos, UnixUserIdentifier,
 };
-use triad_runtime::{ConnectionContext, PeerIdentity, UnixCredentials};
+use triad_runtime::{
+    ConnectionContext, FrameBody as RuntimeFrameBody, LengthPrefixedCodec, MaximumFrameLength,
+    PeerIdentity, UnixCredentials,
+};
 
 use crate::error::{Error, Result};
 use crate::schema::nexus::ForwardRequest;
@@ -79,22 +82,21 @@ impl SignalRouterFrameCodec {
     }
 
     pub fn read_frame(&self, stream: &mut impl Read) -> Result<Frame> {
-        let mut prefix = [0_u8; 4];
-        stream.read_exact(&mut prefix)?;
-        let length = u32::from_be_bytes(prefix) as usize;
-        if length > self.maximum_frame_bytes {
-            return Err(Error::DaemonFrameTooLarge { bytes: length });
+        let runtime_body =
+            LengthPrefixedCodec::new(MaximumFrameLength::new(self.maximum_frame_bytes))
+                .read_body(stream)?;
+        if runtime_body.bytes().len() > self.maximum_frame_bytes {
+            return Err(Error::DaemonFrameTooLarge {
+                bytes: runtime_body.bytes().len(),
+            });
         }
-        let mut bytes = Vec::with_capacity(4 + length);
-        bytes.extend_from_slice(&prefix);
-        bytes.resize(4 + length, 0);
-        stream.read_exact(&mut bytes[4..])?;
-        Ok(Frame::decode_length_prefixed(&bytes)?)
+        Ok(Frame::decode(runtime_body.bytes())?)
     }
 
     pub fn write_frame(&self, stream: &mut UnixStream, frame: &Frame) -> Result<()> {
-        let bytes = frame.encode_length_prefixed()?;
-        stream.write_all(&bytes)?;
+        let bytes = frame.encode()?;
+        LengthPrefixedCodec::new(MaximumFrameLength::new(self.maximum_frame_bytes))
+            .write_body(stream, &RuntimeFrameBody::new(bytes))?;
         stream.flush()?;
         Ok(())
     }
