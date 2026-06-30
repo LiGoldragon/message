@@ -176,6 +176,25 @@ This repo does not own:
 - terminal byte transport;
 - durable daemon state.
 
+### 3.1 · Existence vs delivery, and the message-sent hook
+
+Per archived intent `alom`, the conceptual ownership line between `message`
+and `router` is existence versus delivery, and it is durable: `message` and
+`router` stay separate because the SO_PEERCRED trust boundary cannot move
+into `router`. `message` owns the **EXISTENCE** fact — an authenticated
+message authored and witnessed at the SO_PEERCRED ingress — as the event it
+emits at that boundary. `router` is authoritative for delivery on the routed
+gated-or-remote path (durable on the harness-channel ack). A direct-delivery
+fast path lets a message addressed to a publicly-reachable local agent by uid
+deliver peer-to-peer without `router`, establishing delivery on the target's
+direct ack. (Today's daemon keeps no durable ledger; the existence event is
+the boundary fact `message` is authoritative for, not a local message log.)
+
+Per archived intent `q73w`, the message lifecycle exposes hookable events:
+the mail dispatch system emits and commits a typed `MessageSent` action at
+the message-sent boundary, firing as soon as a message is sent so hooks, UI,
+observers, routers, and subscribers can react immediately.
+
 ## 4 · Invariants
 
 - The CLI accepts exactly one NOTA input record.
