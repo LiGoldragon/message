@@ -1,8 +1,5 @@
 # Agent Instructions - Message
 
-You MUST read lore's `AGENTS.md` and the primary workspace
-orchestration protocol before editing this repository.
-
 ## Repo Role
 
 Message is the engine message-ingress component. It owns the `message`
@@ -52,6 +49,6 @@ work and keep Git as the remote/storage compatibility layer.
 
 ## Rust
 
-Follow lore's Rust discipline: domain values are typed, behavior lives on the
+Follow the Rust discipline: domain values are typed, behavior lives on the
 types, errors use one crate enum, and public surfaces speak NOTA unless the
 boundary is explicitly binary.

@@ -3,7 +3,7 @@
 //! Message is a schema-derived triad component on the emitted daemon runtime.
 //! The three plane schemas (`schema/signal.schema`, `schema/nexus.schema`,
 //! `schema/sema.schema`) generate the checked-in modules under `src/schema/`
-//! through `schema-next` / `schema-rust`; the hand-written code here is the
+//! through `schema` / `schema-rust`; the hand-written code here is the
 //! thin runtime around those generated interfaces. `build.rs` regenerates and
 //! verifies the modules are fresh.
 //!
