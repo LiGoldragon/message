@@ -10,6 +10,15 @@ CLI, owner-side `meta-message` CLI, and supervised `message-daemon`; together
 they carry ordinary NOTA message requests and owner meta-policy requests into
 typed Signal frames.
 
+## Rename: message → messenger
+
+This component is being renamed from `message` to `messenger`. The rename
+proceeds incrementally as code is touched: new and edited surfaces adopt
+`Messenger`/`messenger`, while untouched surfaces keep `Message`/`message` until
+they are next edited. Do not perform a big-bang sweep. Rename only the
+identifiers your own edits already touch; leave the rest for the change that
+next reaches them.
+
 ## Current Phase
 
 This repo is in supervised ingress phase. Keep the implementation narrow:
