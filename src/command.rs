@@ -8,11 +8,11 @@ use triad_runtime::{ComponentArgument, ComponentCommand};
 use crate::client::MessageSocket;
 use crate::error::{Error, Result as MessageResult};
 use crate::schema::signal as signal_schema;
-use crate::surface::RecipientName;
+use crate::surface::{RecipientName, ThreadSelection};
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Input {
-    Send(RecipientName, String),
+    Send(RecipientName, String, ThreadSelection),
     Inbox(RecipientName),
 }
 
@@ -30,17 +30,27 @@ impl Input {
 
     fn into_signal_input(self) -> signal_schema::Input {
         match self {
-            Self::Send(recipient, body) => signal_schema::Input::Submit(
+            Self::Send(recipient, body, thread) => signal_schema::Input::Submit(
                 signal_schema::Submit::new(signal_schema::MessageSubmission {
                     recipient: signal_schema::Recipient::new(recipient.as_str().to_owned()),
                     kind: signal_schema::Kind::new(signal_schema::MessageKind::Send),
                     body: signal_schema::Body::new(body),
+                    thread_selection: Self::signal_thread_selection(thread),
                 }),
             ),
             Self::Inbox(recipient) => signal_schema::Input::QueryInbox(
                 signal_schema::QueryInbox::new(signal_schema::InboxQuery::new(
                     signal_schema::Recipient::new(recipient.as_str().to_owned()),
                 )),
+            ),
+        }
+    }
+
+    fn signal_thread_selection(thread: ThreadSelection) -> signal_schema::ThreadSelection {
+        match thread {
+            ThreadSelection::None => signal_schema::ThreadSelection::None,
+            ThreadSelection::Named(name) => signal_schema::ThreadSelection::Named(
+                signal_schema::ThreadName::new(name.as_str().to_owned()),
             ),
         }
     }
@@ -55,10 +65,11 @@ impl NotaDecode for Input {
         };
         match head {
             "Send" => {
-                Self::expect_fields(fields, "Input::Send", 3)?;
+                Self::expect_fields(fields, "Input::Send", 4)?;
                 Ok(Self::Send(
                     RecipientName::from_nota_block(&fields[1])?,
                     String::from_nota_block(&fields[2])?,
+                    ThreadSelection::from_nota_block(&fields[3])?,
                 ))
             }
             "Inbox" => {
@@ -76,10 +87,11 @@ impl NotaDecode for Input {
 impl NotaEncode for Input {
     fn to_nota(&self) -> String {
         match self {
-            Self::Send(recipient, body) => Delimiter::Parenthesis.wrap([
+            Self::Send(recipient, body, thread) => Delimiter::Parenthesis.wrap([
                 String::from("Send"),
                 recipient.to_nota(),
                 body.to_nota(),
+                thread.to_nota(),
             ]),
             Self::Inbox(recipient) => {
                 Delimiter::Parenthesis.wrap([String::from("Inbox"), recipient.to_nota()])

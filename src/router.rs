@@ -14,7 +14,8 @@ use signal_message::{
     MessageRecipient, MessageSubmission as WireMessageSubmission, NetworkPeer,
     Output as SignalMessageOutput, OwnerIdentity, StampedAt,
     StampedMessageSubmission as WireStampedMessageSubmission,
-    SubmissionRejectionReason as WireSubmissionRejectionReason, TimestampNanos, UnixUserIdentifier,
+    SubmissionRejectionReason as WireSubmissionRejectionReason, ThreadName as WireThreadName,
+    ThreadSelection as WireThreadSelection, TimestampNanos, UnixUserIdentifier,
 };
 use triad_runtime::{
     ConnectionContext, FrameBody as RuntimeFrameBody, LengthPrefixedCodec, MaximumFrameLength,
@@ -27,7 +28,7 @@ use crate::schema::signal::{
     Body, Error as SignalError, ErrorMessage, ErrorReport, InboxContents, InboxEntries, InboxEntry,
     InboxListing, MessageKind, MessageSlot, MessageSubmission, Output, Sender,
     SubmissionAcceptance, SubmissionAccepted, SubmissionRejected, SubmissionRejection,
-    SubmissionRejectionReason,
+    SubmissionRejectionReason, ThreadSelection,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,6 +381,7 @@ impl RouterForwarder {
             message_recipient: MessageRecipient::new(submission.recipient.into_payload()),
             message_kind: Self::wire_kind(submission.kind.into_payload()),
             message_body: MessageBody::new(submission.body.into_payload()),
+            thread_selection: Self::wire_thread_selection(submission.thread_selection),
         }
     }
 
@@ -387,6 +389,15 @@ impl RouterForwarder {
         match kind {
             MessageKind::Send => WireMessageKind::Send,
             MessageKind::Inbox => WireMessageKind::Inbox,
+        }
+    }
+
+    fn wire_thread_selection(selection: ThreadSelection) -> WireThreadSelection {
+        match selection {
+            ThreadSelection::None => WireThreadSelection::None,
+            ThreadSelection::Named(name) => {
+                WireThreadSelection::Named(WireThreadName::new(name.into_payload()))
+            }
         }
     }
 

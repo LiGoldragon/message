@@ -167,10 +167,30 @@ pub struct Kind(MessageKind);
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ThreadName(String);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum ThreadSelection {
+    None,
+    Named(ThreadName),
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MessageSubmission {
     pub recipient: Recipient,
     pub kind: Kind,
     pub body: Body,
+    pub thread_selection: ThreadSelection,
 }
 
 #[rustfmt::skip]
@@ -720,6 +740,25 @@ impl From<MessageKind> for Kind {
 }
 
 #[rustfmt::skip]
+impl ThreadName {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for ThreadName {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl Submission {
     pub fn new(payload: MessageSubmission) -> Self {
         Self(payload)
@@ -929,6 +968,13 @@ impl From<ErrorMessage> for ErrorReport {
 }
 
 #[rustfmt::skip]
+impl ThreadSelection {
+    pub fn named(payload: String) -> Self {
+        Self::Named(ThreadName::new(payload))
+    }
+}
+
+#[rustfmt::skip]
 impl Input {
     pub fn submit(payload: MessageSubmission) -> Self {
         Self::Submit(Submit::new(payload))
@@ -957,6 +1003,13 @@ impl Output {
     }
     pub fn error(payload: ErrorReport) -> Self {
         Self::Error(Error::new(payload))
+    }
+}
+
+#[rustfmt::skip]
+impl From<ThreadName> for ThreadSelection {
+    fn from(payload: ThreadName) -> Self {
+        Self::Named(payload)
     }
 }
 

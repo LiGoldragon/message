@@ -22,10 +22,15 @@
 
   MessageKind [Send Inbox]
   Kind MessageKind
+
+  ThreadName String
+  ThreadSelection [None (Named ThreadName)]
+
   MessageSubmission {
     Recipient
     Kind
     Body
+    ThreadSelection
   }
 
   ConnectionClass [Owner NonOwnerUser InternalComponentInstance]

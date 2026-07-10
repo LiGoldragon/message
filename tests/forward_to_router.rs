@@ -18,7 +18,9 @@ use message::router::{SignalRouterFrameCodec, SignalRouterSocket};
 use message::{
     MessageEngine, RouterForwarder,
     router::OriginPolicy,
-    schema::signal::{Body, Input, MessageKind, MessageSubmission, Output, Recipient, Submit},
+    schema::signal::{
+        Body, Input, MessageKind, MessageSubmission, Output, Recipient, Submit, ThreadSelection,
+    },
 };
 use signal_message::{
     ComponentInstanceName, ComponentName, ConnectionClass, Input as SignalMessageInput,
@@ -100,6 +102,7 @@ fn send_input(recipient: &str, body: &str) -> Input {
         recipient: Recipient::new(recipient.to_owned()),
         kind: MessageKind::Send.into(),
         body: Body::new(body.to_owned()),
+        thread_selection: ThreadSelection::None,
     }))
 }
 

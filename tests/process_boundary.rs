@@ -31,7 +31,8 @@ use message::{
     router::SignalRouterFrameCodec,
     schema::signal::{
         Body, Input, MessageKind, MessageOrigin, MessageSubmission, Output as SignalOutput,
-        OwnerName, Recipient, StampedMessageSubmission, SubmitStamped, TimestampNanos,
+        OwnerName, Recipient, StampedMessageSubmission, SubmitStamped, ThreadSelection,
+        TimestampNanos,
     },
 };
 use meta_signal_message::Operation as MetaMessageOperation;
@@ -42,6 +43,7 @@ use signal_message::{
     Input as SignalMessageInput, InternalComponentInstanceOrigin as RouterInstanceOrigin,
     MessageDaemonConfiguration as MetaConfiguration, MessageDaemonConfigurationParts,
     MessageOrigin as RouterMessageOrigin, MessageSlot, Output as SignalMessageOutput,
+    ThreadSelection as WireThreadSelection,
     OwnerIdentity, SocketMode, SubmissionAcceptance, UnixUserIdentifier, WirePath,
 };
 use tempfile::TempDir;
@@ -174,6 +176,7 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
             recipient: Recipient::new("designer".to_owned()),
             kind: MessageKind::Send.into(),
             body: Body::new("already stamped".to_owned()),
+            thread_selection: ThreadSelection::None,
         }
         .into(),
         origin: MessageOrigin {
@@ -215,7 +218,7 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
 
     let cli_output = Command::new(env!("CARGO_BIN_EXE_message"))
         .env("MESSAGE_SOCKET", &socket_path)
-        .arg("(Send designer [hello from cli])")
+        .arg("(Send designer [hello from cli] (Named launch-plan))")
         .output()
         .expect("run message CLI");
 
@@ -242,6 +245,10 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
             assert_eq!(
                 stamped.message_submission.message_body.as_str(),
                 "hello from cli"
+            );
+            assert_eq!(
+                stamped.message_submission.thread_selection,
+                WireThreadSelection::Named(signal_message::ThreadName::new("launch-plan"))
             );
             assert_eq!(
                 stamped.message_origin,
