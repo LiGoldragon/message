@@ -10,6 +10,13 @@ pub type Boolean = bool;
 pub type Path = std::string::String;
 
 #[rustfmt::skip]
+pub use crate::schema::signal::AgentRegistryCommand as RegistryCommand;
+#[rustfmt::skip]
+pub use crate::schema::signal::AgentRegistryQuery as RegistryQuery;
+#[rustfmt::skip]
+pub use crate::schema::signal::Output as RegistryReply;
+
+#[rustfmt::skip]
 #[cfg(feature = "nota-text")]
 pub use nota::{NotaDecodeError, NotaEncode, NotaSource};
 
@@ -20,7 +27,7 @@ pub use nota::{NotaDecodeError, NotaEncode, NotaSource};
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum WriteInput {
-    NoDurableState(NoDurableState),
+    ApplyRegistry(RegistryCommand),
 }
 
 #[rustfmt::skip]
@@ -29,16 +36,8 @@ pub enum WriteInput {
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct NoDurableState(Stateless);
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ReadInput {
-    NoDurableState(NoDurableState),
+    ReadRegistry(RegistryQuery),
 }
 
 #[rustfmt::skip]
@@ -48,7 +47,7 @@ pub enum ReadInput {
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum WriteOutput {
-    Stateless(Stateless),
+    RegistryApplied(RegistryReply),
 }
 
 #[rustfmt::skip]
@@ -58,16 +57,8 @@ pub enum WriteOutput {
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ReadOutput {
-    Stateless(Stateless),
+    RegistryRead(RegistryReply),
 }
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct Stateless {}
 
 #[rustfmt::skip]
 #[cfg_attr(
@@ -92,49 +83,30 @@ pub enum Output {
 }
 
 #[rustfmt::skip]
-impl NoDurableState {
-    pub fn new(payload: Stateless) -> Self {
-        Self(payload)
-    }
-    pub fn payload(&self) -> &Stateless {
-        &self.0
-    }
-    pub fn into_payload(self) -> Stateless {
-        self.0
-    }
-}
-#[rustfmt::skip]
-impl From<Stateless> for NoDurableState {
-    fn from(payload: Stateless) -> Self {
-        Self::new(payload)
-    }
-}
-
-#[rustfmt::skip]
 impl WriteInput {
-    pub fn no_durable_state(payload: Stateless) -> Self {
-        Self::NoDurableState(NoDurableState::new(payload))
+    pub fn apply_registry(payload: RegistryCommand) -> Self {
+        Self::ApplyRegistry(payload)
     }
 }
 
 #[rustfmt::skip]
 impl ReadInput {
-    pub fn no_durable_state(payload: Stateless) -> Self {
-        Self::NoDurableState(NoDurableState::new(payload))
+    pub fn read_registry(payload: RegistryQuery) -> Self {
+        Self::ReadRegistry(payload)
     }
 }
 
 #[rustfmt::skip]
 impl WriteOutput {
-    pub fn stateless(payload: Stateless) -> Self {
-        Self::Stateless(payload)
+    pub fn registry_applied(payload: RegistryReply) -> Self {
+        Self::RegistryApplied(payload)
     }
 }
 
 #[rustfmt::skip]
 impl ReadOutput {
-    pub fn stateless(payload: Stateless) -> Self {
-        Self::Stateless(payload)
+    pub fn registry_read(payload: RegistryReply) -> Self {
+        Self::RegistryRead(payload)
     }
 }
 
@@ -159,30 +131,30 @@ impl Output {
 }
 
 #[rustfmt::skip]
-impl From<NoDurableState> for WriteInput {
-    fn from(payload: NoDurableState) -> Self {
-        Self::NoDurableState(payload)
+impl From<RegistryCommand> for WriteInput {
+    fn from(payload: RegistryCommand) -> Self {
+        Self::ApplyRegistry(payload)
     }
 }
 
 #[rustfmt::skip]
-impl From<NoDurableState> for ReadInput {
-    fn from(payload: NoDurableState) -> Self {
-        Self::NoDurableState(payload)
+impl From<RegistryQuery> for ReadInput {
+    fn from(payload: RegistryQuery) -> Self {
+        Self::ReadRegistry(payload)
     }
 }
 
 #[rustfmt::skip]
-impl From<Stateless> for WriteOutput {
-    fn from(payload: Stateless) -> Self {
-        Self::Stateless(payload)
+impl From<RegistryReply> for WriteOutput {
+    fn from(payload: RegistryReply) -> Self {
+        Self::RegistryApplied(payload)
     }
 }
 
 #[rustfmt::skip]
-impl From<Stateless> for ReadOutput {
-    fn from(payload: Stateless) -> Self {
-        Self::Stateless(payload)
+impl From<RegistryReply> for ReadOutput {
+    fn from(payload: RegistryReply) -> Self {
+        Self::RegistryRead(payload)
     }
 }
 
@@ -262,14 +234,14 @@ impl std::fmt::Display for Output {
     Eq,
 )]
 pub enum WriteInputRoute {
-    NoDurableState,
+    ApplyRegistry,
 }
 
 #[rustfmt::skip]
 impl WriteInput {
     pub fn route(&self) -> WriteInputRoute {
         match self {
-            Self::NoDurableState(_) => WriteInputRoute::NoDurableState,
+            Self::ApplyRegistry(_) => WriteInputRoute::ApplyRegistry,
         }
     }
 }
@@ -290,14 +262,14 @@ impl WriteInput {
     Eq,
 )]
 pub enum ReadInputRoute {
-    NoDurableState,
+    ReadRegistry,
 }
 
 #[rustfmt::skip]
 impl ReadInput {
     pub fn route(&self) -> ReadInputRoute {
         match self {
-            Self::NoDurableState(_) => ReadInputRoute::NoDurableState,
+            Self::ReadRegistry(_) => ReadInputRoute::ReadRegistry,
         }
     }
 }
@@ -318,14 +290,14 @@ impl ReadInput {
     Eq,
 )]
 pub enum WriteOutputRoute {
-    Stateless,
+    RegistryApplied,
 }
 
 #[rustfmt::skip]
 impl WriteOutput {
     pub fn route(&self) -> WriteOutputRoute {
         match self {
-            Self::Stateless(_) => WriteOutputRoute::Stateless,
+            Self::RegistryApplied(_) => WriteOutputRoute::RegistryApplied,
         }
     }
 }
@@ -346,14 +318,14 @@ impl WriteOutput {
     Eq,
 )]
 pub enum ReadOutputRoute {
-    Stateless,
+    RegistryRead,
 }
 
 #[rustfmt::skip]
 impl ReadOutput {
     pub fn route(&self) -> ReadOutputRoute {
         match self {
-            Self::Stateless(_) => ReadOutputRoute::Stateless,
+            Self::RegistryRead(_) => ReadOutputRoute::RegistryRead,
         }
     }
 }
@@ -389,22 +361,22 @@ impl SemaObjectName {
         match self {
             Self::WriteInput(route) => {
                 match route {
-                    WriteInputRoute::NoDurableState => "SemaWriteInputNoDurableState",
+                    WriteInputRoute::ApplyRegistry => "SemaWriteInputApplyRegistry",
                 }
             }
             Self::ReadInput(route) => {
                 match route {
-                    ReadInputRoute::NoDurableState => "SemaReadInputNoDurableState",
+                    ReadInputRoute::ReadRegistry => "SemaReadInputReadRegistry",
                 }
             }
             Self::WriteOutput(route) => {
                 match route {
-                    WriteOutputRoute::Stateless => "SemaWriteOutputStateless",
+                    WriteOutputRoute::RegistryApplied => "SemaWriteOutputRegistryApplied",
                 }
             }
             Self::ReadOutput(route) => {
                 match route {
-                    ReadOutputRoute::Stateless => "SemaReadOutputStateless",
+                    ReadOutputRoute::RegistryRead => "SemaReadOutputRegistryRead",
                 }
             }
             Self::Started => "SemaStarted",

@@ -144,6 +144,9 @@ pub enum OperationKind {
     Submit,
     SubmitStamped,
     QueryInbox,
+    AssignAgentIdentity,
+    BindAgentEndpoint,
+    QueryAgentRegistry,
 }
 
 #[derive(
@@ -159,6 +162,10 @@ pub enum Output {
     SubmissionAccepted(u64),
     SubmissionRejected(SubmissionRejectionReason),
     InboxListing(InboxListing),
+    AgentIdentityAssigned(signal_schema::AssignedAgentIdentity),
+    AgentEndpointBound(signal_schema::BoundAgentEndpoint),
+    AgentRegistryListing(signal_schema::AgentRegistryEntries),
+    AgentRegistryRejected(signal_schema::AgentRegistryRejection),
     Unimplemented(OperationKind, UnimplementedReason),
     Error(String),
 }
@@ -189,6 +196,18 @@ impl Output {
                     .map(InboxEntry::from_signal)
                     .collect(),
             ),
+            signal_schema::Output::AgentIdentityAssigned(assigned) => {
+                Self::AgentIdentityAssigned(assigned.into_payload())
+            }
+            signal_schema::Output::AgentEndpointBound(bound) => {
+                Self::AgentEndpointBound(bound.into_payload())
+            }
+            signal_schema::Output::AgentRegistryListing(listing) => {
+                Self::AgentRegistryListing(listing.into_payload())
+            }
+            signal_schema::Output::AgentRegistryRejected(rejection) => {
+                Self::AgentRegistryRejected(rejection.into_payload())
+            }
             signal_schema::Output::Unimplemented(unimplemented) => {
                 let unimplemented = unimplemented.into_payload();
                 Self::Unimplemented(
@@ -231,6 +250,30 @@ impl NotaDecode for Output {
                     &fields[1],
                 )?))
             }
+            "AgentIdentityAssigned" => {
+                Self::expect_fields(fields, "Output::AgentIdentityAssigned", 2)?;
+                Ok(Self::AgentIdentityAssigned(
+                    signal_schema::AssignedAgentIdentity::from_nota_block(&fields[1])?,
+                ))
+            }
+            "AgentEndpointBound" => {
+                Self::expect_fields(fields, "Output::AgentEndpointBound", 2)?;
+                Ok(Self::AgentEndpointBound(
+                    signal_schema::BoundAgentEndpoint::from_nota_block(&fields[1])?,
+                ))
+            }
+            "AgentRegistryListing" => {
+                Self::expect_fields(fields, "Output::AgentRegistryListing", 2)?;
+                Ok(Self::AgentRegistryListing(
+                    signal_schema::AgentRegistryEntries::from_nota_block(&fields[1])?,
+                ))
+            }
+            "AgentRegistryRejected" => {
+                Self::expect_fields(fields, "Output::AgentRegistryRejected", 2)?;
+                Ok(Self::AgentRegistryRejected(
+                    signal_schema::AgentRegistryRejection::from_nota_block(&fields[1])?,
+                ))
+            }
             "Unimplemented" => {
                 Self::expect_fields(fields, "Output::Unimplemented", 3)?;
                 Ok(Self::Unimplemented(
@@ -261,6 +304,14 @@ impl NotaEncode for Output {
             Self::InboxListing(messages) => {
                 Delimiter::Parenthesis.wrap([String::from("InboxListing"), messages.to_nota()])
             }
+            Self::AgentIdentityAssigned(assigned) => Delimiter::Parenthesis
+                .wrap([String::from("AgentIdentityAssigned"), assigned.to_nota()]),
+            Self::AgentEndpointBound(bound) => Delimiter::Parenthesis
+                .wrap([String::from("AgentEndpointBound"), bound.to_nota()]),
+            Self::AgentRegistryListing(listing) => Delimiter::Parenthesis
+                .wrap([String::from("AgentRegistryListing"), listing.to_nota()]),
+            Self::AgentRegistryRejected(rejection) => Delimiter::Parenthesis
+                .wrap([String::from("AgentRegistryRejected"), rejection.to_nota()]),
             Self::Unimplemented(operation, reason) => Delimiter::Parenthesis.wrap([
                 String::from("Unimplemented"),
                 operation.to_nota(),
@@ -316,6 +367,9 @@ impl OperationKind {
             signal_schema::OperationKind::Submit => Self::Submit,
             signal_schema::OperationKind::SubmitStamped => Self::SubmitStamped,
             signal_schema::OperationKind::QueryInbox => Self::QueryInbox,
+            signal_schema::OperationKind::AssignAgentIdentity => Self::AssignAgentIdentity,
+            signal_schema::OperationKind::BindAgentEndpoint => Self::BindAgentEndpoint,
+            signal_schema::OperationKind::QueryAgentRegistry => Self::QueryAgentRegistry,
         }
     }
 }

@@ -27,6 +27,10 @@ pub use crate::schema::signal::OperationKind as OperationKind;
 pub use crate::schema::signal::UnimplementedReason as UnimplementedReason;
 #[rustfmt::skip]
 pub use crate::schema::signal::ErrorReport as ErrorReport;
+#[rustfmt::skip]
+pub use crate::schema::signal::AgentRegistryCommand as RegistryCommand;
+#[rustfmt::skip]
+pub use crate::schema::signal::AgentRegistryQuery as RegistryQuery;
 
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
@@ -149,6 +153,8 @@ pub struct ForwardInboxQuery(InboxQuery);
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum NexusEffectCommand {
     ForwardToRouter(ForwardToRouter),
+    ApplyRegistry(ApplyRegistry),
+    ReadRegistry(ReadRegistry),
 }
 
 #[rustfmt::skip]
@@ -158,6 +164,22 @@ pub enum NexusEffectCommand {
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ForwardToRouter(ForwardRequest);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ApplyRegistry(RegistryCommand);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ReadRegistry(RegistryQuery);
 
 #[rustfmt::skip]
 #[cfg_attr(
@@ -189,10 +211,19 @@ pub struct ForwardFailed(ErrorReport);
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct RegistryCompleted(MessageReply);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum NexusEffectResult {
     Forwarded(Forwarded),
     RouterUnavailable(RouterUnavailable),
     ForwardFailed(ForwardFailed),
+    RegistryCompleted(RegistryCompleted),
 }
 
 #[rustfmt::skip]
@@ -371,6 +402,44 @@ impl From<ForwardRequest> for ForwardToRouter {
 }
 
 #[rustfmt::skip]
+impl ApplyRegistry {
+    pub fn new(payload: RegistryCommand) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &RegistryCommand {
+        &self.0
+    }
+    pub fn into_payload(self) -> RegistryCommand {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<RegistryCommand> for ApplyRegistry {
+    fn from(payload: RegistryCommand) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl ReadRegistry {
+    pub fn new(payload: RegistryQuery) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &RegistryQuery {
+        &self.0
+    }
+    pub fn into_payload(self) -> RegistryQuery {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<RegistryQuery> for ReadRegistry {
+    fn from(payload: RegistryQuery) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl Forwarded {
     pub fn new(payload: MessageReply) -> Self {
         Self(payload)
@@ -428,6 +497,25 @@ impl From<ErrorReport> for ForwardFailed {
 }
 
 #[rustfmt::skip]
+impl RegistryCompleted {
+    pub fn new(payload: MessageReply) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &MessageReply {
+        &self.0
+    }
+    pub fn into_payload(self) -> MessageReply {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<MessageReply> for RegistryCompleted {
+    fn from(payload: MessageReply) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl NexusWork {
     pub fn signal_arrived(payload: SignalInput) -> Self {
         Self::SignalArrived(SignalArrived::new(payload))
@@ -465,6 +553,12 @@ impl NexusEffectCommand {
     pub fn forward_to_router(payload: ForwardRequest) -> Self {
         Self::ForwardToRouter(ForwardToRouter::new(payload))
     }
+    pub fn apply_registry(payload: RegistryCommand) -> Self {
+        Self::ApplyRegistry(ApplyRegistry::new(payload))
+    }
+    pub fn read_registry(payload: RegistryQuery) -> Self {
+        Self::ReadRegistry(ReadRegistry::new(payload))
+    }
 }
 
 #[rustfmt::skip]
@@ -477,6 +571,9 @@ impl NexusEffectResult {
     }
     pub fn forward_failed(payload: ErrorReport) -> Self {
         Self::ForwardFailed(ForwardFailed::new(payload))
+    }
+    pub fn registry_completed(payload: MessageReply) -> Self {
+        Self::RegistryCompleted(RegistryCompleted::new(payload))
     }
 }
 
@@ -560,6 +657,20 @@ impl From<ForwardToRouter> for NexusEffectCommand {
 }
 
 #[rustfmt::skip]
+impl From<ApplyRegistry> for NexusEffectCommand {
+    fn from(payload: ApplyRegistry) -> Self {
+        Self::ApplyRegistry(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<ReadRegistry> for NexusEffectCommand {
+    fn from(payload: ReadRegistry) -> Self {
+        Self::ReadRegistry(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl From<Forwarded> for NexusEffectResult {
     fn from(payload: Forwarded) -> Self {
         Self::Forwarded(payload)
@@ -577,6 +688,13 @@ impl From<RouterUnavailable> for NexusEffectResult {
 impl From<ForwardFailed> for NexusEffectResult {
     fn from(payload: ForwardFailed) -> Self {
         Self::ForwardFailed(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<RegistryCompleted> for NexusEffectResult {
+    fn from(payload: RegistryCompleted) -> Self {
+        Self::RegistryCompleted(payload)
     }
 }
 

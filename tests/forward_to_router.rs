@@ -16,7 +16,7 @@ use std::{
 
 use message::router::{SignalRouterFrameCodec, SignalRouterSocket};
 use message::{
-    MessageEngine, RouterForwarder,
+    MessageEngine, MessengerTables, RouterForwarder,
     router::OriginPolicy,
     schema::signal::{
         Body, Input, MessageKind, MessageSubmission, Output, Recipient, Submit, ThreadSelection,
@@ -90,11 +90,15 @@ impl StubRouter {
     }
 }
 
-fn engine_for(router_socket_path: PathBuf) -> MessageEngine {
-    MessageEngine::new(RouterForwarder::new(
-        SignalRouterSocket::from_path(router_socket_path),
-        OriginPolicy::for_owner_user_id(OWNER_USER_ID, OWNER_INSTANCE),
-    ))
+fn engine_for(router_socket_path: PathBuf, store_root: &TempDir) -> MessageEngine {
+    MessageEngine::new(
+        RouterForwarder::new(
+            SignalRouterSocket::from_path(router_socket_path),
+            OriginPolicy::for_owner_user_id(OWNER_USER_ID, OWNER_INSTANCE),
+        ),
+        MessengerTables::open(&store_root.path().join("messenger.sema"))
+            .expect("open messenger store"),
+    )
 }
 
 fn send_input(recipient: &str, body: &str) -> Input {
@@ -113,7 +117,8 @@ fn submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_
     let router = StubRouter::bind(&router_socket_path);
     let router_thread = router.serve_one_acceptance();
 
-    let engine = engine_for(router_socket_path);
+    let store_root = TempDir::new().expect("store dir");
+    let mut engine = engine_for(router_socket_path, &store_root);
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
         .block_on(engine.handle(send_input("designer", "hello"), &owner_connection()))
@@ -156,7 +161,8 @@ fn submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin() {
     let router = StubRouter::bind(&router_socket_path);
     let router_thread = router.serve_one_acceptance();
 
-    let engine = engine_for(router_socket_path);
+    let store_root = TempDir::new().expect("store dir");
+    let mut engine = engine_for(router_socket_path, &store_root);
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
         .block_on(engine.handle(
@@ -190,7 +196,8 @@ fn submit_from_a_tcp_peer_is_stamped_with_a_network_origin() {
     let router = StubRouter::bind(&router_socket_path);
     let router_thread = router.serve_one_acceptance();
 
-    let engine = engine_for(router_socket_path);
+    let store_root = TempDir::new().expect("store dir");
+    let mut engine = engine_for(router_socket_path, &store_root);
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
         .block_on(engine.handle(send_input("designer", "from tcp"), &tcp_connection()))
@@ -218,7 +225,8 @@ fn router_unreachable_yields_typed_error_output() {
     // No stub router bound at this path — the forward connect fails.
     let router_socket_path = temp.path().join("absent-router.sock");
 
-    let engine = engine_for(router_socket_path);
+    let store_root = TempDir::new().expect("store dir");
+    let mut engine = engine_for(router_socket_path, &store_root);
     let output = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
         .block_on(engine.handle(send_input("designer", "no router"), &owner_connection()))

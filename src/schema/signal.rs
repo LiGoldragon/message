@@ -43,6 +43,30 @@ pub struct QueryInbox(InboxQuery);
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AssignAgentIdentity(AgentIdentityAssignment);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct BindAgentEndpoint(AgentEndpointBinding);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct QueryAgentRegistry(AgentRegistryQuery);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SubmissionAccepted(SubmissionAcceptance);
 
 #[rustfmt::skip]
@@ -60,6 +84,38 @@ pub struct SubmissionRejected(SubmissionRejection);
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct InboxListing(InboxContents);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentIdentityAssigned(AssignedAgentIdentity);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentEndpointBound(BoundAgentEndpoint);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentRegistryListing(AgentRegistryEntries);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentRegistryRejected(AgentRegistryRejection);
 
 #[rustfmt::skip]
 #[cfg_attr(
@@ -352,6 +408,9 @@ pub enum OperationKind {
     Submit,
     SubmitStamped,
     QueryInbox,
+    AssignAgentIdentity,
+    BindAgentEndpoint,
+    QueryAgentRegistry,
 }
 
 #[rustfmt::skip]
@@ -372,6 +431,257 @@ pub enum OperationKind {
 pub enum UnimplementedReason {
     NotInPrototypeScope,
     RouterUnreachable,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentIdentifier(String);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct HarnessPid(Integer);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct HarnessStartTime(Integer);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ResumeIdentity(String);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum ResumeSelection {
+    None,
+    Resumed(ResumeIdentity),
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+pub enum AgentEndpointKind {
+    PtySocket,
+    HarnessSocket,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct EndpointPath(String);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentEndpoint {
+    pub agent_endpoint_kind: AgentEndpointKind,
+    pub endpoint_path: EndpointPath,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum EndpointSelection {
+    None,
+    Bound(AgentEndpoint),
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+pub enum AgentDeathMark {
+    NotDead,
+    Killed,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentIdentityAssignment {
+    pub harness_pid: HarnessPid,
+    pub harness_start_time: HarnessStartTime,
+    pub resume_selection: ResumeSelection,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+pub enum IdentityProvenance {
+    Minted,
+    Reused,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AssignedAgentIdentity {
+    pub agent_identifier: AgentIdentifier,
+    pub identity_provenance: IdentityProvenance,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentEndpointBinding {
+    pub agent_identifier: AgentIdentifier,
+    pub agent_endpoint: AgentEndpoint,
+    pub harness_pid: HarnessPid,
+    pub harness_start_time: HarnessStartTime,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct BoundAgentEndpoint(AgentIdentifier);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum AgentRegistryQuery {
+    All,
+    ByAgent(AgentIdentifier),
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentRegistryEntry {
+    pub agent_identifier: AgentIdentifier,
+    pub endpoint_selection: EndpointSelection,
+    pub resume_selection: ResumeSelection,
+    pub agent_death_mark: AgentDeathMark,
+    pub harness_pid: HarnessPid,
+    pub harness_start_time: HarnessStartTime,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentRegistryEntries(Vec<AgentRegistryEntry>);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+pub enum AgentRegistryRejectionReason {
+    UnknownAgentIdentifier,
+    IdentifierSpanExhausted,
+    StoreRejected,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentRegistryRejection(AgentRegistryRejectionReason);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum AgentRegistryCommand {
+    AssignIdentity(AgentIdentityAssignment),
+    BindEndpoint(AgentEndpointBinding),
 }
 
 #[rustfmt::skip]
@@ -419,6 +729,9 @@ pub enum Input {
     Submit(Submit),
     SubmitStamped(SubmitStamped),
     QueryInbox(QueryInbox),
+    AssignAgentIdentity(AssignAgentIdentity),
+    BindAgentEndpoint(BindAgentEndpoint),
+    QueryAgentRegistry(QueryAgentRegistry),
 }
 
 #[rustfmt::skip]
@@ -431,6 +744,10 @@ pub enum Output {
     SubmissionAccepted(SubmissionAccepted),
     SubmissionRejected(SubmissionRejected),
     InboxListing(InboxListing),
+    AgentIdentityAssigned(AgentIdentityAssigned),
+    AgentEndpointBound(AgentEndpointBound),
+    AgentRegistryListing(AgentRegistryListing),
+    AgentRegistryRejected(AgentRegistryRejected),
     Unimplemented(Unimplemented),
     Error(Error),
 }
@@ -493,6 +810,63 @@ impl From<InboxQuery> for QueryInbox {
 }
 
 #[rustfmt::skip]
+impl AssignAgentIdentity {
+    pub fn new(payload: AgentIdentityAssignment) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentIdentityAssignment {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentIdentityAssignment {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentIdentityAssignment> for AssignAgentIdentity {
+    fn from(payload: AgentIdentityAssignment) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl BindAgentEndpoint {
+    pub fn new(payload: AgentEndpointBinding) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentEndpointBinding {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentEndpointBinding {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentEndpointBinding> for BindAgentEndpoint {
+    fn from(payload: AgentEndpointBinding) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl QueryAgentRegistry {
+    pub fn new(payload: AgentRegistryQuery) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentRegistryQuery {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentRegistryQuery {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentRegistryQuery> for QueryAgentRegistry {
+    fn from(payload: AgentRegistryQuery) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl SubmissionAccepted {
     pub fn new(payload: SubmissionAcceptance) -> Self {
         Self(payload)
@@ -545,6 +919,82 @@ impl InboxListing {
 #[rustfmt::skip]
 impl From<InboxContents> for InboxListing {
     fn from(payload: InboxContents) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentIdentityAssigned {
+    pub fn new(payload: AssignedAgentIdentity) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AssignedAgentIdentity {
+        &self.0
+    }
+    pub fn into_payload(self) -> AssignedAgentIdentity {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AssignedAgentIdentity> for AgentIdentityAssigned {
+    fn from(payload: AssignedAgentIdentity) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentEndpointBound {
+    pub fn new(payload: BoundAgentEndpoint) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &BoundAgentEndpoint {
+        &self.0
+    }
+    pub fn into_payload(self) -> BoundAgentEndpoint {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<BoundAgentEndpoint> for AgentEndpointBound {
+    fn from(payload: BoundAgentEndpoint) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentRegistryListing {
+    pub fn new(payload: AgentRegistryEntries) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentRegistryEntries {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentRegistryEntries {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentRegistryEntries> for AgentRegistryListing {
+    fn from(payload: AgentRegistryEntries) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentRegistryRejected {
+    pub fn new(payload: AgentRegistryRejection) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentRegistryRejection {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentRegistryRejection {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentRegistryRejection> for AgentRegistryRejected {
+    fn from(payload: AgentRegistryRejection) -> Self {
         Self::new(payload)
     }
 }
@@ -911,6 +1361,158 @@ impl From<SubmissionRejectionReason> for SubmissionRejection {
 }
 
 #[rustfmt::skip]
+impl AgentIdentifier {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for AgentIdentifier {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl HarnessPid {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Integer {
+        &self.0
+    }
+    pub fn into_payload(self) -> Integer {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Integer> for HarnessPid {
+    fn from(payload: Integer) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl HarnessStartTime {
+    pub fn new(payload: Integer) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Integer {
+        &self.0
+    }
+    pub fn into_payload(self) -> Integer {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Integer> for HarnessStartTime {
+    fn from(payload: Integer) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl ResumeIdentity {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for ResumeIdentity {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl EndpointPath {
+    pub fn new(payload: impl Into<String>) -> Self {
+        Self(payload.into())
+    }
+    pub fn payload(&self) -> &String {
+        &self.0
+    }
+    pub fn into_payload(self) -> String {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<String> for EndpointPath {
+    fn from(payload: String) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl BoundAgentEndpoint {
+    pub fn new(payload: AgentIdentifier) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentIdentifier {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentIdentifier {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentIdentifier> for BoundAgentEndpoint {
+    fn from(payload: AgentIdentifier) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentRegistryEntries {
+    pub fn new(payload: Vec<AgentRegistryEntry>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Vec<AgentRegistryEntry> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Vec<AgentRegistryEntry> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Vec<AgentRegistryEntry>> for AgentRegistryEntries {
+    fn from(payload: Vec<AgentRegistryEntry>) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentRegistryRejection {
+    pub fn new(payload: AgentRegistryRejectionReason) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &AgentRegistryRejectionReason {
+        &self.0
+    }
+    pub fn into_payload(self) -> AgentRegistryRejectionReason {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<AgentRegistryRejectionReason> for AgentRegistryRejection {
+    fn from(payload: AgentRegistryRejectionReason) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl UnimplementedOperationKind {
     pub fn new(payload: OperationKind) -> Self {
         Self(payload)
@@ -975,6 +1577,37 @@ impl ThreadSelection {
 }
 
 #[rustfmt::skip]
+impl ResumeSelection {
+    pub fn resumed(payload: String) -> Self {
+        Self::Resumed(ResumeIdentity::new(payload))
+    }
+}
+
+#[rustfmt::skip]
+impl EndpointSelection {
+    pub fn bound(payload: AgentEndpoint) -> Self {
+        Self::Bound(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl AgentRegistryQuery {
+    pub fn by_agent(payload: String) -> Self {
+        Self::ByAgent(AgentIdentifier::new(payload))
+    }
+}
+
+#[rustfmt::skip]
+impl AgentRegistryCommand {
+    pub fn assign_identity(payload: AgentIdentityAssignment) -> Self {
+        Self::AssignIdentity(payload)
+    }
+    pub fn bind_endpoint(payload: AgentEndpointBinding) -> Self {
+        Self::BindEndpoint(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl Input {
     pub fn submit(payload: MessageSubmission) -> Self {
         Self::Submit(Submit::new(payload))
@@ -984,6 +1617,15 @@ impl Input {
     }
     pub fn query_inbox(payload: InboxQuery) -> Self {
         Self::QueryInbox(QueryInbox::new(payload))
+    }
+    pub fn assign_agent_identity(payload: AgentIdentityAssignment) -> Self {
+        Self::AssignAgentIdentity(AssignAgentIdentity::new(payload))
+    }
+    pub fn bind_agent_endpoint(payload: AgentEndpointBinding) -> Self {
+        Self::BindAgentEndpoint(BindAgentEndpoint::new(payload))
+    }
+    pub fn query_agent_registry(payload: AgentRegistryQuery) -> Self {
+        Self::QueryAgentRegistry(QueryAgentRegistry::new(payload))
     }
 }
 
@@ -998,6 +1640,18 @@ impl Output {
     pub fn inbox_listing(payload: InboxContents) -> Self {
         Self::InboxListing(InboxListing::new(payload))
     }
+    pub fn agent_identity_assigned(payload: AssignedAgentIdentity) -> Self {
+        Self::AgentIdentityAssigned(AgentIdentityAssigned::new(payload))
+    }
+    pub fn agent_endpoint_bound(payload: BoundAgentEndpoint) -> Self {
+        Self::AgentEndpointBound(AgentEndpointBound::new(payload))
+    }
+    pub fn agent_registry_listing(payload: AgentRegistryEntries) -> Self {
+        Self::AgentRegistryListing(AgentRegistryListing::new(payload))
+    }
+    pub fn agent_registry_rejected(payload: AgentRegistryRejection) -> Self {
+        Self::AgentRegistryRejected(AgentRegistryRejected::new(payload))
+    }
     pub fn unimplemented(payload: RequestUnimplemented) -> Self {
         Self::Unimplemented(Unimplemented::new(payload))
     }
@@ -1010,6 +1664,41 @@ impl Output {
 impl From<ThreadName> for ThreadSelection {
     fn from(payload: ThreadName) -> Self {
         Self::Named(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<ResumeIdentity> for ResumeSelection {
+    fn from(payload: ResumeIdentity) -> Self {
+        Self::Resumed(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentEndpoint> for EndpointSelection {
+    fn from(payload: AgentEndpoint) -> Self {
+        Self::Bound(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentIdentifier> for AgentRegistryQuery {
+    fn from(payload: AgentIdentifier) -> Self {
+        Self::ByAgent(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentIdentityAssignment> for AgentRegistryCommand {
+    fn from(payload: AgentIdentityAssignment) -> Self {
+        Self::AssignIdentity(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentEndpointBinding> for AgentRegistryCommand {
+    fn from(payload: AgentEndpointBinding) -> Self {
+        Self::BindEndpoint(payload)
     }
 }
 
@@ -1035,6 +1724,27 @@ impl From<QueryInbox> for Input {
 }
 
 #[rustfmt::skip]
+impl From<AssignAgentIdentity> for Input {
+    fn from(payload: AssignAgentIdentity) -> Self {
+        Self::AssignAgentIdentity(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<BindAgentEndpoint> for Input {
+    fn from(payload: BindAgentEndpoint) -> Self {
+        Self::BindAgentEndpoint(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<QueryAgentRegistry> for Input {
+    fn from(payload: QueryAgentRegistry) -> Self {
+        Self::QueryAgentRegistry(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl From<SubmissionAccepted> for Output {
     fn from(payload: SubmissionAccepted) -> Self {
         Self::SubmissionAccepted(payload)
@@ -1052,6 +1762,34 @@ impl From<SubmissionRejected> for Output {
 impl From<InboxListing> for Output {
     fn from(payload: InboxListing) -> Self {
         Self::InboxListing(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentIdentityAssigned> for Output {
+    fn from(payload: AgentIdentityAssigned) -> Self {
+        Self::AgentIdentityAssigned(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentEndpointBound> for Output {
+    fn from(payload: AgentEndpointBound) -> Self {
+        Self::AgentEndpointBound(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentRegistryListing> for Output {
+    fn from(payload: AgentRegistryListing) -> Self {
+        Self::AgentRegistryListing(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<AgentRegistryRejected> for Output {
+    fn from(payload: AgentRegistryRejected) -> Self {
+        Self::AgentRegistryRejected(payload)
     }
 }
 
@@ -1106,11 +1844,18 @@ pub mod short_header {
     pub const INPUT_SUBMIT: u64 = 0x0000000000000000;
     pub const INPUT_SUBMIT_STAMPED: u64 = 0x0001000000000000;
     pub const INPUT_QUERY_INBOX: u64 = 0x0002000000000000;
+    pub const INPUT_ASSIGN_AGENT_IDENTITY: u64 = 0x0003000000000000;
+    pub const INPUT_BIND_AGENT_ENDPOINT: u64 = 0x0004000000000000;
+    pub const INPUT_QUERY_AGENT_REGISTRY: u64 = 0x0005000000000000;
     pub const OUTPUT_SUBMISSION_ACCEPTED: u64 = 0x0100000000000000;
     pub const OUTPUT_SUBMISSION_REJECTED: u64 = 0x0101000000000000;
     pub const OUTPUT_INBOX_LISTING: u64 = 0x0102000000000000;
-    pub const OUTPUT_UNIMPLEMENTED: u64 = 0x0103000000000000;
-    pub const OUTPUT_ERROR: u64 = 0x0104000000000000;
+    pub const OUTPUT_AGENT_IDENTITY_ASSIGNED: u64 = 0x0103000000000000;
+    pub const OUTPUT_AGENT_ENDPOINT_BOUND: u64 = 0x0104000000000000;
+    pub const OUTPUT_AGENT_REGISTRY_LISTING: u64 = 0x0105000000000000;
+    pub const OUTPUT_AGENT_REGISTRY_REJECTED: u64 = 0x0106000000000000;
+    pub const OUTPUT_UNIMPLEMENTED: u64 = 0x0107000000000000;
+    pub const OUTPUT_ERROR: u64 = 0x0108000000000000;
 }
 
 #[rustfmt::skip]
@@ -1167,6 +1912,9 @@ pub enum InputRoute {
     Submit,
     SubmitStamped,
     QueryInbox,
+    AssignAgentIdentity,
+    BindAgentEndpoint,
+    QueryAgentRegistry,
 }
 
 #[rustfmt::skip]
@@ -1188,6 +1936,10 @@ pub enum OutputRoute {
     SubmissionAccepted,
     SubmissionRejected,
     InboxListing,
+    AgentIdentityAssigned,
+    AgentEndpointBound,
+    AgentRegistryListing,
+    AgentRegistryRejected,
     Unimplemented,
     Error,
 }
@@ -1199,6 +1951,9 @@ impl Input {
             Self::Submit(_) => InputRoute::Submit,
             Self::SubmitStamped(_) => InputRoute::SubmitStamped,
             Self::QueryInbox(_) => InputRoute::QueryInbox,
+            Self::AssignAgentIdentity(_) => InputRoute::AssignAgentIdentity,
+            Self::BindAgentEndpoint(_) => InputRoute::BindAgentEndpoint,
+            Self::QueryAgentRegistry(_) => InputRoute::QueryAgentRegistry,
         }
     }
     pub fn short_header(&self) -> u64 {
@@ -1206,6 +1961,9 @@ impl Input {
             Self::Submit(_) => short_header::INPUT_SUBMIT,
             Self::SubmitStamped(_) => short_header::INPUT_SUBMIT_STAMPED,
             Self::QueryInbox(_) => short_header::INPUT_QUERY_INBOX,
+            Self::AssignAgentIdentity(_) => short_header::INPUT_ASSIGN_AGENT_IDENTITY,
+            Self::BindAgentEndpoint(_) => short_header::INPUT_BIND_AGENT_ENDPOINT,
+            Self::QueryAgentRegistry(_) => short_header::INPUT_QUERY_AGENT_REGISTRY,
         }
     }
     pub fn route_from_short_header(header: u64) -> Result<InputRoute, SignalFrameError> {
@@ -1213,6 +1971,13 @@ impl Input {
             short_header::INPUT_SUBMIT => Ok(InputRoute::Submit),
             short_header::INPUT_SUBMIT_STAMPED => Ok(InputRoute::SubmitStamped),
             short_header::INPUT_QUERY_INBOX => Ok(InputRoute::QueryInbox),
+            short_header::INPUT_ASSIGN_AGENT_IDENTITY => {
+                Ok(InputRoute::AssignAgentIdentity)
+            }
+            short_header::INPUT_BIND_AGENT_ENDPOINT => Ok(InputRoute::BindAgentEndpoint),
+            short_header::INPUT_QUERY_AGENT_REGISTRY => {
+                Ok(InputRoute::QueryAgentRegistry)
+            }
             _ => {
                 Err(SignalFrameError::UnknownHeader {
                     root_enum: "Input",
@@ -1266,6 +2031,10 @@ impl Output {
             Self::SubmissionAccepted(_) => OutputRoute::SubmissionAccepted,
             Self::SubmissionRejected(_) => OutputRoute::SubmissionRejected,
             Self::InboxListing(_) => OutputRoute::InboxListing,
+            Self::AgentIdentityAssigned(_) => OutputRoute::AgentIdentityAssigned,
+            Self::AgentEndpointBound(_) => OutputRoute::AgentEndpointBound,
+            Self::AgentRegistryListing(_) => OutputRoute::AgentRegistryListing,
+            Self::AgentRegistryRejected(_) => OutputRoute::AgentRegistryRejected,
             Self::Unimplemented(_) => OutputRoute::Unimplemented,
             Self::Error(_) => OutputRoute::Error,
         }
@@ -1275,6 +2044,14 @@ impl Output {
             Self::SubmissionAccepted(_) => short_header::OUTPUT_SUBMISSION_ACCEPTED,
             Self::SubmissionRejected(_) => short_header::OUTPUT_SUBMISSION_REJECTED,
             Self::InboxListing(_) => short_header::OUTPUT_INBOX_LISTING,
+            Self::AgentIdentityAssigned(_) => {
+                short_header::OUTPUT_AGENT_IDENTITY_ASSIGNED
+            }
+            Self::AgentEndpointBound(_) => short_header::OUTPUT_AGENT_ENDPOINT_BOUND,
+            Self::AgentRegistryListing(_) => short_header::OUTPUT_AGENT_REGISTRY_LISTING,
+            Self::AgentRegistryRejected(_) => {
+                short_header::OUTPUT_AGENT_REGISTRY_REJECTED
+            }
             Self::Unimplemented(_) => short_header::OUTPUT_UNIMPLEMENTED,
             Self::Error(_) => short_header::OUTPUT_ERROR,
         }
@@ -1290,6 +2067,18 @@ impl Output {
                 Ok(OutputRoute::SubmissionRejected)
             }
             short_header::OUTPUT_INBOX_LISTING => Ok(OutputRoute::InboxListing),
+            short_header::OUTPUT_AGENT_IDENTITY_ASSIGNED => {
+                Ok(OutputRoute::AgentIdentityAssigned)
+            }
+            short_header::OUTPUT_AGENT_ENDPOINT_BOUND => {
+                Ok(OutputRoute::AgentEndpointBound)
+            }
+            short_header::OUTPUT_AGENT_REGISTRY_LISTING => {
+                Ok(OutputRoute::AgentRegistryListing)
+            }
+            short_header::OUTPUT_AGENT_REGISTRY_REJECTED => {
+                Ok(OutputRoute::AgentRegistryRejected)
+            }
             short_header::OUTPUT_UNIMPLEMENTED => Ok(OutputRoute::Unimplemented),
             short_header::OUTPUT_ERROR => Ok(OutputRoute::Error),
             _ => {
@@ -1342,7 +2131,14 @@ impl Output {
 impl signal_frame::RequestPayload for Input {}
 #[rustfmt::skip]
 impl signal_frame::SignalOperationHeads for Input {
-    const HEADS: &'static [&'static str] = &["Submit", "SubmitStamped", "QueryInbox"];
+    const HEADS: &'static [&'static str] = &[
+        "Submit",
+        "SubmitStamped",
+        "QueryInbox",
+        "AssignAgentIdentity",
+        "BindAgentEndpoint",
+        "QueryAgentRegistry",
+    ];
 }
 #[rustfmt::skip]
 impl signal_frame::LogVariant for Input {
@@ -1425,6 +2221,9 @@ impl SignalObjectName {
                     InputRoute::Submit => "SignalInputSubmit",
                     InputRoute::SubmitStamped => "SignalInputSubmitStamped",
                     InputRoute::QueryInbox => "SignalInputQueryInbox",
+                    InputRoute::AssignAgentIdentity => "SignalInputAssignAgentIdentity",
+                    InputRoute::BindAgentEndpoint => "SignalInputBindAgentEndpoint",
+                    InputRoute::QueryAgentRegistry => "SignalInputQueryAgentRegistry",
                 }
             }
             Self::Output(route) => {
@@ -1432,6 +2231,16 @@ impl SignalObjectName {
                     OutputRoute::SubmissionAccepted => "SignalOutputSubmissionAccepted",
                     OutputRoute::SubmissionRejected => "SignalOutputSubmissionRejected",
                     OutputRoute::InboxListing => "SignalOutputInboxListing",
+                    OutputRoute::AgentIdentityAssigned => {
+                        "SignalOutputAgentIdentityAssigned"
+                    }
+                    OutputRoute::AgentEndpointBound => "SignalOutputAgentEndpointBound",
+                    OutputRoute::AgentRegistryListing => {
+                        "SignalOutputAgentRegistryListing"
+                    }
+                    OutputRoute::AgentRegistryRejected => {
+                        "SignalOutputAgentRegistryRejected"
+                    }
                     OutputRoute::Unimplemented => "SignalOutputUnimplemented",
                     OutputRoute::Error => "SignalOutputError",
                 }
