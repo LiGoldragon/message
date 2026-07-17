@@ -7,13 +7,15 @@
 //! thin runtime around those generated interfaces. `build.rs` regenerates and
 //! verifies the modules are fresh.
 //!
-//! Message is a stateless stamp-and-forward ingress: the Signal plane is its
-//! wire surface (`message.sock`), the Nexus plane is its internal-feature
-//! catalog (the forward-to-router decision + the `ForwardToRouter` effect), and
-//! the SEMA plane is honestly empty (`Stateless`). The only daemon code message
-//! hand-writes is `impl ComponentDaemon for MessageDaemon` in `daemon.rs`; the
-//! daemon skeleton itself is emitted into `schema/daemon.rs`.
+//! The messenger owns durable state: the Signal plane is its wire surface
+//! (`message.sock`), the Nexus plane is its internal-feature catalog (the
+//! forward-to-router decision plus the registry apply/read effects), and the
+//! SEMA plane commits the agent registry — the authoritative process↔identity
+//! map and local delivery registry — in `messenger.sema`. The only daemon
+//! code message hand-writes is `impl ComponentDaemon for MessageDaemon` in
+//! `daemon.rs`; the daemon skeleton itself is emitted into `schema/daemon.rs`.
 
+pub mod agent_identifier_mint;
 pub mod client;
 #[cfg(feature = "nota-text")]
 pub mod command;
@@ -26,6 +28,7 @@ pub mod meta;
 #[cfg(feature = "nota-text")]
 pub mod output_validator;
 pub mod router;
+pub mod tables;
 #[cfg(feature = "nota-text")]
 pub mod surface;
 
@@ -48,4 +51,5 @@ pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};
 #[cfg(feature = "nota-text")]
 pub use meta::{MetaMessageCommand, MetaMessageCommandEnvironment};
 pub use router::{RouterForwardOutcome, RouterForwarder};
+pub use tables::MessengerTables;
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};

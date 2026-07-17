@@ -1,14 +1,21 @@
 {}
-[Submit SubmitStamped QueryInbox]
-[SubmissionAccepted SubmissionRejected InboxListing Unimplemented Error]
+[Submit SubmitStamped QueryInbox AssignAgentIdentity BindAgentEndpoint QueryAgentRegistry]
+[SubmissionAccepted SubmissionRejected InboxListing AgentIdentityAssigned AgentEndpointBound AgentRegistryListing AgentRegistryRejected Unimplemented Error]
 {
   Submit MessageSubmission
   SubmitStamped StampedMessageSubmission
   QueryInbox InboxQuery
+  AssignAgentIdentity AgentIdentityAssignment
+  BindAgentEndpoint AgentEndpointBinding
+  QueryAgentRegistry AgentRegistryQuery
 
   SubmissionAccepted SubmissionAcceptance
   SubmissionRejected SubmissionRejection
   InboxListing InboxContents
+  AgentIdentityAssigned AssignedAgentIdentity
+  AgentEndpointBound BoundAgentEndpoint
+  AgentRegistryListing AgentRegistryEntries
+  AgentRegistryRejected AgentRegistryRejection
   Unimplemented RequestUnimplemented
   Error ErrorReport
 
@@ -60,8 +67,57 @@
   SubmissionRejectionReason [StoreRejected RecipientNotFound]
   SubmissionRejection SubmissionRejectionReason
 
-  OperationKind [Submit SubmitStamped QueryInbox]
+  OperationKind [Submit SubmitStamped QueryInbox AssignAgentIdentity BindAgentEndpoint QueryAgentRegistry]
   UnimplementedReason [NotInPrototypeScope RouterUnreachable]
+
+  AgentIdentifier String
+  HarnessPid Integer
+  HarnessStartTime Integer
+  ResumeIdentity String
+  ResumeSelection [None (Resumed ResumeIdentity)]
+
+  AgentEndpointKind [PtySocket HarnessSocket]
+  EndpointPath String
+  AgentEndpoint {
+    AgentEndpointKind
+    EndpointPath
+  }
+  EndpointSelection [None (Bound AgentEndpoint)]
+  AgentDeathMark [NotDead Killed]
+
+  AgentIdentityAssignment {
+    HarnessPid
+    HarnessStartTime
+    ResumeSelection
+  }
+  IdentityProvenance [Minted Reused]
+  AssignedAgentIdentity {
+    AgentIdentifier
+    IdentityProvenance
+  }
+
+  AgentEndpointBinding {
+    AgentIdentifier
+    AgentEndpoint
+    HarnessPid
+    HarnessStartTime
+  }
+  BoundAgentEndpoint AgentIdentifier
+
+  AgentRegistryQuery [All (ByAgent AgentIdentifier)]
+  AgentRegistryEntry {
+    AgentIdentifier
+    EndpointSelection
+    ResumeSelection
+    AgentDeathMark
+    HarnessPid
+    HarnessStartTime
+  }
+  AgentRegistryEntries (Vector AgentRegistryEntry)
+  AgentRegistryRejectionReason [UnknownAgentIdentifier IdentifierSpanExhausted StoreRejected]
+  AgentRegistryRejection AgentRegistryRejectionReason
+
+  AgentRegistryCommand [(AssignIdentity AgentIdentityAssignment) (BindEndpoint AgentEndpointBinding)]
   UnimplementedOperationKind OperationKind
   Reason UnimplementedReason
   RequestUnimplemented {

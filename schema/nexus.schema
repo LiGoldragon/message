@@ -8,6 +8,8 @@
   OperationKind message:signal:OperationKind
   UnimplementedReason message:signal:UnimplementedReason
   ErrorReport message:signal:ErrorReport
+  RegistryCommand message:signal:AgentRegistryCommand
+  RegistryQuery message:signal:AgentRegistryQuery
 }
 [SignalArrived EffectCompleted]
 [ReplyToSignal CommandEffect Continue]
@@ -26,11 +28,14 @@
   ForwardRequest [(StampAndForward StampAndForward) (ForwardInboxQuery ForwardInboxQuery)]
   StampAndForward MessageSubmission
   ForwardInboxQuery InboxQuery
-  NexusEffectCommand [(ForwardToRouter ForwardToRouter)]
+  NexusEffectCommand [(ForwardToRouter ForwardToRouter) (ApplyRegistry ApplyRegistry) (ReadRegistry ReadRegistry)]
   ForwardToRouter ForwardRequest
+  ApplyRegistry RegistryCommand
+  ReadRegistry RegistryQuery
 
   Forwarded MessageReply
   RouterUnavailable UnimplementedReason
   ForwardFailed ErrorReport
-  NexusEffectResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable) (ForwardFailed ForwardFailed)]
+  RegistryCompleted MessageReply
+  NexusEffectResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable) (ForwardFailed ForwardFailed) (RegistryCompleted RegistryCompleted)]
 }

@@ -439,6 +439,16 @@ impl RouterForwarder {
                     unimplemented.message_unimplemented_reason
                 )))),
             ),
+            SignalMessageOutput::AgentIdentityAssigned(_)
+            | SignalMessageOutput::AgentEndpointBound(_)
+            | SignalMessageOutput::AgentRegistryListing(_)
+            | SignalMessageOutput::AgentRegistryRejected(_) => Output::Error(SignalError::new(
+                ErrorReport::new(ErrorMessage::new(
+                    "router replied with an agent-registry reply; registry operations are \
+                     messenger-local and never forwarded"
+                        .to_owned(),
+                )),
+            )),
         }
     }
 

@@ -41,9 +41,14 @@ binary is `message-daemon`.
 ## 0 · TL;DR
 
 This repo owns the engine's message-ingress boundary: a
-small supervised daemon plus ordinary and owner-side CLI clients. None carries
-a durable message ledger; all are stateless boundary surfaces. Routing policy,
-delivery state, and channel authority remain in `router`.
+small supervised daemon plus ordinary and owner-side CLI clients — and, since
+train packet 2.1, the messenger's first durable state: the **agent registry**
+in `messenger.sema`, the authoritative process↔identity map plus the local
+delivery registry (launch-minted agent identifier, endpoint, resume identity,
+death mark, pid + start-time pin). The durable message ledger, inbox, and
+thread index arrive with the messenger-promotion packets (3.1); routing
+policy, delivery state, and channel authority still sit in `router` until
+those packets land.
 
 ```mermaid
 flowchart LR
@@ -84,7 +89,8 @@ flowchart LR
     "Nexus decide" -->|"ForwardToRouter effect"| "RouterForwarder"
     "RouterForwarder" -->|"signal-message wire"| "router"
     "Nexus decide" -->|"ReplyToSignal"| "Signal (Input/Output)"
-    "SEMA (Stateless)" -.->|"no durable state"| "Nexus decide"
+    "Nexus decide" -->|"ApplyRegistry / ReadRegistry effect"| "SEMA (messenger.sema)"
+    "SEMA (messenger.sema)" -->|"typed registry reply"| "Nexus decide"
 ```
 
 - **Signal** — the wire surface the emitted daemon decodes on `message.sock`.
@@ -95,16 +101,20 @@ flowchart LR
   generated decision surface. `Submit`/`QueryInbox` stamp and forward;
   `SubmitStamped` replies `Unimplemented` (the daemon mints provenance, never
   accepts it from a peer).
-- **SEMA** — honestly empty (`Stateless`). Message owns no durable state; the
-  plane exists only to satisfy the uniform three-plane shape.
+- **SEMA** — owns `messenger.sema` and commits the agent-registry
+  transitions (`AssignAgentIdentity` mint/reuse, `BindAgentEndpoint`,
+  `QueryAgentRegistry`). Store and mint failures project to typed
+  `AgentRegistryRejected` replies, never a reply-less connection close.
+  The message ledger joins this plane in packet 3.1.
 
 The emitted daemon (`src/schema/daemon.rs`) owns the argv-config load, the
 working-socket and owner-meta-socket binds, and the decode →
 `handle_working_input` → encode spine. `MessageDaemon` (`src/daemon.rs`)
 supplies only the `ComponentDaemon` escape hatches. The owner meta hook decodes
 `meta-signal-message` frames and returns typed `RequestUnimplemented(NotBuiltYet)`
-for `Configure` until live reconfiguration is wired. The daemon is stateless
-across requests — no redb, no durable message ledger.
+for `Configure` until live reconfiguration is wired. The daemon keeps no
+durable message ledger yet (packet 3.1); its durable state today is exactly
+the agent registry in `messenger.sema` at the configured database path.
 
 `RouterForwarder` (`src/router.rs`) is the translation seam between the
 daemon-local inbound wire and the published schema-derived `signal-message`
@@ -116,7 +126,14 @@ caller payload.
 
 ## 2 · State and Ownership
 
-The message component owns no durable message state. The CLI requires
+The message component owns the agent registry in `messenger.sema`
+(`src/tables.rs`): identity assignment at harness launch (spirit's short-hash
+mint discipline, 4 chars growing on conflict, reused on resume), the live
+delivery endpoint per agent, and the killed/dead mark liveness will feed. The
+messenger participates in **no** version-handover snapshot (the Mirror
+mechanism is orchestrate's own); store continuity across daemon versions is
+carried by the store file and per-family migrations alone. It owns no durable
+message ledger yet. The CLI requires
 `MESSAGE_SOCKET` or `PERSONA_SOCKET_PATH` and exits if the message
 daemon socket is absent. The daemon requires a typed binary rkyv
 `Configuration` on argv (socket path, meta socket path, router socket path,
@@ -169,12 +186,11 @@ This repo does not own:
 
 - message or router contract definitions;
 - final routing policy;
-- durable database tables;
-- actor registration writes;
+- message/delivery database tables (until packet 3.1);
+- router actor registration writes;
 - local message ledgers;
 - terminal endpoint vocabulary;
-- terminal byte transport;
-- durable daemon state.
+- terminal byte transport.
 
 ### 3.1 · Existence vs delivery, and the message-sent hook
 
@@ -256,12 +272,14 @@ observers, routers, and subscribers can react immediately.
 ```text
 schema/signal.schema           daemon-local signal runtime (Input/Output)
 schema/nexus.schema            internal-feature catalog (forward decision + effect)
-schema/sema.schema             durable state plane — honestly empty (Stateless)
+schema/sema.schema             durable state plane — agent registry apply/read
 build.rs                       GenerationPlan + NexusDaemonShape (emits src/schema/*.rs)
 src/schema/signal.rs           generated Signal plane
 src/schema/nexus.rs            generated Nexus plane (NexusEngine)
 src/schema/sema.rs             generated SEMA plane (SemaEngine)
 src/schema/daemon.rs           EMITTED daemon skeleton (ComponentDaemon, the spine)
+src/agent_identifier_mint.rs   launch-time identity mint (spirit discipline)
+src/tables.rs                  messenger.sema — agent registry family
 src/main.rs                    message CLI entry
 src/bin/meta_message.rs        owner meta CLI entry
 src/bin/message_daemon.rs      daemon entry (one-liner: MessageDaemon::run_to_exit_code())

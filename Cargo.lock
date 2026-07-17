@@ -367,14 +367,16 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
+ "getrandom",
  "meta-signal-message",
  "nota",
  "rkyv",
  "rustix",
  "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?branch=main)",
- "signal-frame",
+ "sema-engine",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
  "signal-message",
  "tempfile",
  "thiserror",
@@ -385,12 +387,12 @@ dependencies = [
 [[package]]
 name = "meta-signal-message"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message.git?branch=main#9134d4608cab4d3b56810d4ee7ee4aa48d6bfb64"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?branch=train%2Fmessenger-liveness-identity-registry#83c5e029dd9eb8604eb2f001ee4c34bbeb485c87"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?branch=main)",
- "signal-frame",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
  "signal-message",
  "thiserror",
 ]
@@ -527,6 +529,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redb"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e925444704b5f17d32bf42f5b6e2df050bceebc3dcd6e71cc73dafe8092e839"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "rend"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -640,6 +651,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sema"
+version = "0.1.1"
+source = "git+https://github.com/LiGoldragon/sema.git?rev=51d7927c872f0df12791bad8d39a4db6433b01a1#51d7927c872f0df12791bad8d39a4db6433b01a1"
+dependencies = [
+ "redb",
+ "rkyv",
+ "thiserror",
+]
+
+[[package]]
+name = "sema-engine"
+version = "0.10.1"
+source = "git+https://github.com/LiGoldragon/sema-engine.git?branch=main#93a6b5f063292e000a7bf395fdd5b46e3e943068"
+dependencies = [
+ "blake3",
+ "rkyv",
+ "sema",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234)",
+ "signal-sema",
+ "thiserror",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -702,7 +736,18 @@ dependencies = [
  "nota",
  "paste",
  "rkyv",
- "signal-frame-macros",
+ "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "thiserror",
+]
+
+[[package]]
+name = "signal-frame"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234#f46872e7e8edae5264c892443d415a273b231234"
+dependencies = [
+ "paste",
+ "rkyv",
+ "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234)",
  "thiserror",
 ]
 
@@ -717,14 +762,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-frame-macros"
+version = "0.1.1"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234#f46872e7e8edae5264c892443d415a273b231234"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "signal-message"
-version = "0.4.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#95343930c2bc91c0d6473a410b47745079dbc907"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git?branch=train%2Fmessenger-liveness-identity-registry#916d6f23b5380dab91cec093500a371d21d54c7c"
 dependencies = [
  "nota",
  "rkyv",
  "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?rev=255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4)",
- "signal-frame",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "thiserror",
+]
+
+[[package]]
+name = "signal-sema"
+version = "0.2.0"
+source = "git+https://github.com/LiGoldragon/signal-sema.git?rev=4f3a24e6677ab9d200672851016c4c760c1e36e8#4f3a24e6677ab9d200672851016c4c760c1e36e8"
+dependencies = [
+ "rkyv",
  "thiserror",
 ]
 
@@ -875,7 +939,7 @@ dependencies = [
  "kameo",
  "rkyv",
  "rustix",
- "signal-frame",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
  "thiserror",
  "tokio",
 ]

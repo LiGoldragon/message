@@ -9,7 +9,7 @@
 //! build its `MessageEngine` (`build_runtime`), how one working `Input`
 //! becomes one `Output` (`handle_working_input`), and how the owner meta socket
 //! returns typed skeleton-honest replies until live reconfiguration is wired.
-//! Message has no durable store, so there is no `start`/`stop` resource setup.
+//! The `messenger.sema` store opens inside `build_runtime`.
 
 use thiserror::Error;
 use triad_runtime::{AcceptedConnection, EngineRequestError, FrameError};
@@ -69,7 +69,7 @@ impl ComponentDaemon for MessageDaemon {
     }
 
     fn build_runtime(configuration: &Self::Configuration) -> Result<Self::Engine, Self::Error> {
-        Ok(MessageEngine::from_configuration(configuration))
+        Ok(MessageEngine::from_configuration(configuration)?)
     }
 
     async fn handle_working_input(
