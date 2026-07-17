@@ -15,7 +15,6 @@
 //! code message hand-writes is `impl ComponentDaemon for MessageDaemon` in
 //! `daemon.rs`; the daemon skeleton itself is emitted into `schema/daemon.rs`.
 
-pub mod agent_identifier_mint;
 pub mod client;
 #[cfg(feature = "nota-text")]
 pub mod command;

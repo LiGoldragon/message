@@ -64,14 +64,6 @@ pub enum Error {
 
     #[error("messenger store: {0}")]
     SemaEngine(#[from] sema_engine::Error),
-
-    #[error(
-        "agent identifier span exhausted between {minimum} and {maximum} characters"
-    )]
-    AgentIdentifierSpanExhausted { minimum: usize, maximum: usize },
-
-    #[error("agent identifier entropy source failed: {detail}")]
-    AgentIdentifierEntropy { detail: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

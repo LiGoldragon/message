@@ -85,12 +85,18 @@
   EndpointSelection [None (Bound AgentEndpoint)]
   AgentDeathMark [NotDead Killed]
 
-  AgentIdentityAssignment {
+  HarnessProcessPin {
     HarnessPid
     HarnessStartTime
+  }
+  ProcessPinSelection [None (Pinned HarnessProcessPin)]
+
+  AgentIdentityAssignment {
+    AgentIdentifier
+    ProcessPinSelection
     ResumeSelection
   }
-  IdentityProvenance [Minted Reused]
+  IdentityProvenance [Seated Reseated]
   AssignedAgentIdentity {
     AgentIdentifier
     IdentityProvenance
@@ -110,11 +116,10 @@
     EndpointSelection
     ResumeSelection
     AgentDeathMark
-    HarnessPid
-    HarnessStartTime
+    ProcessPinSelection
   }
   AgentRegistryEntries (Vector AgentRegistryEntry)
-  AgentRegistryRejectionReason [UnknownAgentIdentifier IdentifierSpanExhausted StoreRejected]
+  AgentRegistryRejectionReason [UnknownAgentIdentifier StoreRejected]
   AgentRegistryRejection AgentRegistryRejectionReason
 
   AgentRegistryCommand [(AssignIdentity AgentIdentityAssignment) (BindEndpoint AgentEndpointBinding)]

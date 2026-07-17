@@ -266,18 +266,15 @@ impl MessageEngine {
 
     /// Project a registry write onto its typed Signal reply.
     ///
-    /// Store and mint failures become typed `AgentRegistryRejected` replies,
-    /// not engine errors: the daemon spine closes the connection without a
+    /// Store failures become typed `AgentRegistryRejected` replies, not
+    /// engine errors: the daemon spine closes the connection without a
     /// reply frame on an engine `Err`, and a registry caller must be able to
     /// distinguish a rejected operation from a dead daemon.
     fn apply_registry_command(&self, command: AgentRegistryCommand) -> Output {
         match command {
             AgentRegistryCommand::AssignIdentity(assignment) => {
-                match self.tables.assign_identity(&assignment) {
+                match self.tables.seat_identity(&assignment) {
                     Ok(assigned) => Output::agent_identity_assigned(assigned),
-                    Err(Error::AgentIdentifierSpanExhausted { .. }) => Self::registry_rejection(
-                        AgentRegistryRejectionReason::IdentifierSpanExhausted,
-                    ),
                     Err(_) => {
                         Self::registry_rejection(AgentRegistryRejectionReason::StoreRejected)
                     }

@@ -43,12 +43,14 @@ binary is `message-daemon`.
 This repo owns the engine's message-ingress boundary: a
 small supervised daemon plus ordinary and owner-side CLI clients — and, since
 train packet 2.1, the messenger's first durable state: the **agent registry**
-in `messenger.sema`, the authoritative process↔identity map plus the local
-delivery registry (launch-minted agent identifier, endpoint, resume identity,
-death mark, pid + start-time pin). The durable message ledger, inbox, and
-thread index arrive with the messenger-promotion packets (3.1); routing
-policy, delivery state, and channel authority still sit in `router` until
-those packets land.
+in `messenger.sema`, the durable consumer view of agent identity plus the
+local delivery registry (orchestrator-allocated agent identifier, endpoint,
+resume identity, death mark, optional pid + start-time pin). The
+ORCHESTRATOR is the mint (psyche-ruled 2026-07-17): identities arrive
+already allocated and the registry seats them. The durable message ledger,
+inbox, and thread index arrive with the messenger-promotion packets (3.1);
+routing policy, delivery state, and channel authority still sit in `router`
+until those packets land.
 
 ```mermaid
 flowchart LR
@@ -102,10 +104,10 @@ flowchart LR
   `SubmitStamped` replies `Unimplemented` (the daemon mints provenance, never
   accepts it from a peer).
 - **SEMA** — owns `messenger.sema` and commits the agent-registry
-  transitions (`AssignAgentIdentity` mint/reuse, `BindAgentEndpoint`,
-  `QueryAgentRegistry`). Store and mint failures project to typed
-  `AgentRegistryRejected` replies, never a reply-less connection close.
-  The message ledger joins this plane in packet 3.1.
+  transitions (`AssignAgentIdentity` seat/reseat of an orchestrator-supplied
+  identity, `BindAgentEndpoint`, `QueryAgentRegistry`). Store failures
+  project to typed `AgentRegistryRejected` replies, never a reply-less
+  connection close. The message ledger joins this plane in packet 3.1.
 
 The emitted daemon (`src/schema/daemon.rs`) owns the argv-config load, the
 working-socket and owner-meta-socket binds, and the decode →
@@ -127,9 +129,10 @@ caller payload.
 ## 2 · State and Ownership
 
 The message component owns the agent registry in `messenger.sema`
-(`src/tables.rs`): identity assignment at harness launch (spirit's short-hash
-mint discipline, 4 chars growing on conflict, reused on resume), the live
-delivery endpoint per agent, and the killed/dead mark liveness will feed. The
+(`src/tables.rs`): seating orchestrator-allocated identities (the orchestrator
+mints with spirit's short-hash discipline and pushes; a reseat refreshes the
+pin and clears the stale endpoint), the live delivery endpoint per agent, and
+the killed/dead mark liveness will feed. The
 messenger participates in **no** version-handover snapshot (the Mirror
 mechanism is orchestrate's own); store continuity across daemon versions is
 carried by the store file and per-family migrations alone. It owns no durable
@@ -278,7 +281,6 @@ src/schema/signal.rs           generated Signal plane
 src/schema/nexus.rs            generated Nexus plane (NexusEngine)
 src/schema/sema.rs             generated SEMA plane (SemaEngine)
 src/schema/daemon.rs           EMITTED daemon skeleton (ComponentDaemon, the spine)
-src/agent_identifier_mint.rs   launch-time identity mint (spirit discipline)
 src/tables.rs                  messenger.sema — agent registry family
 src/main.rs                    message CLI entry
 src/bin/meta_message.rs        owner meta CLI entry

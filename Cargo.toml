@@ -1,6 +1,6 @@
 [package]
 name         = "message"
-version      = "0.7.0"
+version      = "0.8.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -51,7 +51,6 @@ rkyv            = { version = "0.8", default-features = false, features = ["std"
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main", default-features = false }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", branch = "main", default-features = false }
 sema-engine     = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "main" }
-getrandom       = "0.4"
 thiserror       = "2"
 tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread"] }
 triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }

@@ -1,12 +1,15 @@
 //! The messenger's durable store: `messenger.sema`.
 //!
 //! Born in train packet 2.1 with its first family, the agent registry — the
-//! authoritative process↔identity map plus the local delivery registry. The
-//! stored record IS the emitted wire noun (`AgentRegistryEntry`): agent
-//! identifier, endpoint selection, resume identity, death mark, and the
-//! pid + start-time process pin (the start time disambiguates a recycled
-//! pid). This is the durability the router's in-memory actor registry never
-//! had: a daemon restart no longer forgets route-back.
+//! durable consumer view of agent identity plus the local delivery registry.
+//! The ORCHESTRATOR is the mint (psyche-ruled 2026-07-17): identities arrive
+//! already allocated, and the registry seats them. The stored record IS the
+//! emitted wire noun (`AgentRegistryEntry`): agent identifier, endpoint
+//! selection, resume identity, death mark, and an optional pid + start-time
+//! process pin (`None` until the allocated process launches; the start time
+//! disambiguates a recycled pid). This is the durability the router's
+//! in-memory actor registry never had: a daemon restart no longer forgets
+//! route-back.
 //!
 //! The message ledger, per-recipient inbox, and thread index join this store
 //! as sibling families in packet 3.1. The messenger participates in no
@@ -20,11 +23,10 @@ use sema_engine::{
     VersioningPolicy,
 };
 
-use crate::agent_identifier_mint::AgentIdentifierMint;
 use crate::schema::signal::{
     AgentDeathMark, AgentEndpointBinding, AgentIdentityAssignment, AgentRegistryEntry,
     AgentRegistryQuery, AssignedAgentIdentity, BoundAgentEndpoint, EndpointSelection,
-    IdentityProvenance, ResumeSelection,
+    HarnessProcessPin, IdentityProvenance, ProcessPinSelection,
 };
 use crate::Result;
 
@@ -32,7 +34,12 @@ use crate::Result;
 /// the version at which its own layout was last set (the orchestrate
 /// convention), so unchanged families keep their catalog identity across
 /// store-version bumps.
-const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(1);
+///
+/// Bumped 1 -> 2 for the mint relocation: the registry entry's mandatory pid
+/// pin became an optional `ProcessPinSelection` (an orchestrator-allocated
+/// identity exists before its process does). No v1 store was ever deployed,
+/// so a v1 file fails closed rather than migrating.
+const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(2);
 
 const AGENT_REGISTRY: TableName = TableName::new("agent_registry");
 
@@ -85,51 +92,35 @@ impl MessengerTables {
         )
     }
 
-    /// Launch-time identity acquisition: reuse the identity a known resume
-    /// session already holds (refreshing its process pin and clearing the
-    /// stale endpoint until the new session re-binds), or mint a fresh
-    /// identifier from the registry's own key set. Either way the registry
-    /// row reflects the launching process afterward.
-    pub fn assign_identity(
+    /// Seat an orchestrator-supplied identity. The orchestrator is the mint,
+    /// so the identifier arrives with the assignment: a fresh identifier
+    /// seats a new row (`Seated`); a known identifier is reseated
+    /// (`Reseated`) — process pin and resume identity refreshed, stale
+    /// endpoint cleared until the new process re-binds, death mark reset,
+    /// since a reseat declares fresh launch intent (e.g. a cold respawn).
+    pub fn seat_identity(
         &self,
         assignment: &AgentIdentityAssignment,
     ) -> Result<AssignedAgentIdentity> {
-        if let ResumeSelection::Resumed(resume_identity) = &assignment.resume_selection {
-            if let Some(existing) = self.entry_by_resume_identity(resume_identity.payload())? {
-                let refreshed = AgentRegistryEntry {
-                    agent_identifier: existing.agent_identifier.clone(),
-                    endpoint_selection: EndpointSelection::None,
-                    resume_selection: assignment.resume_selection.clone(),
-                    agent_death_mark: AgentDeathMark::NotDead,
-                    harness_pid: assignment.harness_pid.clone(),
-                    harness_start_time: assignment.harness_start_time.clone(),
-                };
-                self.upsert_entry(&refreshed)?;
-                return Ok(AssignedAgentIdentity {
-                    agent_identifier: existing.agent_identifier,
-                    identity_provenance: IdentityProvenance::Reused,
-                });
-            }
-        }
-
-        let mint = AgentIdentifierMint::from_identifiers(
-            self.registry_entries()?
-                .into_iter()
-                .map(|entry| entry.agent_identifier.payload().clone()),
-        );
-        let agent_identifier = mint.next_identifier()?;
+        let identity_provenance = if self
+            .entry(assignment.agent_identifier.payload())?
+            .is_some()
+        {
+            IdentityProvenance::Reseated
+        } else {
+            IdentityProvenance::Seated
+        };
         let entry = AgentRegistryEntry {
-            agent_identifier: agent_identifier.clone(),
+            agent_identifier: assignment.agent_identifier.clone(),
             endpoint_selection: EndpointSelection::None,
             resume_selection: assignment.resume_selection.clone(),
             agent_death_mark: AgentDeathMark::NotDead,
-            harness_pid: assignment.harness_pid.clone(),
-            harness_start_time: assignment.harness_start_time.clone(),
+            process_pin_selection: assignment.process_pin_selection.clone(),
         };
         self.upsert_entry(&entry)?;
         Ok(AssignedAgentIdentity {
-            agent_identifier,
-            identity_provenance: IdentityProvenance::Minted,
+            agent_identifier: assignment.agent_identifier.clone(),
+            identity_provenance,
         })
     }
 
@@ -148,8 +139,10 @@ impl MessengerTables {
             endpoint_selection: EndpointSelection::Bound(binding.agent_endpoint.clone()),
             resume_selection: existing.resume_selection,
             agent_death_mark: existing.agent_death_mark,
-            harness_pid: binding.harness_pid.clone(),
-            harness_start_time: binding.harness_start_time.clone(),
+            process_pin_selection: ProcessPinSelection::Pinned(HarnessProcessPin {
+                harness_pid: binding.harness_pid.clone(),
+                harness_start_time: binding.harness_start_time.clone(),
+            }),
         };
         self.upsert_entry(&bound)?;
         Ok(Some(BoundAgentEndpoint::new(existing.agent_identifier)))
@@ -184,15 +177,6 @@ impl MessengerTables {
             .records()
             .first()
             .cloned())
-    }
-
-    fn entry_by_resume_identity(&self, resume_identity: &str) -> Result<Option<AgentRegistryEntry>> {
-        Ok(self.registry_entries()?.into_iter().find(|entry| {
-            matches!(
-                &entry.resume_selection,
-                ResumeSelection::Resumed(existing) if existing.payload() == resume_identity
-            )
-        }))
     }
 
     fn upsert_entry(&self, entry: &AgentRegistryEntry) -> Result<()> {
