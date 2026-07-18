@@ -29,6 +29,7 @@ pub mod meta;
 #[cfg(feature = "nota-text")]
 pub mod output_validator;
 pub mod provenance;
+pub mod store_preserve;
 pub mod tables;
 #[cfg(feature = "nota-text")]
 pub mod surface;

@@ -64,6 +64,12 @@ pub enum Error {
 
     #[error("messenger store: {0}")]
     SemaEngine(#[from] sema_engine::Error),
+
+    #[error("pre-migration preserve of {store}: {message}")]
+    PreMigrationPreserve { store: String, message: String },
+
+    #[error("messenger store migration of {store}: {message}")]
+    StoreMigration { store: String, message: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

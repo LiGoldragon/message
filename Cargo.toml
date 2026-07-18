@@ -1,6 +1,6 @@
 [package]
 name         = "message"
-version      = "0.10.1"
+version      = "0.10.2"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -50,6 +50,8 @@ meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-messag
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main", default-features = false }
 signal-harness  = { git = "https://github.com/LiGoldragon/signal-harness.git", branch = "main" }
+redb            = "4.1"
+sema            = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
 sema-engine     = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "main" }
 thiserror       = "2"
 tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread"] }

@@ -36,7 +36,14 @@ use crate::schema::signal::{
     ThreadContents, ThreadEntries, ThreadEntry, ThreadName, ThreadRecord,
     ThreadRelationSelection, ThreadSubscription, ThreadSubscriptionAcknowledgment, ThreadSummary,
 };
+use crate::store_preserve::PreMigrationPreserve;
 use crate::Result;
+
+/// The storage kernel's own meta table and version key — the store-level
+/// schema stamp the additive re-stamp rewrites (the orchestrate convention;
+/// the kernel offers no stamp-rewrite API yet, a recorded engine debt).
+const SEMA_META: redb::TableDefinition<&str, u64> = redb::TableDefinition::new("__sema_meta");
+const SEMA_SCHEMA_VERSION_KEY: &str = "schema_version";
 
 /// Bumped when any messenger family's stored layout changes; each family pins
 /// the version at which its own layout was last set (the orchestrate
@@ -51,9 +58,16 @@ use crate::Result;
 /// Bumped 2 -> 3 for the messenger promotion (packet 3.1): the message
 /// ledger, ledger head, per-recipient inbox, and thread index families are
 /// born. The agent registry's layout is unchanged and keeps its v2 catalog
-/// identity. No v2 store was ever deployed, so a v2 file fails closed rather
-/// than migrating.
+/// identity, so v2 -> v3 is purely additive: a v2 store (production's was
+/// born at v2 on 2026-07-18) is preserved aside, re-stamped, and re-opened
+/// with the new families empty. A v1 file still fails closed: no v1 store
+/// was ever deployed.
 const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(3);
+
+/// The prior store versions whose every intervening family layout is additive
+/// up to the current version — a store stamped at one of these re-stamps
+/// forward after a pre-migration preserve, carrying its rows unchanged.
+const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 1] = [SchemaVersion::new(2)];
 
 /// The store version at which the agent registry's layout was last set.
 const AGENT_REGISTRY_LAYOUT_VERSION: SchemaVersion = SchemaVersion::new(2);
@@ -101,8 +115,18 @@ impl std::fmt::Debug for MessengerTables {
 
 impl MessengerTables {
     /// Open (or create) the store at the configured database path and
-    /// register the current family set.
+    /// register the current family set. A store stamped at a known additive
+    /// prior version is preserved aside, re-stamped, and re-opened; any other
+    /// mismatch fails closed unchanged.
     pub fn open(database_path: &std::path::Path) -> Result<Self> {
+        match Self::open_current(database_path) {
+            Ok(tables) => Ok(tables),
+            Err(error) => MessengerStoreMigration::new(database_path).open_after_migration(error),
+        }
+    }
+
+    /// Open at the current schema version with no repair attempted.
+    fn open_current(database_path: &std::path::Path) -> Result<Self> {
         let mut engine = Engine::open(
             EngineOpen::new(database_path, MESSENGER_SCHEMA_VERSION)
                 .with_versioning(VersioningPolicy::new(VersionedStoreName::new("messenger"))),
@@ -780,5 +804,86 @@ impl PinnedAgentIdentity {
     pub fn matches(&self, pid: i32, start_time: u64) -> bool {
         u64::try_from(pid).is_ok_and(|pid| pid == self.harness_pid)
             && start_time == self.harness_start_time
+    }
+}
+
+/// Clears the one recognised on-disk store defect — a schema stamp at a known
+/// additive prior version — and re-opens. Any error that maps to no repair
+/// surfaces unchanged, so a genuinely incompatible store fails closed rather
+/// than being silently mutated. Before the repair mutates the file, the store
+/// is copied aside as a [`PreMigrationPreserve`]; a preserve failure aborts
+/// the migration.
+struct MessengerStoreMigration<'store> {
+    store: &'store std::path::Path,
+}
+
+impl<'store> MessengerStoreMigration<'store> {
+    fn new(store: &'store std::path::Path) -> Self {
+        Self { store }
+    }
+
+    fn open_after_migration(&self, error: crate::Error) -> Result<MessengerTables> {
+        let Some(found) = self.additive_prior_stamp(&error) else {
+            return Err(error);
+        };
+        PreMigrationPreserve::create(self.store, MESSENGER_SCHEMA_VERSION)?;
+        self.stamp_current_schema_version(found)?;
+        MessengerTables::open_current(self.store)
+    }
+
+    /// The prior version stamped on the store, when — and only when — the
+    /// open failed on a version mismatch from the current expectation to a
+    /// declared additive prior.
+    fn additive_prior_stamp(&self, error: &crate::Error) -> Option<SchemaVersion> {
+        match error {
+            crate::Error::SemaEngine(sema_engine::Error::Sema(
+                sema_engine::StorageKernelError::SchemaVersionMismatch { expected, found },
+            )) if *expected == MESSENGER_SCHEMA_VERSION
+                && ADDITIVE_PRIOR_VERSIONS.contains(found) =>
+            {
+                Some(*found)
+            }
+            _ => None,
+        }
+    }
+
+    /// Verify the file genuinely opens at the found prior version, then
+    /// rewrite the store-level stamp to the current version. Unchanged
+    /// families keep their rows; families introduced since the prior version
+    /// open empty on the next registration.
+    fn stamp_current_schema_version(&self, found: SchemaVersion) -> Result<()> {
+        let storage = sema::Sema::open_with_schema(
+            self.store,
+            &sema::Schema { version: found },
+        )
+        .map_err(sema_engine::Error::from)?;
+        drop(storage);
+        let database =
+            redb::Database::create(self.store).map_err(|source| self.failure(source.to_string()))?;
+        let transaction = database
+            .begin_write()
+            .map_err(|source| self.failure(source.to_string()))?;
+        {
+            let mut table = transaction
+                .open_table(SEMA_META)
+                .map_err(|source| self.failure(source.to_string()))?;
+            table
+                .insert(
+                    SEMA_SCHEMA_VERSION_KEY,
+                    MESSENGER_SCHEMA_VERSION.value() as u64,
+                )
+                .map_err(|source| self.failure(source.to_string()))?;
+        }
+        transaction
+            .commit()
+            .map_err(|source| self.failure(source.to_string()))?;
+        Ok(())
+    }
+
+    fn failure(&self, message: String) -> crate::Error {
+        crate::Error::StoreMigration {
+            store: self.store.display().to_string(),
+            message,
+        }
     }
 }

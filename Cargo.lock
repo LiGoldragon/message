@@ -367,13 +367,15 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "meta-signal-message",
  "nota",
+ "redb",
  "rkyv",
  "rustix",
  "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?branch=main)",
+ "sema",
  "sema-engine",
  "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
  "signal-harness",
@@ -662,8 +664,8 @@ dependencies = [
 
 [[package]]
 name = "sema-engine"
-version = "0.10.1"
-source = "git+https://github.com/LiGoldragon/sema-engine.git?branch=main#93a6b5f063292e000a7bf395fdd5b46e3e943068"
+version = "0.11.2"
+source = "git+https://github.com/LiGoldragon/sema-engine.git?branch=main#72015662fc0f238d80ca6b82fe5a69817179163d"
 dependencies = [
  "blake3",
  "rkyv",
