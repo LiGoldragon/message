@@ -12,14 +12,13 @@
 
 use std::path::PathBuf;
 
-use message::router::{OriginPolicy, SignalRouterSocket};
 use message::schema::signal::{
     AgentEndpoint, AgentEndpointBinding, AgentEndpointKind, AgentIdentifier,
     AgentIdentityAssignment, AgentRegistryQuery, AgentRegistryRejectionReason, EndpointPath,
     EndpointSelection, HarnessPid, HarnessProcessPin, HarnessStartTime, IdentityProvenance, Input,
     Output, ProcessPinSelection, ResumeIdentity, ResumeSelection,
 };
-use message::{MessageEngine, MessengerTables, RouterForwarder};
+use message::{MessageEngine, MessengerTables, OriginPolicy};
 use tempfile::TempDir;
 use triad_runtime::{ConnectionContext, UnixCredentials};
 
@@ -38,15 +37,10 @@ fn open_tables(root: &TempDir) -> MessengerTables {
     MessengerTables::open(&store_path(root)).expect("open messenger store")
 }
 
-/// Registry operations never touch the router, so the forwarder may point at
-/// a dead socket path.
 fn engine_for(root: &TempDir) -> MessageEngine {
     MessageEngine::new(
-        RouterForwarder::new(
-            SignalRouterSocket::from_path(root.path().join("no-router.sock")),
-            OriginPolicy::for_owner_user_id(OWNER_USER_ID, OWNER_INSTANCE),
-        ),
         open_tables(root),
+        OriginPolicy::for_owner_user_id(OWNER_USER_ID, OWNER_INSTANCE),
     )
 }
 

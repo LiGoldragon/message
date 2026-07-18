@@ -1,8 +1,8 @@
 # message — architecture
 
-*Engine message ingress / text boundary. Owns the
-`message` and `meta-message` CLIs plus the supervised `message`
-daemon (binary: `message-daemon`).*
+*The engine's stateful local messenger. Owns the `message` and
+`meta-message` CLIs plus the supervised `message` daemon (binary:
+`message-daemon`) and the durable local message state in `messenger.sema`.*
 
 `message` owns three runtime binaries plus one bootstrap helper:
 
@@ -40,24 +40,27 @@ binary is `message-daemon`.
 
 ## 0 · TL;DR
 
-This repo owns the engine's message-ingress boundary: a
-small supervised daemon plus ordinary and owner-side CLI clients — and, since
-train packet 2.1, the messenger's first durable state: the **agent registry**
-in `messenger.sema`, the durable consumer view of agent identity plus the
-local delivery registry (orchestrator-allocated agent identifier, endpoint,
-resume identity, death mark, optional pid + start-time pin). The
-ORCHESTRATOR is the mint (psyche-ruled 2026-07-17): identities arrive
-already allocated and the registry seats them. The durable message ledger,
-inbox, and thread index arrive with the messenger-promotion packets (3.1);
-routing policy, delivery state, and channel authority still sit in `router`
-until those packets land.
+This repo owns the engine's stateful local messenger: a supervised daemon
+plus ordinary and owner-side CLI clients, and the durable local message
+state in `messenger.sema`. Since packet 2.1 that store holds the **agent
+registry** — the durable consumer view of agent identity plus the local
+delivery registry (orchestrator-allocated agent identifier, endpoint, resume
+identity, death mark, optional pid + start-time pin; the ORCHESTRATOR is the
+mint, psyche-ruled 2026-07-17). Since packet 3.1 it also holds the **message
+ledger** (a bounded window with minted provenance on every row), the
+**per-recipient inbox**, and the **thread index** (plain sender-chosen
+names; participants auto-join; an optional relation ties a thread to a
+repository + feature branch). A submission persists and answers locally —
+the router is out of the local loop entirely; the delivery leg moves in with
+packet 3.2a, and the router shrinks to the deferred host-to-host plane in
+3.2b.
 
 ```mermaid
 flowchart LR
-    "human or harness" -->|"one NOTA Send or Inbox"| "message CLI"
+    "human or harness" -->|"one NOTA Send / Inbox / Thread(s) / Subscribe"| "message CLI"
     "message CLI" -->|"length-prefixed schema signal frame"| "message"
-    "message" -->|"StampedMessageSubmission"| "router"
-    "router" -->|"length-prefixed reply frame"| "message"
+    "message" -->|"ledger + inbox + thread commit"| "messenger.sema"
+    "messenger.sema" -->|"typed reply projection"| "message"
     "message" -->|"length-prefixed reply frame"| "message CLI"
     "message CLI" -->|"one NOTA reply"| "human or harness"
     "meta-message CLI" -->|"meta-signal-message Configure"| "message meta socket"
@@ -71,13 +74,12 @@ flowchart LR
 - a `message` binary;
 - a `meta-message` binary;
 - a `message-daemon` binary;
-- NOTA `Send` and `Inbox` input records;
+- NOTA `Send`, `Inbox`, `Thread`, `Threads`, and `Subscribe` input records;
 - one length-prefixed schema signal request frame per CLI invocation;
 - one daemon-bound `message.sock` for working ingress;
 - one owner-only meta socket for `meta-signal-message`;
-- one router client path to internal `router.sock`;
 - one NOTA reply projection per invocation;
-- no caller-provided identity and no local actor index.
+- no caller-provided identity or provenance (all minted at ingress).
 
 ## 1.5 · Runtime triad — Signal / Nexus / SEMA
 
@@ -88,55 +90,68 @@ Message's runtime is the three schema-driven planes
 flowchart LR
     "message.sock" --> "Signal (Input/Output)"
     "Signal (Input/Output)" --> "Nexus decide"
-    "Nexus decide" -->|"ForwardToRouter effect"| "RouterForwarder"
-    "RouterForwarder" -->|"signal-message wire"| "router"
     "Nexus decide" -->|"ReplyToSignal"| "Signal (Input/Output)"
     "Nexus decide" -->|"ApplyRegistry / ReadRegistry effect"| "SEMA (messenger.sema)"
-    "SEMA (messenger.sema)" -->|"typed registry reply"| "Nexus decide"
+    "Nexus decide" -->|"ApplyMessageStore / ReadMessageStore effect"| "SEMA (messenger.sema)"
+    "SEMA (messenger.sema)" -->|"typed reply projection"| "Nexus decide"
 ```
 
 - **Signal** — the wire surface the emitted daemon decodes on `message.sock`.
-- **Nexus** (`MessageEngine`) — the internal-feature catalog: the forward
-  decision plus the `ForwardToRouter` effect vocabulary. The generated
+- **Nexus** (`MessageEngine`) — the internal-feature catalog: registry
+  apply/read plus message-store apply/read effects. The generated
   `NexusEngine::execute` performs one typed decision step; Message explicitly
-  sequences its one router effect and feeds the typed effect result through the
-  generated decision surface. `Submit`/`QueryInbox` stamp and forward;
-  `SubmitStamped` replies `Unimplemented` (the daemon mints provenance, never
-  accepts it from a peer).
-- **SEMA** — owns `messenger.sema` and commits the agent-registry
-  transitions (`AssignAgentIdentity` seat/reseat of an orchestrator-supplied
-  identity, `BindAgentEndpoint`, `QueryAgentRegistry`). Store failures
-  project to typed `AgentRegistryRejected` replies, never a reply-less
-  connection close. The message ledger joins this plane in packet 3.1.
+  sequences its one effect and feeds the typed result back through the
+  generated decision surface. A `Submit` is provenance-stamped in the effect
+  runner (origin from `SO_PEERCRED`, sender resolved through the registry's
+  process pins via `/proc` ancestry, daemon-minted ingress timestamp) and
+  committed; `SubmitStamped` replies `Unimplemented` (the daemon mints
+  provenance, never accepts it from a peer).
+- **SEMA** — owns `messenger.sema` and commits both the agent-registry
+  transitions (`AssignAgentIdentity` seat/reseat, `BindAgentEndpoint`,
+  `QueryAgentRegistry`) and the message-state transitions (ledger append with
+  bounded-window reaping, inbox reference, thread append with participant
+  auto-join, explicit thread subscription). Store failures project to typed
+  rejection replies, never a reply-less connection close.
 
 The emitted daemon (`src/schema/daemon.rs`) owns the argv-config load, the
 working-socket and owner-meta-socket binds, and the decode →
 `handle_working_input` → encode spine. `MessageDaemon` (`src/daemon.rs`)
 supplies only the `ComponentDaemon` escape hatches. The owner meta hook decodes
 `meta-signal-message` frames and returns typed `RequestUnimplemented(NotBuiltYet)`
-for `Configure` until live reconfiguration is wired. The daemon keeps no
-durable message ledger yet (packet 3.1); its durable state today is exactly
-the agent registry in `messenger.sema` at the configured database path.
+for `Configure` until live reconfiguration is wired. The daemon's durable state is `messenger.sema` at the configured database
+path: agent registry, message ledger (bounded window `LEDGER_RETENTION_LIMIT`
+with oldest-first reaping of rows AND their inbox/thread references), inbox,
+and thread index.
 
-`RouterForwarder` (`src/router.rs`) is the translation seam between the
-daemon-local inbound wire and the published schema-derived `signal-message`
-wire: it stamps provenance (peer-credential-derived origin + daemon-minted
-ingress timestamp) onto the submission, sends `signal_message::Input` to
-router, and translates `signal_message::Output` back to the daemon-local schema
-`Output`. Provenance is never encoded as strings and never accepted from the
-caller payload.
+Provenance (`src/provenance.rs`) is minted at ingress, never accepted from a
+caller payload: `OriginPolicy` classifies the accepted connection from its
+kernel-vouched `SO_PEERCRED` credentials, and `SenderResolver` walks the
+peer's `/proc` ancestry against the registry's pid + start-time pins to name
+the sending agent by its orchestrator-minted identifier (best-effort
+enrichment — no match falls back to the owner-name or uid label; resolution
+never gates a submission).
+
+The published `signal-message` contract and the daemon's own emitted signal
+module are index-aligned end to end — every shared operation's frame encodes
+with either vocabulary and decodes with the other, enforced by
+`tests/contract_convergence.rs`. `SubmitStamped`'s origin payload diverges by
+design (leaner local origin vs the contract's cross-host origin) and is
+typed-unimplemented in both directions.
 
 ## 2 · State and Ownership
 
-The message component owns the agent registry in `messenger.sema`
-(`src/tables.rs`): seating orchestrator-allocated identities (the orchestrator
-mints with spirit's short-hash discipline and pushes; a reseat refreshes the
-pin and clears the stale endpoint), the live delivery endpoint per agent, and
-the killed/dead mark liveness will feed. The
-messenger participates in **no** version-handover snapshot (the Mirror
+The message component owns all durable local message state in
+`messenger.sema` (`src/tables.rs`): the agent registry (seating
+orchestrator-allocated identities — the orchestrator mints with spirit's
+short-hash discipline and pushes; a reseat refreshes the pin and clears the
+stale endpoint — the live delivery endpoint per agent, and the killed/dead
+mark liveness feeds), the message ledger (a bounded window; every row
+carries minted origin, resolved sender, and ingress stamp), the
+per-recipient inbox, and the thread index (plain sender-chosen names,
+auto-joined participants, optional repository + feature-branch relation).
+The messenger participates in **no** version-handover snapshot (the Mirror
 mechanism is orchestrate's own); store continuity across daemon versions is
-carried by the store file and per-family migrations alone. It owns no durable
-message ledger yet. The CLI requires
+carried by the store file and per-family migrations alone. The CLI requires
 `MESSAGE_SOCKET` or `PERSONA_SOCKET_PATH` and exits if the message
 daemon socket is absent. The daemon requires a typed binary rkyv
 `Configuration` on argv (socket path, meta socket path, router socket path,
@@ -148,9 +163,10 @@ Caller identity is not accepted from the model or CLI payload.
 `MessageSubmission` and `InboxQuery` stay sender-free, and the component sends
 no in-band proof material. The daemon first gates trust with the configured
 owner uid against the accepted stream's kernel-vouched peer uid. When that
-check passes, it stamps the configured `owner_name` as this daemon's local
-harness component instance and forwards typed provenance in
-`StampedMessageSubmission`; other peer uids stamp `NonOwnerUser(uid)`. The
+check passes, the stored origin classifies `Owner` and the resolved sender
+falls back to the configured `owner_name` when no registry pin matches the
+peer's `/proc` ancestry; other peer uids stamp `NonOwnerUser` with a uid
+label fallback. The
 persona manager builds the configuration record from the engine's spawn
 envelope and writes it to a binary rkyv file on spawn; the daemon never reads
 environment variables for control-plane settings.
@@ -163,9 +179,9 @@ constructor on the CLI side reads `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH` as
 the ordinary CLI's socket discovery. `meta-message` reads `MESSAGE_META_SOCKET`
 for the owner meta socket. The daemon path reads no environment variables.
 
-Actor registration, actor listing, pending delivery, retry, delivery results,
-and message ledger state are router or engine-manager concerns, not message
-state.
+Pending delivery, retry, and delivery results remain router concerns until
+packet 3.2a moves the delivery leg in; the message ledger, inbox, threads,
+and the delivery-target registry are message state now.
 
 ## 3 · Boundaries
 
@@ -173,25 +189,25 @@ This repo owns:
 
 - NOTA parsing for the `message` command;
 - NOTA parsing for the `meta-message` command;
-- projection from NOTA `Send` / `Inbox` to `signal-message`;
+- projection from NOTA `Send` / `Inbox` / `Thread` / `Threads` / `Subscribe`
+  to the daemon signal wire;
 - projection from NOTA `meta-signal-message` requests to owner meta frames;
 - projection from `signal-message` replies back to NOTA;
 - projection from `meta-signal-message` replies back to NOTA;
 - length-prefixed Signal frame transport from CLI to `message.sock`;
 - length-prefixed meta-signal frame transport from `meta-message` to the owner
   meta socket;
-- frame-level exchange echoing for the current one-operation request/reply
-- daemon stamping from `MessageSubmission` to `StampedMessageSubmission`
-  using the accepted connection's peer credentials;
-- daemon forwarding from `message.sock` to the configured router socket.
+- frame-level exchange echoing for the current one-operation request/reply;
+- provenance minting (origin classification, sender resolution, ingress
+  stamping) at the accepted connection;
+- the durable message ledger, inbox, and thread index.
 
 This repo does not own:
 
-- message or router contract definitions;
-- final routing policy;
-- message/delivery database tables (until packet 3.1);
-- router actor registration writes;
-- local message ledgers;
+- the published contract definition (`signal-message` is its own crate;
+  convergence is test-enforced);
+- the local delivery attempt to a terminal or harness endpoint (packet 3.2a);
+- host-to-host routing, attestation, and trust (`router`);
 - terminal endpoint vocabulary;
 - terminal byte transport.
 
@@ -206,8 +222,10 @@ emits at that boundary. `router` is authoritative for delivery on the routed
 gated-or-remote path (durable on the harness-channel ack). A direct-delivery
 fast path lets a message addressed to a publicly-reachable local agent by uid
 deliver peer-to-peer without `router`, establishing delivery on the target's
-direct ack. (Today's daemon keeps no durable ledger; the existence event is
-the boundary fact `message` is authoritative for, not a local message log.)
+direct ack. (Since packet 3.1 the existence fact is durable: the ledger row committed at
+the SO_PEERCRED ingress IS the witnessed existence event. Only cross-host
+delivery — where SO_PEERCRED cannot vouch and attestation is required —
+remains router territory.)
 
 Per archived intent `q73w`, the message lifecycle exposes hookable events:
 the mail dispatch system emits and commits a typed `MessageSent` action at
@@ -220,10 +238,14 @@ observers, routers, and subscribers can react immediately.
 - The CLI prints exactly one NOTA reply record.
 - The `meta-message` CLI accepts exactly one `meta-signal-message` NOTA request.
 - The `meta-message` CLI prints exactly one `meta-signal-message` NOTA reply.
-- Supported input variants are `Send` and `Inbox`.
+- Supported CLI input variants are `Send`, `Inbox`, `Thread`, `Threads`,
+  and `Subscribe`.
 - The message daemon socket is mandatory for the CLI.
 - The owner meta socket is mandatory for the `meta-message` CLI.
-- The router socket is mandatory for the daemon.
+- The configured router socket path is dormant (reserved for the deferred
+  external-host escalation); the daemon never connects to it.
+- The ledger is a bounded window: past `LEDGER_RETENTION_LIMIT` the oldest
+  messages reap together with their inbox and thread references.
 - The daemon is multi-listener: the emitted spine binds one working
   `message.sock` and one owner-only meta socket from the `NexusDaemonShape` in
   `build.rs`.
@@ -247,17 +269,16 @@ observers, routers, and subscribers can react immediately.
   until shared Signal batching exists; there is no outer Signal verb on the
   new frame kernel.
 - Sender identity is absent from the CLI payload and absent from frame auth.
-- Provenance is typed in `StampedMessageSubmission`; the daemon mints it in
-  `RouterForwarder::stamp` from `ConnectionContext` (`SO_PEERCRED`) and daemon
-  configuration. A matching peer uid stamps the configured `owner_name` as a
-  local harness component instance; any other peer uid stamps
-  `NonOwnerUser(uid)`. Provenance is never accepted from the CLI payload.
+- Provenance is minted at ingress (`src/provenance.rs`) from
+  `ConnectionContext` (`SO_PEERCRED`) and daemon configuration: origin
+  classification, `/proc`-ancestry sender resolution against registry pins,
+  ingress stamp. Provenance is never accepted from the CLI payload.
 - The generated `NexusEngine::execute` surface owns the typed decision entry.
-  Message's component code supplies the decision implementation and explicitly
-  sequences its single `ForwardToRouter` effect. There is no hand-written
-  recursive Nexus loop, no retired `ForwardCompleted` vocabulary, and no local
-  continuation budget in the component.
-- The component does not write local message or pending logs.
+  Message's component code supplies the decision implementation and
+  explicitly sequences its single store effect. There is no hand-written
+  recursive Nexus loop and no local continuation budget in the component.
+- Every domain failure is a typed rejection reply; the engine never returns
+  `Err` for a store failure (a reply-less close must mean daemon death).
 - The daemon hand-writes only `impl ComponentDaemon for MessageDaemon`
   (`src/daemon.rs`): `Configuration` / `Engine` / `Error` / `PROCESS_NAME` +
   `build_runtime` + `handle_working_input`. The daemon spine, request gate,
@@ -274,14 +295,14 @@ observers, routers, and subscribers can react immediately.
 
 ```text
 schema/signal.schema           daemon-local signal runtime (Input/Output)
-schema/nexus.schema            internal-feature catalog (forward decision + effect)
-schema/sema.schema             durable state plane — agent registry apply/read
+schema/nexus.schema            internal-feature catalog (registry + store effects)
+schema/sema.schema             durable state plane — registry + message-store apply/read
 build.rs                       GenerationPlan + NexusDaemonShape (emits src/schema/*.rs)
 src/schema/signal.rs           generated Signal plane
 src/schema/nexus.rs            generated Nexus plane (NexusEngine)
 src/schema/sema.rs             generated SEMA plane (SemaEngine)
 src/schema/daemon.rs           EMITTED daemon skeleton (ComponentDaemon, the spine)
-src/tables.rs                  messenger.sema — agent registry family
+src/tables.rs                  messenger.sema — registry, ledger, inbox, thread families
 src/main.rs                    message CLI entry
 src/bin/meta_message.rs        owner meta CLI entry
 src/bin/message_daemon.rs      daemon entry (one-liner: MessageDaemon::run_to_exit_code())
@@ -294,11 +315,13 @@ src/meta.rs                    meta-message client, codec, command, and skeleton
 src/frame_bytes.rs             preserved length-prefixed frame bytes for signal_channel contracts
 src/command.rs                 CLI NOTA input/output projection
 src/output_validator.rs        structured validator for sandbox message artifacts
-src/router.rs                  RouterForwarder + signal-message contract client/codec
+src/provenance.rs              origin policy + /proc-ancestry sender resolution
 src/surface.rs                 message-local NOTA surface records
 src/error.rs                   crate error enum
-tests/process_boundary.rs      emitted daemon over a real socket
-tests/forward_to_router.rs     Nexus forward effect against a stub router
+tests/process_boundary.rs      emitted daemon over a real socket (send/inbox/thread)
+tests/message_store.rs         ledger/inbox/thread engine witnesses
+tests/agent_registry.rs        registry engine witnesses
+tests/contract_convergence.rs  contract <-> daemon frame compatibility
 ```
 
 ## Constraint Tests

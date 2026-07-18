@@ -15,6 +15,10 @@ pub use crate::schema::signal::AgentRegistryCommand as RegistryCommand;
 pub use crate::schema::signal::AgentRegistryQuery as RegistryQuery;
 #[rustfmt::skip]
 pub use crate::schema::signal::Output as RegistryReply;
+#[rustfmt::skip]
+pub use crate::schema::signal::StoreWrite as StoreWrite;
+#[rustfmt::skip]
+pub use crate::schema::signal::StoreQuery as StoreQuery;
 
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
@@ -28,6 +32,7 @@ pub use nota::{NotaDecodeError, NotaEncode, NotaSource};
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum WriteInput {
     ApplyRegistry(RegistryCommand),
+    ApplyMessageStore(StoreWrite),
 }
 
 #[rustfmt::skip]
@@ -38,6 +43,7 @@ pub enum WriteInput {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ReadInput {
     ReadRegistry(RegistryQuery),
+    ReadMessageStore(StoreQuery),
 }
 
 #[rustfmt::skip]
@@ -48,6 +54,7 @@ pub enum ReadInput {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum WriteOutput {
     RegistryApplied(RegistryReply),
+    StoreApplied(RegistryReply),
 }
 
 #[rustfmt::skip]
@@ -58,6 +65,7 @@ pub enum WriteOutput {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ReadOutput {
     RegistryRead(RegistryReply),
+    StoreRead(RegistryReply),
 }
 
 #[rustfmt::skip]
@@ -87,12 +95,18 @@ impl WriteInput {
     pub fn apply_registry(payload: RegistryCommand) -> Self {
         Self::ApplyRegistry(payload)
     }
+    pub fn apply_message_store(payload: StoreWrite) -> Self {
+        Self::ApplyMessageStore(payload)
+    }
 }
 
 #[rustfmt::skip]
 impl ReadInput {
     pub fn read_registry(payload: RegistryQuery) -> Self {
         Self::ReadRegistry(payload)
+    }
+    pub fn read_message_store(payload: StoreQuery) -> Self {
+        Self::ReadMessageStore(payload)
     }
 }
 
@@ -101,12 +115,18 @@ impl WriteOutput {
     pub fn registry_applied(payload: RegistryReply) -> Self {
         Self::RegistryApplied(payload)
     }
+    pub fn store_applied(payload: RegistryReply) -> Self {
+        Self::StoreApplied(payload)
+    }
 }
 
 #[rustfmt::skip]
 impl ReadOutput {
     pub fn registry_read(payload: RegistryReply) -> Self {
         Self::RegistryRead(payload)
+    }
+    pub fn store_read(payload: RegistryReply) -> Self {
+        Self::StoreRead(payload)
     }
 }
 
@@ -138,6 +158,13 @@ impl From<RegistryCommand> for WriteInput {
 }
 
 #[rustfmt::skip]
+impl From<StoreWrite> for WriteInput {
+    fn from(payload: StoreWrite) -> Self {
+        Self::ApplyMessageStore(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl From<RegistryQuery> for ReadInput {
     fn from(payload: RegistryQuery) -> Self {
         Self::ReadRegistry(payload)
@@ -145,16 +172,9 @@ impl From<RegistryQuery> for ReadInput {
 }
 
 #[rustfmt::skip]
-impl From<RegistryReply> for WriteOutput {
-    fn from(payload: RegistryReply) -> Self {
-        Self::RegistryApplied(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl From<RegistryReply> for ReadOutput {
-    fn from(payload: RegistryReply) -> Self {
-        Self::RegistryRead(payload)
+impl From<StoreQuery> for ReadInput {
+    fn from(payload: StoreQuery) -> Self {
+        Self::ReadMessageStore(payload)
     }
 }
 
@@ -235,6 +255,7 @@ impl std::fmt::Display for Output {
 )]
 pub enum WriteInputRoute {
     ApplyRegistry,
+    ApplyMessageStore,
 }
 
 #[rustfmt::skip]
@@ -242,6 +263,7 @@ impl WriteInput {
     pub fn route(&self) -> WriteInputRoute {
         match self {
             Self::ApplyRegistry(_) => WriteInputRoute::ApplyRegistry,
+            Self::ApplyMessageStore(_) => WriteInputRoute::ApplyMessageStore,
         }
     }
 }
@@ -263,6 +285,7 @@ impl WriteInput {
 )]
 pub enum ReadInputRoute {
     ReadRegistry,
+    ReadMessageStore,
 }
 
 #[rustfmt::skip]
@@ -270,6 +293,7 @@ impl ReadInput {
     pub fn route(&self) -> ReadInputRoute {
         match self {
             Self::ReadRegistry(_) => ReadInputRoute::ReadRegistry,
+            Self::ReadMessageStore(_) => ReadInputRoute::ReadMessageStore,
         }
     }
 }
@@ -291,6 +315,7 @@ impl ReadInput {
 )]
 pub enum WriteOutputRoute {
     RegistryApplied,
+    StoreApplied,
 }
 
 #[rustfmt::skip]
@@ -298,6 +323,7 @@ impl WriteOutput {
     pub fn route(&self) -> WriteOutputRoute {
         match self {
             Self::RegistryApplied(_) => WriteOutputRoute::RegistryApplied,
+            Self::StoreApplied(_) => WriteOutputRoute::StoreApplied,
         }
     }
 }
@@ -319,6 +345,7 @@ impl WriteOutput {
 )]
 pub enum ReadOutputRoute {
     RegistryRead,
+    StoreRead,
 }
 
 #[rustfmt::skip]
@@ -326,6 +353,7 @@ impl ReadOutput {
     pub fn route(&self) -> ReadOutputRoute {
         match self {
             Self::RegistryRead(_) => ReadOutputRoute::RegistryRead,
+            Self::StoreRead(_) => ReadOutputRoute::StoreRead,
         }
     }
 }
@@ -362,21 +390,27 @@ impl SemaObjectName {
             Self::WriteInput(route) => {
                 match route {
                     WriteInputRoute::ApplyRegistry => "SemaWriteInputApplyRegistry",
+                    WriteInputRoute::ApplyMessageStore => {
+                        "SemaWriteInputApplyMessageStore"
+                    }
                 }
             }
             Self::ReadInput(route) => {
                 match route {
                     ReadInputRoute::ReadRegistry => "SemaReadInputReadRegistry",
+                    ReadInputRoute::ReadMessageStore => "SemaReadInputReadMessageStore",
                 }
             }
             Self::WriteOutput(route) => {
                 match route {
                     WriteOutputRoute::RegistryApplied => "SemaWriteOutputRegistryApplied",
+                    WriteOutputRoute::StoreApplied => "SemaWriteOutputStoreApplied",
                 }
             }
             Self::ReadOutput(route) => {
                 match route {
                     ReadOutputRoute::RegistryRead => "SemaReadOutputRegistryRead",
+                    ReadOutputRoute::StoreRead => "SemaReadOutputStoreRead",
                 }
             }
             Self::Started => "SemaStarted",

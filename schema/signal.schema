@@ -1,6 +1,6 @@
 {}
-[Submit SubmitStamped QueryInbox AssignAgentIdentity BindAgentEndpoint QueryAgentRegistry]
-[SubmissionAccepted SubmissionRejected InboxListing AgentIdentityAssigned AgentEndpointBound AgentRegistryListing AgentRegistryRejected Unimplemented Error]
+[Submit SubmitStamped QueryInbox AssignAgentIdentity BindAgentEndpoint QueryAgentRegistry QueryThread SubscribeThread QueryThreads]
+[SubmissionAccepted SubmissionRejected InboxListing AgentIdentityAssigned AgentEndpointBound AgentRegistryListing AgentRegistryRejected Unimplemented Error ThreadListing ThreadSubscribed ThreadIndexListing ThreadRejected]
 {
   Submit MessageSubmission
   SubmitStamped StampedMessageSubmission
@@ -8,6 +8,9 @@
   AssignAgentIdentity AgentIdentityAssignment
   BindAgentEndpoint AgentEndpointBinding
   QueryAgentRegistry AgentRegistryQuery
+  QueryThread ThreadQuery
+  SubscribeThread ThreadSubscription
+  QueryThreads ThreadIndexQuery
 
   SubmissionAccepted SubmissionAcceptance
   SubmissionRejected SubmissionRejection
@@ -18,12 +21,16 @@
   AgentRegistryRejected AgentRegistryRejection
   Unimplemented RequestUnimplemented
   Error ErrorReport
+  ThreadListing ThreadContents
+  ThreadSubscribed ThreadSubscriptionAcknowledgment
+  ThreadIndexListing ThreadIndexEntries
+  ThreadRejected ThreadRejection
 
   Recipient String
   Sender String
   Body String
   MessageSlot Integer
-  OwnerName String
+
   TimestampNanos Integer
   ErrorMessage String
 
@@ -40,11 +47,34 @@
     ThreadSelection
   }
 
-  ConnectionClass [Owner NonOwnerUser InternalComponentInstance]
-  MessageOrigin {
-    ConnectionClass
-    OwnerName
+  UnixUserIdentifier Integer
+  SystemPrincipal String
+  EngineIdentifier String
+  HostName String
+  NetworkPeer String
+  ComponentInstanceName String
+  Host HostName
+  OtherPersonaEngine {
+    EngineIdentifier
+    Host
   }
+  ConnectionClass [
+    Owner
+    (NonOwnerUser UnixUserIdentifier)
+    (System SystemPrincipal)
+    (OtherPersona OtherPersonaEngine)
+    (Network NetworkPeer)
+  ]
+  ComponentName [Mind Message Router Terminal Harness System Introspect Orchestrate Spirit]
+  InternalComponentInstanceOrigin {
+    ComponentName
+    ComponentInstanceName
+  }
+  MessageOrigin [
+    (Internal ComponentName)
+    (InternalComponentInstance InternalComponentInstanceOrigin)
+    (External ConnectionClass)
+  ]
   Submission MessageSubmission
   Origin MessageOrigin
   StampedAt TimestampNanos
@@ -59,6 +89,8 @@
     MessageSlot
     Sender
     Body
+    ThreadSelection
+    StampedAt
   }
   InboxEntries (Vector InboxEntry)
   InboxContents InboxEntries
@@ -67,8 +99,10 @@
   SubmissionRejectionReason [StoreRejected RecipientNotFound]
   SubmissionRejection SubmissionRejectionReason
 
-  OperationKind [Submit SubmitStamped QueryInbox AssignAgentIdentity BindAgentEndpoint QueryAgentRegistry]
-  UnimplementedReason [NotInPrototypeScope RouterUnreachable]
+  OperationKind [Submit SubmitStamped QueryInbox AssignAgentIdentity BindAgentEndpoint QueryAgentRegistry QueryThread SubscribeThread QueryThreads]
+  DependencyKind [Router Mind Harness Terminal]
+  ResourceKind [MessageSocket RouterSocket PeerCredentials Store]
+  UnimplementedReason [NotInPrototypeScope (DependencyMissing DependencyKind) (ResourceUnavailable ResourceKind)]
 
   AgentIdentifier String
   HarnessPid Integer
@@ -131,4 +165,84 @@
   }
 
   ErrorReport ErrorMessage
+
+  ThreadQuery ThreadName
+  RepositoryName String
+  FeatureBranchName String
+  ThreadRelation {
+    RepositoryName
+    FeatureBranchName
+  }
+  ThreadRelationSelection [None (Related ThreadRelation)]
+  ParticipantName String
+  Participants (Vector ParticipantName)
+  ThreadSubscription {
+    ThreadName
+    ParticipantName
+    ThreadRelationSelection
+  }
+  ThreadSubscriptionAcknowledgment {
+    ThreadName
+    ParticipantName
+  }
+  ThreadEntry {
+    MessageSlot
+    Sender
+    Body
+    StampedAt
+  }
+  ThreadEntries (Vector ThreadEntry)
+  ThreadContents {
+    ThreadName
+    ThreadRelationSelection
+    Participants
+    ThreadEntries
+  }
+  ThreadIndexQuery [All]
+  MessageCount Integer
+  ThreadSummary {
+    ThreadName
+    ThreadRelationSelection
+    Participants
+    MessageCount
+  }
+  ThreadIndexEntries { Threads.(Vector ThreadSummary) }
+  ThreadRejectionReason [UnknownThread StoreRejected]
+  ThreadRejection ThreadRejectionReason
+
+  SenderName String
+  LedgerDraft {
+    MessageSubmission
+    MessageOrigin
+    SenderName
+    StampedAt
+  }
+  LedgerRecord {
+    MessageSlot
+    MessageSubmission
+    MessageOrigin
+    SenderName
+    StampedAt
+  }
+  NextMessageSlot MessageSlot
+  OldestMessageSlot MessageSlot
+  LedgerHead {
+    NextMessageSlot
+    OldestMessageSlot
+  }
+  Slots (Vector MessageSlot)
+  InboxRecord {
+    Recipient
+    Slots
+  }
+  ThreadRecord {
+    ThreadName
+    ThreadRelationSelection
+    Participants
+    Slots
+  }
+
+  StoreCommand [(RecordSubmission MessageSubmission) (Subscribe ThreadSubscription)]
+  StoreQuery [(Inbox InboxQuery) (Thread ThreadQuery) (Threads ThreadIndexQuery)]
+  StoreWrite [(RecordSubmission LedgerDraft) (Subscribe ThreadSubscription)]
 }

@@ -1,15 +1,14 @@
 {
   SignalInput message:signal:Input
   SignalOutput message:signal:Output
-  MessageSubmission message:signal:MessageSubmission
-  StampedMessageSubmission message:signal:StampedMessageSubmission
-  InboxQuery message:signal:InboxQuery
   MessageReply message:signal:Output
   OperationKind message:signal:OperationKind
   UnimplementedReason message:signal:UnimplementedReason
   ErrorReport message:signal:ErrorReport
   RegistryCommand message:signal:AgentRegistryCommand
   RegistryQuery message:signal:AgentRegistryQuery
+  StoreCommand message:signal:StoreCommand
+  StoreQuery message:signal:StoreQuery
 }
 [SignalArrived EffectCompleted]
 [ReplyToSignal CommandEffect Continue]
@@ -24,18 +23,13 @@
   NexusWork [(SignalArrived SignalArrived) (EffectCompleted EffectCompleted)]
   NexusAction [(ReplyToSignal ReplyToSignal) (CommandEffect CommandEffect) (Continue Continue)]
 
-  ForwardTarget [Router]
-  ForwardRequest [(StampAndForward StampAndForward) (ForwardInboxQuery ForwardInboxQuery)]
-  StampAndForward MessageSubmission
-  ForwardInboxQuery InboxQuery
-  NexusEffectCommand [(ForwardToRouter ForwardToRouter) (ApplyRegistry ApplyRegistry) (ReadRegistry ReadRegistry)]
-  ForwardToRouter ForwardRequest
+  NexusEffectCommand [(ApplyRegistry ApplyRegistry) (ReadRegistry ReadRegistry) (ApplyMessageStore ApplyMessageStore) (ReadMessageStore ReadMessageStore)]
   ApplyRegistry RegistryCommand
   ReadRegistry RegistryQuery
+  ApplyMessageStore StoreCommand
+  ReadMessageStore StoreQuery
 
-  Forwarded MessageReply
-  RouterUnavailable UnimplementedReason
-  ForwardFailed ErrorReport
   RegistryCompleted MessageReply
-  NexusEffectResult [(Forwarded Forwarded) (RouterUnavailable RouterUnavailable) (ForwardFailed ForwardFailed) (RegistryCompleted RegistryCompleted)]
+  StoreCompleted MessageReply
+  NexusEffectResult [(RegistryCompleted RegistryCompleted) (StoreCompleted StoreCompleted)]
 }

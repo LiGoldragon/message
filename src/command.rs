@@ -8,12 +8,15 @@ use triad_runtime::{ComponentArgument, ComponentCommand};
 use crate::client::MessageSocket;
 use crate::error::{Error, Result as MessageResult};
 use crate::schema::signal as signal_schema;
-use crate::surface::{RecipientName, ThreadSelection};
+use crate::surface::{RecipientName, ThreadName as SurfaceThreadName, ThreadSelection};
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Input {
     Send(RecipientName, String, ThreadSelection),
     Inbox(RecipientName),
+    Thread(SurfaceThreadName),
+    Threads,
+    Subscribe(SurfaceThreadName, RecipientName),
 }
 
 impl Input {
@@ -42,6 +45,23 @@ impl Input {
                 signal_schema::QueryInbox::new(signal_schema::InboxQuery::new(
                     signal_schema::Recipient::new(recipient.as_str().to_owned()),
                 )),
+            ),
+            Self::Thread(thread) => signal_schema::Input::QueryThread(
+                signal_schema::QueryThread::new(signal_schema::ThreadQuery::new(
+                    signal_schema::ThreadName::new(thread.as_str().to_owned()),
+                )),
+            ),
+            Self::Threads => signal_schema::Input::QueryThreads(
+                signal_schema::QueryThreads::new(signal_schema::ThreadIndexQuery::All),
+            ),
+            Self::Subscribe(thread, participant) => signal_schema::Input::SubscribeThread(
+                signal_schema::SubscribeThread::new(signal_schema::ThreadSubscription {
+                    thread_name: signal_schema::ThreadName::new(thread.as_str().to_owned()),
+                    participant_name: signal_schema::ParticipantName::new(
+                        participant.as_str().to_owned(),
+                    ),
+                    thread_relation_selection: signal_schema::ThreadRelationSelection::None,
+                }),
             ),
         }
     }
@@ -76,6 +96,21 @@ impl NotaDecode for Input {
                 Self::expect_fields(fields, "Input::Inbox", 2)?;
                 Ok(Self::Inbox(RecipientName::from_nota_block(&fields[1])?))
             }
+            "Thread" => {
+                Self::expect_fields(fields, "Input::Thread", 2)?;
+                Ok(Self::Thread(SurfaceThreadName::from_nota_block(&fields[1])?))
+            }
+            "Threads" => {
+                Self::expect_fields(fields, "Input::Threads", 1)?;
+                Ok(Self::Threads)
+            }
+            "Subscribe" => {
+                Self::expect_fields(fields, "Input::Subscribe", 3)?;
+                Ok(Self::Subscribe(
+                    SurfaceThreadName::from_nota_block(&fields[1])?,
+                    RecipientName::from_nota_block(&fields[2])?,
+                ))
+            }
             other => Err(NotaDecodeError::UnknownVariant {
                 enum_name: "Input",
                 variant: other.to_owned(),
@@ -96,6 +131,15 @@ impl NotaEncode for Input {
             Self::Inbox(recipient) => {
                 Delimiter::Parenthesis.wrap([String::from("Inbox"), recipient.to_nota()])
             }
+            Self::Thread(thread) => {
+                Delimiter::Parenthesis.wrap([String::from("Thread"), thread.to_nota()])
+            }
+            Self::Threads => Delimiter::Parenthesis.wrap([String::from("Threads")]),
+            Self::Subscribe(thread, participant) => Delimiter::Parenthesis.wrap([
+                String::from("Subscribe"),
+                thread.to_nota(),
+                participant.to_nota(),
+            ]),
         }
     }
 }
@@ -135,6 +179,8 @@ pub struct InboxEntry {
     pub message_slot: u64,
     pub sender: RecipientName,
     pub body: String,
+    pub thread: ThreadSelection,
+    pub stamped_at: u64,
 }
 
 #[derive(
@@ -147,6 +193,9 @@ pub enum OperationKind {
     AssignAgentIdentity,
     BindAgentEndpoint,
     QueryAgentRegistry,
+    QueryThread,
+    SubscribeThread,
+    QueryThreads,
 }
 
 #[derive(
@@ -154,7 +203,8 @@ pub enum OperationKind {
 )]
 pub enum UnimplementedReason {
     NotInPrototypeScope,
-    RouterUnreachable,
+    DependencyMissing(signal_schema::DependencyKind),
+    ResourceUnavailable(signal_schema::ResourceKind),
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
@@ -168,6 +218,10 @@ pub enum Output {
     AgentRegistryRejected(signal_schema::AgentRegistryRejection),
     Unimplemented(OperationKind, UnimplementedReason),
     Error(String),
+    ThreadListing(signal_schema::ThreadContents),
+    ThreadSubscribed(signal_schema::ThreadSubscriptionAcknowledgment),
+    ThreadIndexListing(signal_schema::ThreadIndexEntries),
+    ThreadRejected(signal_schema::ThreadRejection),
 }
 
 impl Output {
@@ -219,6 +273,18 @@ impl Output {
             }
             signal_schema::Output::Error(error) => {
                 Self::Error(error.into_payload().into_payload().into_payload())
+            }
+            signal_schema::Output::ThreadListing(listing) => {
+                Self::ThreadListing(listing.into_payload())
+            }
+            signal_schema::Output::ThreadSubscribed(acknowledgment) => {
+                Self::ThreadSubscribed(acknowledgment.into_payload())
+            }
+            signal_schema::Output::ThreadIndexListing(listing) => {
+                Self::ThreadIndexListing(listing.into_payload())
+            }
+            signal_schema::Output::ThreadRejected(rejection) => {
+                Self::ThreadRejected(rejection.into_payload())
             }
         }
     }
@@ -285,6 +351,30 @@ impl NotaDecode for Output {
                 Self::expect_fields(fields, "Output::Error", 2)?;
                 Ok(Self::Error(String::from_nota_block(&fields[1])?))
             }
+            "ThreadListing" => {
+                Self::expect_fields(fields, "Output::ThreadListing", 2)?;
+                Ok(Self::ThreadListing(
+                    signal_schema::ThreadContents::from_nota_block(&fields[1])?,
+                ))
+            }
+            "ThreadSubscribed" => {
+                Self::expect_fields(fields, "Output::ThreadSubscribed", 2)?;
+                Ok(Self::ThreadSubscribed(
+                    signal_schema::ThreadSubscriptionAcknowledgment::from_nota_block(&fields[1])?,
+                ))
+            }
+            "ThreadIndexListing" => {
+                Self::expect_fields(fields, "Output::ThreadIndexListing", 2)?;
+                Ok(Self::ThreadIndexListing(
+                    signal_schema::ThreadIndexEntries::from_nota_block(&fields[1])?,
+                ))
+            }
+            "ThreadRejected" => {
+                Self::expect_fields(fields, "Output::ThreadRejected", 2)?;
+                Ok(Self::ThreadRejected(
+                    signal_schema::ThreadRejection::from_nota_block(&fields[1])?,
+                ))
+            }
             other => Err(NotaDecodeError::UnknownVariant {
                 enum_name: "Output",
                 variant: other.to_owned(),
@@ -320,6 +410,21 @@ impl NotaEncode for Output {
             Self::Error(message) => {
                 Delimiter::Parenthesis.wrap([String::from("Error"), message.to_nota()])
             }
+            Self::ThreadListing(listing) => {
+                Delimiter::Parenthesis.wrap([String::from("ThreadListing"), listing.to_nota()])
+            }
+            Self::ThreadSubscribed(acknowledgment) => Delimiter::Parenthesis.wrap([
+                String::from("ThreadSubscribed"),
+                acknowledgment.to_nota(),
+            ]),
+            Self::ThreadIndexListing(listing) => Delimiter::Parenthesis.wrap([
+                String::from("ThreadIndexListing"),
+                listing.to_nota(),
+            ]),
+            Self::ThreadRejected(rejection) => Delimiter::Parenthesis.wrap([
+                String::from("ThreadRejected"),
+                rejection.to_nota(),
+            ]),
         }
     }
 }
@@ -357,6 +462,19 @@ impl InboxEntry {
             message_slot: entry.message_slot.into_payload(),
             sender: RecipientName::new(entry.sender.into_payload()),
             body: entry.body.into_payload(),
+            thread: ThreadSelection::from_signal(entry.thread_selection),
+            stamped_at: entry.stamped_at.into_payload().into_payload(),
+        }
+    }
+}
+
+impl ThreadSelection {
+    fn from_signal(selection: signal_schema::ThreadSelection) -> Self {
+        match selection {
+            signal_schema::ThreadSelection::None => Self::None,
+            signal_schema::ThreadSelection::Named(name) => {
+                Self::Named(SurfaceThreadName::new(name.into_payload()))
+            }
         }
     }
 }
@@ -370,6 +488,9 @@ impl OperationKind {
             signal_schema::OperationKind::AssignAgentIdentity => Self::AssignAgentIdentity,
             signal_schema::OperationKind::BindAgentEndpoint => Self::BindAgentEndpoint,
             signal_schema::OperationKind::QueryAgentRegistry => Self::QueryAgentRegistry,
+            signal_schema::OperationKind::QueryThread => Self::QueryThread,
+            signal_schema::OperationKind::SubscribeThread => Self::SubscribeThread,
+            signal_schema::OperationKind::QueryThreads => Self::QueryThreads,
         }
     }
 }
@@ -378,7 +499,12 @@ impl UnimplementedReason {
     fn from_signal(reason: signal_schema::UnimplementedReason) -> Self {
         match reason {
             signal_schema::UnimplementedReason::NotInPrototypeScope => Self::NotInPrototypeScope,
-            signal_schema::UnimplementedReason::RouterUnreachable => Self::RouterUnreachable,
+            signal_schema::UnimplementedReason::DependencyMissing(kind) => {
+                Self::DependencyMissing(kind)
+            }
+            signal_schema::UnimplementedReason::ResourceUnavailable(kind) => {
+                Self::ResourceUnavailable(kind)
+            }
         }
     }
 }

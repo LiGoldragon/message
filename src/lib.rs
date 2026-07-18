@@ -9,9 +9,10 @@
 //!
 //! The messenger owns durable state: the Signal plane is its wire surface
 //! (`message.sock`), the Nexus plane is its internal-feature catalog (the
-//! forward-to-router decision plus the registry apply/read effects), and the
-//! SEMA plane commits the agent registry — the authoritative process↔identity
-//! map and local delivery registry — in `messenger.sema`. The only daemon
+//! registry and message-store apply/read effects), and the SEMA plane
+//! commits the agent registry, message ledger, per-recipient inbox, and
+//! thread index in `messenger.sema`. The router is no longer in the local
+//! loop: submissions persist and answer locally. The only daemon
 //! code message hand-writes is `impl ComponentDaemon for MessageDaemon` in
 //! `daemon.rs`; the daemon skeleton itself is emitted into `schema/daemon.rs`.
 
@@ -26,13 +27,14 @@ pub(crate) mod frame_bytes;
 pub mod meta;
 #[cfg(feature = "nota-text")]
 pub mod output_validator;
-pub mod router;
+pub mod provenance;
 pub mod tables;
 #[cfg(feature = "nota-text")]
 pub mod surface;
 
 pub mod schema {
     #[rustfmt::skip]
+    #[allow(dead_code, private_interfaces)]
     pub mod signal;
     #[rustfmt::skip]
     pub mod nexus;
@@ -49,6 +51,13 @@ pub use error::{Error, Result};
 pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};
 #[cfg(feature = "nota-text")]
 pub use meta::{MetaMessageCommand, MetaMessageCommandEnvironment};
-pub use router::{RouterForwardOutcome, RouterForwarder};
+pub use provenance::{OriginPolicy, SenderResolver};
 pub use tables::MessengerTables;
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};
+
+impl schema::signal::ThreadIndexEntries {
+    /// The summaries behind the emitted field-elided vector.
+    pub fn into_threads(self) -> Vec<schema::signal::ThreadSummary> {
+        self.into_payload().into_payload()
+    }
+}

@@ -2,14 +2,16 @@
   RegistryCommand message:signal:AgentRegistryCommand
   RegistryQuery message:signal:AgentRegistryQuery
   RegistryReply message:signal:Output
+  StoreWrite message:signal:StoreWrite
+  StoreQuery message:signal:StoreQuery
 }
 [WriteInput ReadInput]
 [WriteOutput ReadOutput]
 {
-  WriteInput [(ApplyRegistry RegistryCommand)]
+  WriteInput [(ApplyRegistry RegistryCommand) (ApplyMessageStore StoreWrite)]
 
-  ReadInput [(ReadRegistry RegistryQuery)]
+  ReadInput [(ReadRegistry RegistryQuery) (ReadMessageStore StoreQuery)]
 
-  WriteOutput [(RegistryApplied RegistryReply)]
-  ReadOutput [(RegistryRead RegistryReply)]
+  WriteOutput [(RegistryApplied RegistryReply) (StoreApplied RegistryReply)]
+  ReadOutput [(RegistryRead RegistryReply) (StoreRead RegistryReply)]
 }

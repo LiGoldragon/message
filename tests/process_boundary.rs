@@ -1,24 +1,16 @@
-//! Process-boundary witness for the migrated message daemon.
+//! Process-boundary witness for the stateful messenger daemon.
 //!
 //! Spawns the real `message-daemon` binary with a binary rkyv configuration,
 //! connects to its `message.sock`, and exchanges schema-derived signal frames
 //! over the wire. This proves the emitted daemon spine end to end: argv config
 //! load -> single working-socket bind -> length-prefixed signal-frame decode ->
-//! Nexus `decide` -> signal-frame encode -> wire reply.
-//!
-//! The `SubmitStamped` path is the router-independent witness: the daemon
-//! replies `Unimplemented` directly from the Nexus decision without forwarding,
-//! so the test needs no router mock to exercise the full emitted pipeline. The
-//! router-forward paths (`Submit` / `QueryInbox`) are covered by the in-process
-//! engine test below, which drives `MessageEngine::handle` against a stub
-//! router listener.
+//! Nexus `decide` -> SEMA commit in `messenger.sema` -> signal-frame encode ->
+//! wire reply. No router is involved anywhere: the messenger is the durable
+//! owner of local message state (packet 3.1).
 
 use std::{
     io::Write,
-    os::unix::{
-        ffi::OsStrExt,
-        net::{UnixListener, UnixStream},
-    },
+    os::unix::{ffi::OsStrExt, net::UnixStream},
     path::Path,
     process::{Child, Command},
     thread,
@@ -28,23 +20,18 @@ use std::{
 use message::{
     Configuration,
     command::Output as CommandOutput,
-    router::SignalRouterFrameCodec,
     schema::signal::{
-        Body, Input, MessageKind, MessageOrigin, MessageSubmission, Output as SignalOutput,
-        OwnerName, Recipient, StampedMessageSubmission, SubmitStamped, ThreadSelection,
-        TimestampNanos,
+        Body, ConnectionClass, Input, MessageKind, MessageOrigin, MessageSubmission,
+        Output as SignalOutput, Recipient, StampedMessageSubmission, SubmitStamped,
+        ThreadSelection, TimestampNanos,
     },
 };
 use meta_signal_message::Operation as MetaMessageOperation;
 use nota::NotaEncode;
 use signal_frame::RequestPayload;
 use signal_message::{
-    ComponentInstanceName as RouterComponentInstanceName, ComponentName as RouterComponentName,
-    Input as SignalMessageInput, InternalComponentInstanceOrigin as RouterInstanceOrigin,
     MessageDaemonConfiguration as MetaConfiguration, MessageDaemonConfigurationParts,
-    MessageOrigin as RouterMessageOrigin, MessageSlot, Output as SignalMessageOutput,
-    ThreadSelection as WireThreadSelection,
-    OwnerIdentity, SocketMode, SubmissionAcceptance, UnixUserIdentifier, WirePath,
+    OwnerIdentity, SocketMode, UnixUserIdentifier, WirePath,
 };
 use tempfile::TempDir;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
@@ -118,48 +105,13 @@ fn exchange(socket_path: &Path, input: &Input) -> SignalOutput {
     output
 }
 
-struct StubRouter {
-    listener: UnixListener,
-}
-
-impl StubRouter {
-    fn bind(socket_path: &Path) -> Self {
-        Self {
-            listener: UnixListener::bind(socket_path).expect("bind stub router socket"),
-        }
-    }
-
-    fn serve_one_acceptance(self) -> thread::JoinHandle<SignalMessageInput> {
-        thread::spawn(move || {
-            let codec = SignalRouterFrameCodec::default();
-            let (mut stream, _address) = self.listener.accept().expect("accept router connection");
-            let frame = codec
-                .read_frame(&mut stream)
-                .expect("read router request frame");
-            let received = codec
-                .request_from_frame(frame)
-                .expect("decode router request");
-            let reply = codec.reply_frame(
-                received.exchange,
-                SignalMessageOutput::SubmissionAccepted(SubmissionAcceptance::new(
-                    MessageSlot::new(7),
-                )),
-            );
-            codec
-                .write_frame(&mut stream, &reply)
-                .expect("write router reply");
-            received.request
-        })
-    }
-}
-
 #[test]
 fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket() {
     let temp = TempDir::new().expect("tempdir");
     let socket_path = temp.path().join("message.sock");
     let meta_socket_path = temp.path().join("meta-message.sock");
     let router_socket_path = temp.path().join("router.sock");
-    let database_path = temp.path().join("message.unused");
+    let database_path = temp.path().join("messenger.sema");
 
     let _daemon = DaemonProcess::spawn(
         &socket_path,
@@ -170,7 +122,7 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
 
     // An already-stamped submission: the daemon mints provenance, it never
     // accepts it from a peer, so this replies Unimplemented straight from the
-    // Nexus decision — no router contact required.
+    // Nexus decision.
     let stamped = Input::SubmitStamped(SubmitStamped::new(StampedMessageSubmission {
         submission: MessageSubmission {
             recipient: Recipient::new("designer".to_owned()),
@@ -179,11 +131,7 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
             thread_selection: ThreadSelection::None,
         }
         .into(),
-        origin: MessageOrigin {
-            connection_class: message::schema::signal::ConnectionClass::Owner,
-            owner_name: OwnerName::new("peer".to_owned()),
-        }
-        .into(),
+        origin: MessageOrigin::External(ConnectionClass::Owner).into(),
         stamped_at: TimestampNanos::new(1).into(),
     }));
 
@@ -200,14 +148,12 @@ fn daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket(
 }
 
 #[test]
-fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
+fn cli_send_persists_locally_and_inbox_reads_it_back_across_the_real_socket() {
     let temp = TempDir::new().expect("tempdir");
     let socket_path = temp.path().join("message.sock");
     let meta_socket_path = temp.path().join("meta-message.sock");
     let router_socket_path = temp.path().join("router.sock");
-    let database_path = temp.path().join("message.unused");
-    let router = StubRouter::bind(&router_socket_path);
-    let router_thread = router.serve_one_acceptance();
+    let database_path = temp.path().join("messenger.sema");
 
     let _daemon = DaemonProcess::spawn(
         &socket_path,
@@ -216,49 +162,61 @@ fn cli_send_crosses_generated_daemon_socket_and_forwards_to_router() {
         &database_path,
     );
 
-    let cli_output = Command::new(env!("CARGO_BIN_EXE_message"))
+    let send_output = Command::new(env!("CARGO_BIN_EXE_message"))
         .env("MESSAGE_SOCKET", &socket_path)
         .arg("(Send designer [hello from cli] (Named launch-plan))")
         .output()
-        .expect("run message CLI");
-
+        .expect("run message CLI send");
     assert!(
-        cli_output.status.success(),
-        "message CLI failed: {}",
-        String::from_utf8_lossy(&cli_output.stderr)
+        send_output.status.success(),
+        "message CLI send failed: {}",
+        String::from_utf8_lossy(&send_output.stderr)
     );
-    let stdout = String::from_utf8(cli_output.stdout).expect("CLI stdout is utf8");
-    match CommandOutput::from_nota(stdout.trim()).expect("decode CLI NOTA output") {
+    let send_stdout = String::from_utf8(send_output.stdout).expect("CLI stdout is utf8");
+    match CommandOutput::from_nota(send_stdout.trim()).expect("decode CLI NOTA output") {
         CommandOutput::SubmissionAccepted(message_slot) => {
-            assert_eq!(message_slot, 7);
+            assert_eq!(message_slot, 0, "first slot in a fresh store");
         }
         other => panic!("expected CLI SubmissionAccepted output, got {other:?}"),
     }
 
-    let forwarded = router_thread.join().expect("router thread");
-    match forwarded {
-        SignalMessageInput::SubmitStamped(stamped) => {
-            assert_eq!(
-                stamped.message_submission.message_recipient.as_str(),
-                "designer"
-            );
-            assert_eq!(
-                stamped.message_submission.message_body.as_str(),
-                "hello from cli"
-            );
-            assert_eq!(
-                stamped.message_submission.thread_selection,
-                WireThreadSelection::Named(signal_message::ThreadName::new("launch-plan"))
-            );
-            assert_eq!(
-                stamped.message_origin,
-                RouterMessageOrigin::InternalComponentInstance(RouterInstanceOrigin {
-                    component_name: RouterComponentName::Harness,
-                    component_instance_name: RouterComponentInstanceName::new("owner".to_owned()),
-                })
-            );
+    let inbox_output = Command::new(env!("CARGO_BIN_EXE_message"))
+        .env("MESSAGE_SOCKET", &socket_path)
+        .arg("(Inbox designer)")
+        .output()
+        .expect("run message CLI inbox");
+    assert!(
+        inbox_output.status.success(),
+        "message CLI inbox failed: {}",
+        String::from_utf8_lossy(&inbox_output.stderr)
+    );
+    let inbox_stdout = String::from_utf8(inbox_output.stdout).expect("CLI stdout is utf8");
+    match CommandOutput::from_nota(inbox_stdout.trim()).expect("decode CLI inbox output") {
+        CommandOutput::InboxListing(entries) => {
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].body, "hello from cli");
+            assert_eq!(entries[0].sender.as_str(), "owner");
+            assert!(entries[0].stamped_at > 0, "ingress stamp minted");
         }
-        other => panic!("expected daemon to stamp CLI submission before forwarding, got {other:?}"),
+        other => panic!("expected CLI InboxListing output, got {other:?}"),
+    }
+
+    let thread_output = Command::new(env!("CARGO_BIN_EXE_message"))
+        .env("MESSAGE_SOCKET", &socket_path)
+        .arg("(Thread launch-plan)")
+        .output()
+        .expect("run message CLI thread");
+    assert!(
+        thread_output.status.success(),
+        "message CLI thread failed: {}",
+        String::from_utf8_lossy(&thread_output.stderr)
+    );
+    let thread_stdout = String::from_utf8(thread_output.stdout).expect("CLI stdout is utf8");
+    match CommandOutput::from_nota(thread_stdout.trim()).expect("decode CLI thread output") {
+        CommandOutput::ThreadListing(contents) => {
+            assert_eq!(contents.thread_entries.payload().len(), 1);
+        }
+        other => panic!("expected CLI ThreadListing output, got {other:?}"),
     }
 }
 
@@ -268,7 +226,7 @@ fn meta_cli_reaches_owner_policy_socket_and_gets_typed_unimplemented_reply() {
     let socket_path = temp.path().join("message.sock");
     let meta_socket_path = temp.path().join("meta-message.sock");
     let router_socket_path = temp.path().join("router.sock");
-    let database_path = temp.path().join("message.unused");
+    let database_path = temp.path().join("messenger.sema");
 
     let _daemon = DaemonProcess::spawn(
         &socket_path,

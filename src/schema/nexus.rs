@@ -14,12 +14,6 @@ pub use crate::schema::signal::Input as SignalInput;
 #[rustfmt::skip]
 pub use crate::schema::signal::Output as SignalOutput;
 #[rustfmt::skip]
-pub use crate::schema::signal::MessageSubmission as MessageSubmission;
-#[rustfmt::skip]
-pub use crate::schema::signal::StampedMessageSubmission as StampedMessageSubmission;
-#[rustfmt::skip]
-pub use crate::schema::signal::InboxQuery as InboxQuery;
-#[rustfmt::skip]
 pub use crate::schema::signal::Output as MessageReply;
 #[rustfmt::skip]
 pub use crate::schema::signal::OperationKind as OperationKind;
@@ -31,6 +25,10 @@ pub use crate::schema::signal::ErrorReport as ErrorReport;
 pub use crate::schema::signal::AgentRegistryCommand as RegistryCommand;
 #[rustfmt::skip]
 pub use crate::schema::signal::AgentRegistryQuery as RegistryQuery;
+#[rustfmt::skip]
+pub use crate::schema::signal::StoreCommand as StoreCommand;
+#[rustfmt::skip]
+pub use crate::schema::signal::StoreQuery as StoreQuery;
 
 #[rustfmt::skip]
 #[cfg(feature = "nota-text")]
@@ -104,66 +102,13 @@ pub enum NexusAction {
     feature = "nota-text",
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-)]
-pub enum ForwardTarget {
-    Router,
-}
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub enum ForwardRequest {
-    StampAndForward(StampAndForward),
-    ForwardInboxQuery(ForwardInboxQuery),
-}
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct StampAndForward(MessageSubmission);
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ForwardInboxQuery(InboxQuery);
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum NexusEffectCommand {
-    ForwardToRouter(ForwardToRouter),
     ApplyRegistry(ApplyRegistry),
     ReadRegistry(ReadRegistry),
+    ApplyMessageStore(ApplyMessageStore),
+    ReadMessageStore(ReadMessageStore),
 }
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ForwardToRouter(ForwardRequest);
 
 #[rustfmt::skip]
 #[cfg_attr(
@@ -187,7 +132,7 @@ pub struct ReadRegistry(RegistryQuery);
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct Forwarded(MessageReply);
+pub struct ApplyMessageStore(StoreCommand);
 
 #[rustfmt::skip]
 #[cfg_attr(
@@ -195,15 +140,7 @@ pub struct Forwarded(MessageReply);
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct RouterUnavailable(UnimplementedReason);
-
-#[rustfmt::skip]
-#[cfg_attr(
-    feature = "nota-text",
-    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
-)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ForwardFailed(ErrorReport);
+pub struct ReadMessageStore(StoreQuery);
 
 #[rustfmt::skip]
 #[cfg_attr(
@@ -219,11 +156,17 @@ pub struct RegistryCompleted(MessageReply);
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct StoreCompleted(MessageReply);
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum NexusEffectResult {
-    Forwarded(Forwarded),
-    RouterUnavailable(RouterUnavailable),
-    ForwardFailed(ForwardFailed),
     RegistryCompleted(RegistryCompleted),
+    StoreCompleted(StoreCompleted),
 }
 
 #[rustfmt::skip]
@@ -345,63 +288,6 @@ impl From<NexusWork> for Continue {
 }
 
 #[rustfmt::skip]
-impl StampAndForward {
-    pub fn new(payload: MessageSubmission) -> Self {
-        Self(payload)
-    }
-    pub fn payload(&self) -> &MessageSubmission {
-        &self.0
-    }
-    pub fn into_payload(self) -> MessageSubmission {
-        self.0
-    }
-}
-#[rustfmt::skip]
-impl From<MessageSubmission> for StampAndForward {
-    fn from(payload: MessageSubmission) -> Self {
-        Self::new(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl ForwardInboxQuery {
-    pub fn new(payload: InboxQuery) -> Self {
-        Self(payload)
-    }
-    pub fn payload(&self) -> &InboxQuery {
-        &self.0
-    }
-    pub fn into_payload(self) -> InboxQuery {
-        self.0
-    }
-}
-#[rustfmt::skip]
-impl From<InboxQuery> for ForwardInboxQuery {
-    fn from(payload: InboxQuery) -> Self {
-        Self::new(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl ForwardToRouter {
-    pub fn new(payload: ForwardRequest) -> Self {
-        Self(payload)
-    }
-    pub fn payload(&self) -> &ForwardRequest {
-        &self.0
-    }
-    pub fn into_payload(self) -> ForwardRequest {
-        self.0
-    }
-}
-#[rustfmt::skip]
-impl From<ForwardRequest> for ForwardToRouter {
-    fn from(payload: ForwardRequest) -> Self {
-        Self::new(payload)
-    }
-}
-
-#[rustfmt::skip]
 impl ApplyRegistry {
     pub fn new(payload: RegistryCommand) -> Self {
         Self(payload)
@@ -440,58 +326,39 @@ impl From<RegistryQuery> for ReadRegistry {
 }
 
 #[rustfmt::skip]
-impl Forwarded {
-    pub fn new(payload: MessageReply) -> Self {
+impl ApplyMessageStore {
+    pub fn new(payload: StoreCommand) -> Self {
         Self(payload)
     }
-    pub fn payload(&self) -> &MessageReply {
+    pub fn payload(&self) -> &StoreCommand {
         &self.0
     }
-    pub fn into_payload(self) -> MessageReply {
+    pub fn into_payload(self) -> StoreCommand {
         self.0
     }
 }
 #[rustfmt::skip]
-impl From<MessageReply> for Forwarded {
-    fn from(payload: MessageReply) -> Self {
+impl From<StoreCommand> for ApplyMessageStore {
+    fn from(payload: StoreCommand) -> Self {
         Self::new(payload)
     }
 }
 
 #[rustfmt::skip]
-impl RouterUnavailable {
-    pub fn new(payload: UnimplementedReason) -> Self {
+impl ReadMessageStore {
+    pub fn new(payload: StoreQuery) -> Self {
         Self(payload)
     }
-    pub fn payload(&self) -> &UnimplementedReason {
+    pub fn payload(&self) -> &StoreQuery {
         &self.0
     }
-    pub fn into_payload(self) -> UnimplementedReason {
+    pub fn into_payload(self) -> StoreQuery {
         self.0
     }
 }
 #[rustfmt::skip]
-impl From<UnimplementedReason> for RouterUnavailable {
-    fn from(payload: UnimplementedReason) -> Self {
-        Self::new(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl ForwardFailed {
-    pub fn new(payload: ErrorReport) -> Self {
-        Self(payload)
-    }
-    pub fn payload(&self) -> &ErrorReport {
-        &self.0
-    }
-    pub fn into_payload(self) -> ErrorReport {
-        self.0
-    }
-}
-#[rustfmt::skip]
-impl From<ErrorReport> for ForwardFailed {
-    fn from(payload: ErrorReport) -> Self {
+impl From<StoreQuery> for ReadMessageStore {
+    fn from(payload: StoreQuery) -> Self {
         Self::new(payload)
     }
 }
@@ -510,6 +377,25 @@ impl RegistryCompleted {
 }
 #[rustfmt::skip]
 impl From<MessageReply> for RegistryCompleted {
+    fn from(payload: MessageReply) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl StoreCompleted {
+    pub fn new(payload: MessageReply) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &MessageReply {
+        &self.0
+    }
+    pub fn into_payload(self) -> MessageReply {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<MessageReply> for StoreCompleted {
     fn from(payload: MessageReply) -> Self {
         Self::new(payload)
     }
@@ -539,41 +425,28 @@ impl NexusAction {
 }
 
 #[rustfmt::skip]
-impl ForwardRequest {
-    pub fn stamp_and_forward(payload: MessageSubmission) -> Self {
-        Self::StampAndForward(StampAndForward::new(payload))
-    }
-    pub fn forward_inbox_query(payload: InboxQuery) -> Self {
-        Self::ForwardInboxQuery(ForwardInboxQuery::new(payload))
-    }
-}
-
-#[rustfmt::skip]
 impl NexusEffectCommand {
-    pub fn forward_to_router(payload: ForwardRequest) -> Self {
-        Self::ForwardToRouter(ForwardToRouter::new(payload))
-    }
     pub fn apply_registry(payload: RegistryCommand) -> Self {
         Self::ApplyRegistry(ApplyRegistry::new(payload))
     }
     pub fn read_registry(payload: RegistryQuery) -> Self {
         Self::ReadRegistry(ReadRegistry::new(payload))
     }
+    pub fn apply_message_store(payload: StoreCommand) -> Self {
+        Self::ApplyMessageStore(ApplyMessageStore::new(payload))
+    }
+    pub fn read_message_store(payload: StoreQuery) -> Self {
+        Self::ReadMessageStore(ReadMessageStore::new(payload))
+    }
 }
 
 #[rustfmt::skip]
 impl NexusEffectResult {
-    pub fn forwarded(payload: MessageReply) -> Self {
-        Self::Forwarded(Forwarded::new(payload))
-    }
-    pub fn router_unavailable(payload: UnimplementedReason) -> Self {
-        Self::RouterUnavailable(RouterUnavailable::new(payload))
-    }
-    pub fn forward_failed(payload: ErrorReport) -> Self {
-        Self::ForwardFailed(ForwardFailed::new(payload))
-    }
     pub fn registry_completed(payload: MessageReply) -> Self {
         Self::RegistryCompleted(RegistryCompleted::new(payload))
+    }
+    pub fn store_completed(payload: MessageReply) -> Self {
+        Self::StoreCompleted(StoreCompleted::new(payload))
     }
 }
 
@@ -636,27 +509,6 @@ impl From<Continue> for NexusAction {
 }
 
 #[rustfmt::skip]
-impl From<StampAndForward> for ForwardRequest {
-    fn from(payload: StampAndForward) -> Self {
-        Self::StampAndForward(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl From<ForwardInboxQuery> for ForwardRequest {
-    fn from(payload: ForwardInboxQuery) -> Self {
-        Self::ForwardInboxQuery(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl From<ForwardToRouter> for NexusEffectCommand {
-    fn from(payload: ForwardToRouter) -> Self {
-        Self::ForwardToRouter(payload)
-    }
-}
-
-#[rustfmt::skip]
 impl From<ApplyRegistry> for NexusEffectCommand {
     fn from(payload: ApplyRegistry) -> Self {
         Self::ApplyRegistry(payload)
@@ -671,23 +523,16 @@ impl From<ReadRegistry> for NexusEffectCommand {
 }
 
 #[rustfmt::skip]
-impl From<Forwarded> for NexusEffectResult {
-    fn from(payload: Forwarded) -> Self {
-        Self::Forwarded(payload)
+impl From<ApplyMessageStore> for NexusEffectCommand {
+    fn from(payload: ApplyMessageStore) -> Self {
+        Self::ApplyMessageStore(payload)
     }
 }
 
 #[rustfmt::skip]
-impl From<RouterUnavailable> for NexusEffectResult {
-    fn from(payload: RouterUnavailable) -> Self {
-        Self::RouterUnavailable(payload)
-    }
-}
-
-#[rustfmt::skip]
-impl From<ForwardFailed> for NexusEffectResult {
-    fn from(payload: ForwardFailed) -> Self {
-        Self::ForwardFailed(payload)
+impl From<ReadMessageStore> for NexusEffectCommand {
+    fn from(payload: ReadMessageStore) -> Self {
+        Self::ReadMessageStore(payload)
     }
 }
 
@@ -695,6 +540,13 @@ impl From<ForwardFailed> for NexusEffectResult {
 impl From<RegistryCompleted> for NexusEffectResult {
     fn from(payload: RegistryCompleted) -> Self {
         Self::RegistryCompleted(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<StoreCompleted> for NexusEffectResult {
+    fn from(payload: StoreCompleted) -> Self {
+        Self::StoreCompleted(payload)
     }
 }
 
