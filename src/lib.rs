@@ -21,6 +21,7 @@ pub mod client;
 pub mod command;
 pub mod config;
 pub mod daemon;
+pub mod delivery;
 pub mod engine;
 pub mod error;
 pub(crate) mod frame_bytes;
@@ -51,6 +52,7 @@ pub use error::{Error, Result};
 pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};
 #[cfg(feature = "nota-text")]
 pub use meta::{MetaMessageCommand, MetaMessageCommandEnvironment};
+pub use delivery::{DeliveryDisposition, DeliveryRunner, ParkPolicy, ParkReason};
 pub use provenance::{OriginPolicy, SenderResolver};
 pub use tables::MessengerTables;
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};

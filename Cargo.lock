@@ -367,7 +367,7 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "meta-signal-message",
  "nota",
@@ -376,6 +376,7 @@ dependencies = [
  "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?branch=main)",
  "sema-engine",
  "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "signal-harness",
  "signal-message",
  "tempfile",
  "thiserror",
@@ -771,6 +772,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-harness"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/signal-harness.git?branch=main#be3d398739a57c4e51968b976e26fcc59e6b0840"
+dependencies = [
+ "nota",
+ "rkyv",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "signal-persona",
+ "thiserror",
+]
+
+[[package]]
 name = "signal-message"
 version = "0.7.0"
 source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#66490df271f5cebf7f505ac90877f8c105017ab7"
@@ -780,6 +793,17 @@ dependencies = [
  "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?rev=255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4)",
  "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
  "thiserror",
+]
+
+[[package]]
+name = "signal-persona"
+version = "0.2.0"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=main#04593c9a9afdb92d3c55cd908e8b8be3f7c30679"
+dependencies = [
+ "nota",
+ "rkyv",
+ "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?rev=255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
 ]
 
 [[package]]

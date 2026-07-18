@@ -69,6 +69,7 @@ const MESSAGE_LEDGER: TableName = TableName::new("message_ledger");
 const LEDGER_HEAD: TableName = TableName::new("ledger_head");
 const RECIPIENT_INBOX: TableName = TableName::new("recipient_inbox");
 const THREAD_INDEX: TableName = TableName::new("thread_index");
+const DELIVERY_OUTBOX: TableName = TableName::new("delivery_outbox");
 
 const LEDGER_HEAD_KEY: &str = "head";
 
@@ -83,6 +84,7 @@ pub struct MessengerTables {
     ledger_head: TableReference<LedgerHead>,
     recipient_inbox: TableReference<InboxRecord>,
     thread_index: TableReference<ThreadRecord>,
+    delivery_outbox: TableReference<InboxRecord>,
 }
 
 impl std::fmt::Debug for MessengerTables {
@@ -130,6 +132,11 @@ impl MessengerTables {
             "thread-index",
             MESSENGER_SCHEMA_VERSION,
         ))?;
+        let delivery_outbox = engine.register_table(Self::family_descriptor(
+            DELIVERY_OUTBOX,
+            "delivery-outbox",
+            MESSENGER_SCHEMA_VERSION,
+        ))?;
         Ok(Self {
             engine,
             agent_registry,
@@ -137,6 +144,7 @@ impl MessengerTables {
             ledger_head,
             recipient_inbox,
             thread_index,
+            delivery_outbox,
         })
     }
 
@@ -256,6 +264,108 @@ impl MessengerTables {
             ))?;
         }
         Ok(())
+    }
+
+    /// One registry row by agent identifier — the delivery runner's
+    /// resolution read.
+    pub fn registry_entry(&self, agent_identifier: &str) -> Result<Option<AgentRegistryEntry>> {
+        self.entry(agent_identifier)
+    }
+
+    /// One ledger row by slot — the delivery runner's drain read.
+    pub fn ledger_record_public(&self, slot: u64) -> Result<Option<LedgerRecord>> {
+        self.ledger_record(slot)
+    }
+
+    /// A thread's participant names, or `None` when no such thread exists —
+    /// the delivery runner's fan-out read.
+    pub fn thread_participants(&self, thread_name: &str) -> Result<Option<Vec<String>>> {
+        Ok(self
+            .thread_record(&ThreadName::new(thread_name.to_owned()))?
+            .map(|record| {
+                record
+                    .participants
+                    .payload()
+                    .iter()
+                    .map(|name| name.payload().clone())
+                    .collect()
+            }))
+    }
+
+    /// The parked delivery slots for one agent.
+    pub fn outbox_slots(&self, agent_identifier: &str) -> Result<Vec<u64>> {
+        Ok(self
+            .outbox_record(agent_identifier)?
+            .map(|record| {
+                record
+                    .slots
+                    .payload()
+                    .iter()
+                    .map(|slot| *slot.payload())
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Park one slot for an agent whose endpoint is absent or unreachable.
+    pub fn append_outbox_slot(&self, agent_identifier: &str, slot: u64) -> Result<()> {
+        match self.outbox_record(agent_identifier)? {
+            Some(record) => {
+                let mut slots = record.slots.into_payload();
+                if slots.iter().any(|kept| *kept.payload() == slot) {
+                    return Ok(());
+                }
+                slots.push(MessageSlot::new(slot));
+                self.engine.mutate_keyed(KeyedMutation::new(
+                    self.delivery_outbox,
+                    RecordKey::new(agent_identifier),
+                    InboxRecord {
+                        recipient: Recipient::new(agent_identifier.to_owned()),
+                        slots: Slots::new(slots),
+                    },
+                ))?;
+            }
+            None => {
+                self.engine.assert_keyed(KeyedAssertion::new(
+                    self.delivery_outbox,
+                    RecordKey::new(agent_identifier),
+                    InboxRecord {
+                        recipient: Recipient::new(agent_identifier.to_owned()),
+                        slots: Slots::new(vec![MessageSlot::new(slot)]),
+                    },
+                ))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Unpark one delivered (or reaped) slot.
+    pub fn remove_outbox_slot(&self, agent_identifier: &str, slot: u64) -> Result<()> {
+        if let Some(record) = self.outbox_record(agent_identifier)? {
+            let mut slots = record.slots.into_payload();
+            slots.retain(|kept| *kept.payload() != slot);
+            self.engine.mutate_keyed(KeyedMutation::new(
+                self.delivery_outbox,
+                RecordKey::new(agent_identifier),
+                InboxRecord {
+                    recipient: Recipient::new(agent_identifier.to_owned()),
+                    slots: Slots::new(slots),
+                },
+            ))?;
+        }
+        Ok(())
+    }
+
+    fn outbox_record(&self, agent_identifier: &str) -> Result<Option<InboxRecord>> {
+        Ok(self
+            .engine
+            .match_records(QueryPlan::key(
+                self.delivery_outbox,
+                RecordKey::new(agent_identifier),
+            ))?
+            .records()
+            .first()
+            .cloned())
     }
 
     /// Every registry row currently carrying a live process pin, projected

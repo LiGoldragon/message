@@ -1,14 +1,18 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The messenger daemon renders agent-facing delivery text (the PTY
+/// programmatic-input leg), so nota is a genuine runtime dependency since
+/// packet 3.2a — the former binary-only/no-nota split is deliberately
+/// retired.
 #[test]
-fn binary_only_runtime_dependency_tree_does_not_contain_nota() {
+fn runtime_dependency_tree_carries_nota_for_the_delivery_text_edge() {
     let manifest = CargoManifest::from_environment();
-    let tree = manifest.cargo_tree(&["--edges", "normal", "--no-default-features"]);
+    let tree = manifest.cargo_tree(&["--edges", "normal"]);
 
     assert!(
-        !tree.contains("nota v") && !tree.contains("nota ("),
-        "binary-only runtime dependency tree must not contain nota:\n{tree}"
+        tree.contains("nota"),
+        "runtime dependency tree must contain nota for PTY delivery rendering:\n{tree}"
     );
 }
 

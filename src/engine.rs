@@ -24,6 +24,7 @@ use triad_runtime::ConnectionContext;
 
 use crate::{
     config::Configuration,
+    delivery::DeliveryRunner,
     error::Error,
     provenance::{OriginPolicy, SenderResolver},
     schema::{
@@ -331,7 +332,11 @@ impl MessageEngine {
             }
             AgentRegistryCommand::BindEndpoint(binding) => {
                 match self.tables.bind_endpoint(&binding) {
-                    Ok(Some(bound)) => Output::agent_endpoint_bound(bound),
+                    Ok(Some(bound)) => {
+                        DeliveryRunner::new(&self.tables)
+                            .drain_outbox(bound.payload().payload().as_str());
+                        Output::agent_endpoint_bound(bound)
+                    }
                     Ok(None) => Self::registry_rejection(
                         AgentRegistryRejectionReason::UnknownAgentIdentifier,
                     ),
@@ -360,7 +365,15 @@ impl MessageEngine {
     fn apply_store_write(&self, write: StoreWrite) -> Output {
         match write {
             StoreWrite::RecordSubmission(draft) => match self.tables.store_submission(&draft) {
-                Ok(acceptance) => Output::submission_accepted(acceptance),
+                Ok(acceptance) => {
+                    if let Ok(Some(record)) = self
+                        .tables
+                        .ledger_record_public(*acceptance.payload().payload())
+                    {
+                        DeliveryRunner::new(&self.tables).deliver_committed(&record);
+                    }
+                    Output::submission_accepted(acceptance)
+                }
                 Err(_) => Output::submission_rejected(SubmissionRejection::new(
                     SubmissionRejectionReason::StoreRejected,
                 )),
