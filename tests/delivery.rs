@@ -132,9 +132,12 @@ fn submission(recipient: &str, body: &str, thread: ThreadSelection) -> Input {
 #[tokio::test]
 async fn send_to_a_bound_agent_lands_in_the_terminal_cell_without_the_router() {
     let root = TempDir::new().expect("tempdir");
-    let cell = FakeTerminalCell::bind(&root.path().join("data.sock"));
+    // The endpoint binds the session's data socket (what discovery stores);
+    // delivery goes to the sibling control socket (what terminal-cell
+    // actually serves programmatic input on).
+    let cell = FakeTerminalCell::bind(&root.path().join("control.sock"));
     let mut engine = engine_for(&root);
-    seat_and_bind(&mut engine, "li7f", &cell.path).await;
+    seat_and_bind(&mut engine, "li7f", &root.path().join("data.sock")).await;
 
     let reply = drive(
         &mut engine,
@@ -163,8 +166,8 @@ async fn send_to_an_unbound_agent_parks_and_drains_when_the_endpoint_appears() {
     .await;
     assert!(matches!(reply, Output::SubmissionAccepted(_)));
 
-    let cell = FakeTerminalCell::bind(&root.path().join("data.sock"));
-    bind(&mut engine, "x2qb", &cell.path).await;
+    let cell = FakeTerminalCell::bind(&root.path().join("control.sock"));
+    bind(&mut engine, "x2qb", &root.path().join("data.sock")).await;
 
     let text = cell.delivered().expect("outbox drained on endpoint appearance");
     assert!(text.contains("waiting for you"), "drained text: {text}");

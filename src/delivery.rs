@@ -190,9 +190,18 @@ impl<'endpoint> EndpointLeg<'endpoint> {
     /// Terminal-cell programmatic input: `'P'` + u64 BE length + text, one
     /// `'A'` acceptance byte back. The rendered text is the typed
     /// `InboxEntry` NOTA projection — the same record an inbox read returns.
+    ///
+    /// Current terminal-cell serves programmatic input on the session's
+    /// CONTROL socket (its data socket answers input frames with an attach
+    /// rejection), while reachability discovery stores the session's
+    /// `data.sock` as the endpoint. Both sockets live in the same session
+    /// directory — the layout discovery already depends on — so a
+    /// `data.sock` endpoint delivers to its sibling `control.sock`; any
+    /// other bound path is used exactly as bound. Proven end-to-end by
+    /// `tests/pty_end_to_end.rs` against a live terminal-cell PTY.
     fn deliver_to_terminal(path: &str, record: &LedgerRecord) -> std::io::Result<bool> {
         let text = Self::rendered(record);
-        let mut stream = UnixStream::connect(Path::new(path))?;
+        let mut stream = UnixStream::connect(Self::programmatic_input_path(path))?;
         stream.write_all(b"P")?;
         stream.write_all(&(text.len() as u64).to_be_bytes())?;
         stream.write_all(text.as_bytes())?;
@@ -200,6 +209,16 @@ impl<'endpoint> EndpointLeg<'endpoint> {
         let mut acceptance = [0_u8; 1];
         stream.read_exact(&mut acceptance)?;
         Ok(acceptance[0] == b'A')
+    }
+
+    fn programmatic_input_path(path: &str) -> std::path::PathBuf {
+        let bound = Path::new(path);
+        if bound.file_name() == Some(std::ffi::OsStr::new("data.sock")) {
+            if let Some(parent) = bound.parent() {
+                return parent.join("control.sock");
+            }
+        }
+        bound.to_path_buf()
     }
 
     fn rendered(record: &LedgerRecord) -> String {
