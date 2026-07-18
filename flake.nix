@@ -115,6 +115,12 @@
             // {
               inherit (context) cargoArtifacts;
               pname = "message";
+              # The text-edge binaries (message, meta-message,
+              # message-write-configuration, message-validate-output) are
+              # gated behind nota-text; without it the package ships only
+              # message-daemon and cannot be configured or driven. The
+              # deployable package carries all five.
+              cargoExtraArgs = "--features nota-text";
               meta.mainProgram = "message";
             }
           );
