@@ -41,6 +41,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -98,12 +107,93 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "content-identity"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/content-identity.git?rev=24b43bae5d9748b0e7f679c6ec9f85a643c4d36a#24b43bae5d9748b0e7f679c6ec9f85a643c4d36a"
+dependencies = [
+ "blake3",
+ "rkyv",
+ "thiserror",
+]
+
+[[package]]
+name = "content-identity"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/content-identity.git?rev=896b21e17f31b66d0802bff899b4b60acea9c0f1#896b21e17f31b66d0802bff899b4b60acea9c0f1"
+dependencies = [
+ "blake3",
+ "rkyv",
+ "thiserror",
+]
+
+[[package]]
+name = "core-ethos"
+version = "0.29.0"
+source = "git+https://github.com/LiGoldragon/core-ethos.git?rev=427fd74a8217f557cfabdfe0ff23b784c855bf85#427fd74a8217f557cfabdfe0ff23b784c855bf85"
+dependencies = [
+ "name-table 0.3.0",
+ "raw-discovery",
+ "rkyv",
+ "signal-sema-translator",
+ "structural-codec",
+ "thiserror",
+]
+
+[[package]]
+name = "core-logos"
+version = "0.26.0"
+source = "git+https://github.com/LiGoldragon/core-logos.git?rev=f3655c5ba60d2aec5a6bffa0962eef6b5964ee4e#f3655c5ba60d2aec5a6bffa0962eef6b5964ee4e"
+dependencies = [
+ "content-identity 0.3.0",
+ "content-identity 0.5.0",
+ "name-table 0.1.0",
+ "name-table 0.3.0",
+ "protos",
+ "raw-discovery",
+ "rkyv",
+ "signal-sema-translator",
+ "structural-codec",
+ "thiserror",
+]
+
+[[package]]
+name = "core-nomos"
+version = "0.41.0"
+source = "git+https://github.com/LiGoldragon/core-nomos.git?rev=ff675b264e3650afb88291036ec2bdd97292a2e7#ff675b264e3650afb88291036ec2bdd97292a2e7"
+dependencies = [
+ "content-identity 0.5.0",
+ "core-ethos",
+ "core-logos",
+ "signal-sema-translator",
+ "thiserror",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "dotos"
+version = "0.10.0"
+source = "git+https://github.com/LiGoldragon/dotos.git?rev=80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3#80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3"
+dependencies = [
+ "dotos-derive",
+ "rkyv",
+]
+
+[[package]]
+name = "dotos-derive"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/dotos.git?rev=80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3#80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -367,17 +457,16 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.10.2"
+version = "0.11.0"
 dependencies = [
+ "dotos",
  "meta-signal-message",
- "nota",
  "redb",
  "rkyv",
  "rustix",
- "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?branch=main)",
  "sema",
  "sema-engine",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
  "signal-harness",
  "signal-message",
  "tempfile",
@@ -388,14 +477,20 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-message"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message.git?branch=main#98aaf2284949f40b9fa17c8751fe2ee3d8d1fea0"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=c349f1252f0544fced18912abdb845bfc95ba826#c349f1252f0544fced18912abdb845bfc95ba826"
 dependencies = [
- "nota",
+ "core-ethos",
+ "dotos",
+ "name-table 0.3.0",
  "rkyv",
- "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?branch=main)",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "rust-logos",
+ "schema-rust",
+ "sema-translator",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
  "signal-message",
+ "signal-sema-translator",
+ "structural-codec",
  "thiserror",
 ]
 
@@ -431,22 +526,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "nota"
-version = "0.5.1"
-source = "git+https://github.com/LiGoldragon/nota.git?branch=main#ce7c564de0a0518eaa1938d55dccc460a67cadb4"
+name = "name-table"
+version = "0.1.0"
+source = "git+https://github.com/LiGoldragon/name-table.git?rev=196610e2907687dcb8dbd0d2dfaafe4aefd9fa27#196610e2907687dcb8dbd0d2dfaafe4aefd9fa27"
 dependencies = [
- "nota-derive",
+ "content-identity 0.3.0",
  "rkyv",
+ "thiserror",
 ]
 
 [[package]]
-name = "nota-derive"
+name = "name-table"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/nota.git?branch=main#ce7c564de0a0518eaa1938d55dccc460a67cadb4"
+source = "git+https://github.com/LiGoldragon/name-table.git?rev=a22f48d8040ab9235f3552ad8654ff8e27b8157d#a22f48d8040ab9235f3552ad8654ff8e27b8157d"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "content-identity 0.5.0",
+ "rkyv",
+ "thiserror",
 ]
 
 [[package]]
@@ -484,6 +580,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "protos"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/protos.git?rev=65e7c6d4692a40e1c49deffb3fb4a9a2c3555c5b#65e7c6d4692a40e1c49deffb3fb4a9a2c3555c5b"
+dependencies = [
+ "content-identity 0.5.0",
+ "rkyv",
+ "signal-frame 0.4.0",
 ]
 
 [[package]]
@@ -528,6 +634,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a063ea72381527c2a0561da9c80000ef822bdd7c3241b1cc1b12100e3df081ee"
 dependencies = [
  "ptr_meta",
+]
+
+[[package]]
+name = "raw-discovery"
+version = "0.4.0"
+source = "git+https://github.com/LiGoldragon/raw-discovery.git?rev=2d4e2e00f2821c4e2893fa96028cef0ac76e9644#2d4e2e00f2821c4e2893fa96028cef0ac76e9644"
+dependencies = [
+ "content-identity 0.3.0",
+ "rkyv",
+ "thiserror",
 ]
 
 [[package]]
@@ -579,6 +695,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-logos"
+version = "0.30.0"
+source = "git+https://github.com/LiGoldragon/rust-logos.git?rev=55501fddc2d7e154d71fff1659386cbbba712267#55501fddc2d7e154d71fff1659386cbbba712267"
+dependencies = [
+ "bs58",
+ "core-logos",
+ "name-table 0.1.0",
+ "name-table 0.3.0",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "raw-discovery",
+ "rkyv",
+ "signal-sema-translator",
+ "structural-codec",
+ "syn",
+ "thiserror",
+]
+
+[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -598,58 +734,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
-name = "schema-language"
-version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema-language.git?rev=6aae825d668e3f607a2754afa6b7d94e9f246c41#6aae825d668e3f607a2754afa6b7d94e9f246c41"
-dependencies = [
- "blake3",
- "nota",
- "rkyv",
- "schema-language-cc",
- "thiserror",
-]
-
-[[package]]
-name = "schema-language-cc"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/schema-language.git?rev=6aae825d668e3f607a2754afa6b7d94e9f246c41#6aae825d668e3f607a2754afa6b7d94e9f246c41"
-dependencies = [
- "nota",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn",
- "thiserror",
-]
-
-[[package]]
 name = "schema-rust"
-version = "0.7.0"
-source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=main#f3b4563163dd11ba1cbbcca8081701ab7830b8f5"
+version = "0.15.0"
+source = "git+https://github.com/LiGoldragon/schema-rust.git?rev=9e36587c85bd69357e9042729ba2df0052799756#9e36587c85bd69357e9042729ba2df0052799756"
 dependencies = [
- "nota",
- "prettyplease",
- "proc-macro2",
- "quote",
- "schema-language",
- "syn",
+ "core-ethos",
+ "core-nomos",
+ "rust-logos",
+ "sema-translator",
  "thiserror",
- "triad-runtime",
-]
-
-[[package]]
-name = "schema-rust"
-version = "0.7.0"
-source = "git+https://github.com/LiGoldragon/schema-rust.git?rev=255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4#255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4"
-dependencies = [
- "nota",
- "prettyplease",
- "proc-macro2",
- "quote",
- "schema-language",
- "syn",
- "thiserror",
- "triad-runtime",
 ]
 
 [[package]]
@@ -665,13 +758,25 @@ dependencies = [
 [[package]]
 name = "sema-engine"
 version = "0.11.2"
-source = "git+https://github.com/LiGoldragon/sema-engine.git?branch=main#72015662fc0f238d80ca6b82fe5a69817179163d"
+source = "git+https://github.com/LiGoldragon/sema-engine.git?rev=72015662fc0f238d80ca6b82fe5a69817179163d#72015662fc0f238d80ca6b82fe5a69817179163d"
 dependencies = [
  "blake3",
  "rkyv",
  "sema",
  "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234)",
  "signal-sema",
+ "thiserror",
+]
+
+[[package]]
+name = "sema-translator"
+version = "0.7.0"
+source = "git+https://github.com/LiGoldragon/sema-translator.git?rev=6b5499c0d25c801b56582fdcd8e021c3293a6d4d#6b5499c0d25c801b56582fdcd8e021c3293a6d4d"
+dependencies = [
+ "core-ethos",
+ "name-table 0.3.0",
+ "signal-sema-translator",
+ "structural-codec",
  "thiserror",
 ]
 
@@ -735,10 +840,21 @@ name = "signal-frame"
 version = "0.3.0"
 source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#fd7909d1497b7bb18751521387a1087cd9e7c91c"
 dependencies = [
- "nota",
  "paste",
  "rkyv",
  "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "thiserror",
+]
+
+[[package]]
+name = "signal-frame"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad#01676293a623d97b65e320d4138c4b480c6d5dad"
+dependencies = [
+ "dotos",
+ "paste",
+ "rkyv",
+ "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
  "thiserror",
 ]
 
@@ -754,9 +870,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-frame"
+version = "0.4.0"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=0786fbe8caf27552afcdd5deb85bc82ec6088337#0786fbe8caf27552afcdd5deb85bc82ec6088337"
+dependencies = [
+ "paste",
+ "rkyv",
+ "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?rev=0786fbe8caf27552afcdd5deb85bc82ec6088337)",
+ "thiserror",
+]
+
+[[package]]
 name = "signal-frame-macros"
 version = "0.1.1"
 source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#fd7909d1497b7bb18751521387a1087cd9e7c91c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "signal-frame-macros"
+version = "0.1.1"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad#01676293a623d97b65e320d4138c4b480c6d5dad"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "signal-frame-macros"
+version = "0.1.1"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=0786fbe8caf27552afcdd5deb85bc82ec6088337#0786fbe8caf27552afcdd5deb85bc82ec6088337"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -775,37 +922,50 @@ dependencies = [
 
 [[package]]
 name = "signal-harness"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-harness.git?branch=main#be3d398739a57c4e51968b976e26fcc59e6b0840"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/signal-harness.git?rev=bf9722f4fd7553b1821ce55dd04fa14efe4e7062#bf9722f4fd7553b1821ce55dd04fa14efe4e7062"
 dependencies = [
- "nota",
+ "dotos",
  "rkyv",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
  "signal-persona",
  "thiserror",
 ]
 
 [[package]]
 name = "signal-message"
-version = "0.7.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?branch=main#66490df271f5cebf7f505ac90877f8c105017ab7"
+version = "0.8.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git?rev=1c7e2e0209cd0e27ce01c290e3318a20905e1142#1c7e2e0209cd0e27ce01c290e3318a20905e1142"
 dependencies = [
- "nota",
+ "core-ethos",
+ "dotos",
+ "name-table 0.3.0",
  "rkyv",
- "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?rev=255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4)",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "rust-logos",
+ "schema-rust",
+ "sema-translator",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-sema-translator",
+ "structural-codec",
  "thiserror",
 ]
 
 [[package]]
 name = "signal-persona"
-version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/signal-persona.git?branch=main#04593c9a9afdb92d3c55cd908e8b8be3f7c30679"
+version = "0.3.0"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?rev=7d2568d420869aa0cded49c3c04cc0ac180e66a2#7d2568d420869aa0cded49c3c04cc0ac180e66a2"
 dependencies = [
- "nota",
+ "core-ethos",
+ "dotos",
+ "name-table 0.3.0",
  "rkyv",
- "schema-rust 0.7.0 (git+https://github.com/LiGoldragon/schema-rust.git?rev=255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4)",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "rust-logos",
+ "schema-rust",
+ "sema-translator",
+ "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-sema-translator",
+ "structural-codec",
+ "thiserror",
 ]
 
 [[package]]
@@ -814,6 +974,19 @@ version = "0.2.0"
 source = "git+https://github.com/LiGoldragon/signal-sema.git?rev=4f3a24e6677ab9d200672851016c4c760c1e36e8#4f3a24e6677ab9d200672851016c4c760c1e36e8"
 dependencies = [
  "rkyv",
+ "thiserror",
+]
+
+[[package]]
+name = "signal-sema-translator"
+version = "0.4.0"
+source = "git+https://github.com/LiGoldragon/signal-sema-translator.git?rev=3a26cb43f8ce7f9fe85da64d19aa55aa662943ce#3a26cb43f8ce7f9fe85da64d19aa55aa662943ce"
+dependencies = [
+ "blake3",
+ "name-table 0.3.0",
+ "protos",
+ "rkyv",
+ "signal-frame 0.4.0",
  "thiserror",
 ]
 
@@ -837,6 +1010,18 @@ checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
  "windows-sys",
+]
+
+[[package]]
+name = "structural-codec"
+version = "0.20.0"
+source = "git+https://github.com/LiGoldragon/structural-codec.git?rev=879d76f91facedd6d5cbca79e282260e1beb9478#879d76f91facedd6d5cbca79e282260e1beb9478"
+dependencies = [
+ "content-identity 0.3.0",
+ "name-table 0.3.0",
+ "raw-discovery",
+ "rkyv",
+ "thiserror",
 ]
 
 [[package]]
@@ -959,7 +1144,7 @@ dependencies = [
 [[package]]
 name = "triad-runtime"
 version = "0.6.1"
-source = "git+https://github.com/LiGoldragon/triad-runtime.git?branch=main#895d2e6b9023b2d901fe1ab20e6f8f431c6113b7"
+source = "git+https://github.com/LiGoldragon/triad-runtime.git?rev=895d2e6b9023b2d901fe1ab20e6f8f431c6113b7#895d2e6b9023b2d901fe1ab20e6f8f431c6113b7"
 dependencies = [
  "kameo",
  "rkyv",

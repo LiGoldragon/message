@@ -1,9 +1,10 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use crate::command::{InboxListing, Output};
+use dotos::DotosSource;
+use signal_message::schema::lib::{Output, z2VRQt};
+
 use crate::error::{Error, Result};
-use crate::surface::RecipientName;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputValidatorCommandLine {
@@ -51,7 +52,7 @@ impl OutputValidation {
 
     fn check(&self) -> Result<()> {
         let text = std::fs::read_to_string(&self.output_path)?;
-        let output = Output::from_nota(&text)?;
+        let output = DotosSource::new(&text).parse::<Output>()?;
         self.expectation.check(&output)
     }
 }
@@ -60,7 +61,7 @@ impl OutputValidation {
 enum OutputExpectation {
     SubmissionAccepted,
     InboxEntryPresent {
-        sender: Option<RecipientName>,
+        sender: Option<String>,
         body: String,
     },
     InboxBodyAbsent {
@@ -72,18 +73,13 @@ impl OutputExpectation {
     fn from_parser(parser: &mut OutputValidatorArguments<'_>) -> Result<Self> {
         match parser.required_word("expectation")?.as_str() {
             "expect-submission-accepted" => Ok(Self::SubmissionAccepted),
-            "expect-inbox-entry" => {
-                let sender = parser.optional_string_option("--sender")?;
-                let body = parser.required_string_option("--body")?;
-                Ok(Self::InboxEntryPresent {
-                    sender: sender.map(RecipientName::new),
-                    body,
-                })
-            }
-            "expect-inbox-body-absent" => {
-                let body = parser.required_string_option("--body")?;
-                Ok(Self::InboxBodyAbsent { body })
-            }
+            "expect-inbox-entry" => Ok(Self::InboxEntryPresent {
+                sender: parser.optional_string_option("--sender")?,
+                body: parser.required_string_option("--body")?,
+            }),
+            "expect-inbox-body-absent" => Ok(Self::InboxBodyAbsent {
+                body: parser.required_string_option("--body")?,
+            }),
             other => Err(Error::InvalidValidatorArgument {
                 detail: format!("unknown expectation {other:?}"),
             }),
@@ -92,76 +88,52 @@ impl OutputExpectation {
 
     fn check(&self, output: &Output) -> Result<()> {
         match self {
-            Self::SubmissionAccepted => self.check_submission_accepted(output),
+            Self::SubmissionAccepted => match output {
+                Output::SubmissionAccepted(_) => Ok(()),
+                other => Err(Error::OutputValidation {
+                    detail: format!("expected SubmissionAccepted, got {other:?}"),
+                }),
+            },
             Self::InboxEntryPresent { sender, body } => {
-                self.check_inbox_entry_present(output, sender.as_ref(), body)
+                let entries = Self::inbox_entries(output)?;
+                if entries.iter().any(|entry| {
+                    entry.field_2.payload() == body
+                        && sender
+                            .as_ref()
+                            .map(|expected| entry.field_1.payload() == expected)
+                            .unwrap_or(true)
+                }) {
+                    Ok(())
+                } else {
+                    Err(Error::OutputValidation {
+                        detail: format!(
+                            "missing inbox entry sender={sender:?} body={body:?}; output={output:?}"
+                        ),
+                    })
+                }
             }
-            Self::InboxBodyAbsent { body } => self.check_inbox_body_absent(output, body),
+            Self::InboxBodyAbsent { body } => {
+                let entries = Self::inbox_entries(output)?;
+                if entries.iter().any(|entry| entry.field_2.payload() == body) {
+                    Err(Error::OutputValidation {
+                        detail: format!(
+                            "inbox unexpectedly contained body={body:?}; output={output:?}"
+                        ),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
-    fn check_submission_accepted(&self, output: &Output) -> Result<()> {
+    fn inbox_entries(output: &Output) -> Result<&Vec<z2VRQt>> {
         match output {
-            Output::SubmissionAccepted(_) => Ok(()),
-            other => Err(Error::OutputValidation {
-                detail: format!("expected SubmissionAccepted, got {other:?}"),
-            }),
-        }
-    }
-
-    fn check_inbox_entry_present(
-        &self,
-        output: &Output,
-        sender: Option<&RecipientName>,
-        body: &str,
-    ) -> Result<()> {
-        let listing = RouterInboxOutput::from_output(output)?;
-        if listing.contains_entry(sender, body) {
-            return Ok(());
-        }
-        Err(Error::OutputValidation {
-            detail: format!(
-                "missing inbox entry sender={sender:?} body={body:?}; output={output:?}"
-            ),
-        })
-    }
-
-    fn check_inbox_body_absent(&self, output: &Output, body: &str) -> Result<()> {
-        let listing = RouterInboxOutput::from_output(output)?;
-        if listing.contains_body(body) {
-            return Err(Error::OutputValidation {
-                detail: format!("inbox unexpectedly contained body={body:?}; output={output:?}"),
-            });
-        }
-        Ok(())
-    }
-}
-
-struct RouterInboxOutput<'output> {
-    listing: &'output InboxListing,
-}
-
-impl<'output> RouterInboxOutput<'output> {
-    fn from_output(output: &'output Output) -> Result<Self> {
-        match output {
-            Output::InboxListing(listing) => Ok(Self { listing }),
+            Output::InboxListing(listing) => Ok(listing.field_0.payload()),
             other => Err(Error::OutputValidation {
                 detail: format!("expected InboxListing, got {other:?}"),
             }),
         }
-    }
-
-    fn contains_entry(&self, sender: Option<&RecipientName>, body: &str) -> bool {
-        self.listing.iter().any(|entry| {
-            entry.body == body
-                && sender
-                    .map(|expected_sender| entry.sender == *expected_sender)
-                    .unwrap_or(true)
-        })
-    }
-
-    fn contains_body(&self, body: &str) -> bool {
-        self.listing.iter().any(|entry| entry.body == body)
     }
 }
 
@@ -178,65 +150,65 @@ impl<'arguments> OutputValidatorArguments<'arguments> {
         }
     }
 
-    fn required_path_option(&mut self, name: &str) -> Result<PathBuf> {
-        self.expect_option_name(name)?;
-        self.required_value(name)
+    fn required_word(&mut self, description: &str) -> Result<String> {
+        let Some(argument) = self.arguments.get(self.index) else {
+            return Err(Error::InvalidValidatorArgument {
+                detail: format!("missing {description}"),
+            });
+        };
+        self.index += 1;
+        argument
+            .clone()
+            .into_string()
+            .map_err(|_| Error::InvalidValidatorArgument {
+                detail: format!("{description} is not UTF-8"),
+            })
     }
 
-    fn required_string_option(&mut self, name: &str) -> Result<String> {
-        self.expect_option_name(name)?;
-        self.required_word(name)
+    fn required_path_option(&mut self, option: &str) -> Result<PathBuf> {
+        self.expect_option(option)?;
+        Ok(PathBuf::from(self.required_word(option)?))
     }
 
-    fn optional_string_option(&mut self, name: &str) -> Result<Option<String>> {
-        if self.peek_word().as_deref() == Some(name) {
+    fn required_string_option(&mut self, option: &str) -> Result<String> {
+        self.expect_option(option)?;
+        self.required_word(option)
+    }
+
+    fn optional_string_option(&mut self, option: &str) -> Result<Option<String>> {
+        if self
+            .arguments
+            .get(self.index)
+            .and_then(|value| value.to_str())
+            == Some(option)
+        {
             self.index += 1;
-            return self.required_word(name).map(Some);
+            return self.required_word(option).map(Some);
         }
         Ok(None)
     }
 
-    fn required_word(&mut self, name: &str) -> Result<String> {
-        self.required_value(name)?
-            .into_os_string()
-            .into_string()
-            .map_err(|got| Error::InvalidValidatorArgument {
-                detail: format!("{name} must be UTF-8, got {got:?}"),
+    fn expect_option(&mut self, option: &str) -> Result<()> {
+        let found = self.required_word(option)?;
+        if found == option {
+            Ok(())
+        } else {
+            Err(Error::InvalidValidatorArgument {
+                detail: format!("expected {option}, got {found:?}"),
             })
+        }
     }
 
     fn expect_finished(&self) -> Result<()> {
-        if let Some(extra) = self.arguments.get(self.index) {
-            return Err(Error::InvalidValidatorArgument {
-                detail: format!("unexpected argument {:?}", extra.to_string_lossy()),
-            });
+        if self.index == self.arguments.len() {
+            Ok(())
+        } else {
+            Err(Error::InvalidValidatorArgument {
+                detail: format!(
+                    "unexpected trailing arguments: {:?}",
+                    &self.arguments[self.index..]
+                ),
+            })
         }
-        Ok(())
-    }
-
-    fn expect_option_name(&mut self, name: &str) -> Result<()> {
-        let got = self.required_word("option")?;
-        if got == name {
-            return Ok(());
-        }
-        Err(Error::InvalidValidatorArgument {
-            detail: format!("expected option {name}, got {got:?}"),
-        })
-    }
-
-    fn required_value(&mut self, name: &str) -> Result<PathBuf> {
-        let Some(value) = self.arguments.get(self.index) else {
-            return Err(Error::InvalidValidatorArgument {
-                detail: format!("missing value for {name}"),
-            });
-        };
-        self.index += 1;
-        Ok(PathBuf::from(value))
-    }
-
-    fn peek_word(&self) -> Option<String> {
-        self.arguments
-            .get(self.index)
-            .map(|value| value.to_string_lossy().to_string())
     }
 }

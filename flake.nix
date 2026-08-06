@@ -1,5 +1,5 @@
 {
-  description = "Message NOTA CLI and ingress daemon.";
+  description = "Dotos Message surface, durable messenger, and ingress daemon.";
 
   inputs = {
     nixpkgs.url = "github:LiGoldragon/nixpkgs?ref=main";
@@ -34,10 +34,8 @@
             "rust-src"
           ];
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-          schemaFilter = path: type:
-            type == "regular" && pkgs.lib.hasSuffix ".schema" path;
           sourceFilter = path: type:
-            type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);
+            type == "directory" || (craneLib.filterCargoSources path type);
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
             filter = sourceFilter;
@@ -115,12 +113,7 @@
             // {
               inherit (context) cargoArtifacts;
               pname = "message";
-              # The text-edge binaries (message, meta-message,
-              # message-write-configuration, message-validate-output) are
-              # gated behind nota-text; without it the package ships only
-              # message-daemon and cannot be configured or driven. The
-              # deployable package carries all five.
-              cargoExtraArgs = "--features nota-text";
+              cargoExtraArgs = "--features dotos-text";
               meta.mainProgram = "message";
             }
           );
@@ -128,7 +121,7 @@
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoExtraArgs = "--features nota-text";
+              cargoExtraArgs = "--features dotos-text";
               pname = "message-text";
               meta.mainProgram = "message";
             }
@@ -165,45 +158,33 @@
               inherit (context) cargoArtifacts;
             }
           );
+          binary-only = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--all-targets --no-default-features";
+            }
+          );
           message-runtime-cannot-reference-retired-terminal-brand =
             context.sourceConstraintCheck "message-runtime-cannot-reference-retired-terminal-brand" ./scripts/message-runtime-cannot-reference-retired-terminal-brand;
           message-component-cannot-own-local-ledger =
             context.sourceConstraintCheck "message-component-cannot-own-local-ledger" ./scripts/message-component-cannot-own-local-ledger;
           message-daemon-reads-no-control-plane-environment-variables =
             context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
-          message-nexus-loop-is-generated =
-            context.sourceConstraintCheck "message-nexus-loop-is-generated" ./scripts/message-nexus-loop-is-generated;
-          # The emitted daemon spine over a real socket: argv config load ->
-          # single working-socket bind -> signal-frame decode -> Nexus decide ->
-          # encode -> wire reply. The already-stamped submission replies
-          # Unimplemented straight from the Nexus decision, no router needed.
-          message-emitted-daemon-replies-unimplemented-for-already-stamped-submission =
+          message-consumes-producer-contract-directly =
+            context.cargoTestFile "contract_convergence"
+              "component_executes_the_producer_contract_by_identity";
+          message-has-no-structural-ownership-inputs =
+            context.cargoTestFile "contract_convergence"
+              "component_has_no_structural_ownership_inputs";
+          message-daemon-executes-both-producer-contracts =
             context.cargoTestFileWithFeatures "process_boundary"
-              "daemon_replies_unimplemented_for_already_stamped_submission_over_real_socket"
-              "nota-text";
-          # Owner-side meta CLI over the meta socket: one meta-signal-message
-          # Configure request receives typed skeleton-honest unimplemented.
-          message-meta-cli-reaches-owner-policy-socket =
-            context.cargoTestFileWithFeatures "process_boundary"
-              "meta_cli_reaches_owner_policy_socket_and_gets_typed_unimplemented_reply"
-              "nota-text";
-          # The Nexus forward-to-router effect against a stub router: a submit is
-          # stamped from the configured owner and forwarded, and the router
-          # acceptance is translated back into the Signal output.
-          message-daemon-stamps-owner-submission-to-router =
-            context.cargoTestFile "forward_to_router"
-              "submit_is_stamped_with_configured_harness_instance_when_the_peer_uid_matches_the_owner";
-          # A non-owner peer is stamped from SO_PEERCRED as NonOwnerUser(uid),
-          # proving the request-scoped generated-runner hook still sees the
-          # connection context.
-          message-daemon-stamps-non-owner-submission-to-router =
-            context.cargoTestFile "forward_to_router"
-              "submit_from_a_non_owner_peer_is_stamped_with_a_non_owner_origin";
-          # The router-unreachable fallback yields a typed Error output rather
-          # than a hard failure.
-          message-router-unreachable-yields-typed-error =
-            context.cargoTestFile "forward_to_router"
-              "router_unreachable_yields_typed_error_output";
+              "daemon_executes_both_producer_owned_contracts"
+              "dotos-text";
+          message-pty-delivery-speaks-producer-dotos =
+            context.cargoTestFileWithFeatures "pty_end_to_end"
+              "pty_leg_sends_the_producer_inbox_entry_in_dotos"
+              "dotos-text";
         }
       );
 

@@ -1,104 +1,153 @@
-//! Message's daemon hooks — the only daemon code message hand-writes.
-//!
-//! The uniform daemon skeleton (the `DaemonCommand` argv parsing, the async
-//! decode -> execute -> encode spine, the async task-backed listener, and the
-//! `ExitReport`-based entry) is EMITTED into `src/schema/daemon.rs` by
-//! schema-rust's daemon emitter, driven by the `NexusDaemonShape` in
-//! `build.rs`. Message fills only the record-1488 escape hatches through `impl
-//! ComponentDaemon for MessageDaemon`: how to load its `Configuration`, how to
-//! build its `MessageEngine` (`build_runtime`), how one working `Input`
-//! becomes one `Output` (`handle_working_input`), and how the owner meta socket
-//! returns typed skeleton-honest replies until live reconfiguration is wired.
-//! The `messenger.sema` store opens inside `build_runtime`.
+//! Two-listener messenger daemon over the canonical ordinary and meta frames.
 
+use std::fmt::{Display, Formatter};
+
+use signal_message::schema::lib::ContractMarker;
 use thiserror::Error;
-use triad_runtime::{AcceptedConnection, EngineRequestError, FrameError};
-
-use crate::{
-    config::{Configuration, ConfigurationError},
-    engine::MessageEngine,
-    error::Error as MessageError,
-    meta::{MetaMessageFrameCodec, MetaMessageFrameDecode},
-    schema::{
-        daemon::ComponentDaemon,
-        signal::{Input, Output, SignalFrameError},
-    },
+use triad_runtime::{
+    AcceptedConnection, AsyncListenerSocket, AsyncMultiConnectionRuntime, AsyncMultiListenerDaemon,
+    AsyncMultiListenerDaemonError, FrameBody, LengthPrefixedCodec, RequestErrorLog,
 };
 
-/// The type-level selector for message's emitted daemon. It carries no runtime
-/// data — it is the marker the emitted `DaemonCommand<MessageDaemon>` and the
-/// generated runtime dispatch on, selecting message's `Configuration` /
-/// `Engine` / `Error` through the `ComponentDaemon` associated types.
-#[derive(Debug)]
-pub struct MessageDaemon;
+use crate::{
+    Configuration, ConfigurationError, Error as MessageError, MessageEngine,
+    meta::MetaMessageFrameCodec,
+};
 
-/// Message's daemon error: the engine-facing variants the emitted spine needs
-/// (`From<FrameError>` / `From<SignalFrameError>`) plus message's domain error.
-/// The emitted `DaemonError<MessageDaemon>` wraps this under its `Component`
-/// arm. The `EngineRequest` arm absorbs the engine-actor mailbox-failure path
-/// the emitted runtime translates through `From<EngineRequestError>` (actor not
-/// running, stopped before replying, mailbox full, request timed out, or a
-/// startup panic).
-#[derive(Debug, Error)]
-pub enum MessageDaemonError {
-    #[error("daemon frame error: {0}")]
-    Frame(#[from] FrameError),
-
-    #[error("daemon signal frame error: {0}")]
-    SignalFrame(#[from] SignalFrameError),
-
-    #[error("daemon engine actor error: {0}")]
-    EngineRequest(#[from] EngineRequestError),
-
-    #[error("daemon component error: {0}")]
-    Component(#[from] MessageError),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ListenerRole {
+    Ordinary,
+    Owner,
 }
 
-impl ComponentDaemon for MessageDaemon {
-    type Configuration = Configuration;
-    type ConfigurationError = ConfigurationError;
-    type Engine = MessageEngine;
+impl Display for ListenerRole {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ordinary => formatter.write_str("ordinary"),
+            Self::Owner => formatter.write_str("owner"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MessageDaemon {
+    configuration: Configuration,
+}
+
+impl MessageDaemon {
+    pub fn new(configuration: Configuration) -> Self {
+        Self { configuration }
+    }
+
+    pub fn from_configuration_path(path: &std::path::Path) -> Result<Self, MessageDaemonError> {
+        Ok(Self::new(Configuration::from_binary_path(path)?))
+    }
+
+    pub fn run(self) -> Result<(), MessageDaemonError> {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(MessageDaemonError::Runtime)?
+            .block_on(self.run_async())
+    }
+
+    async fn run_async(self) -> Result<(), MessageDaemonError> {
+        let sockets = vec![
+            AsyncListenerSocket::new(
+                ListenerRole::Ordinary,
+                self.configuration.socket_path().to_path_buf(),
+            )
+            .with_socket_mode(self.configuration.socket_mode()),
+            AsyncListenerSocket::new(
+                ListenerRole::Owner,
+                self.configuration.meta_socket_path().to_path_buf(),
+            )
+            .with_socket_mode(self.configuration.meta_socket_mode()),
+        ];
+        let runtime = MessageRuntime {
+            engine: tokio::sync::Mutex::new(MessageEngine::from_configuration(
+                &self.configuration,
+            )?),
+            ordinary_codec: LengthPrefixedCodec::default(),
+            meta_codec: MetaMessageFrameCodec::default(),
+        };
+        AsyncMultiListenerDaemon::new(sockets, runtime, RequestErrorLog::new("message-daemon"))
+            .run()
+            .await
+            .map_err(MessageDaemonError::from_daemon)
+    }
+}
+
+struct MessageRuntime {
+    engine: tokio::sync::Mutex<MessageEngine>,
+    ordinary_codec: LengthPrefixedCodec,
+    meta_codec: MetaMessageFrameCodec,
+}
+
+impl AsyncMultiConnectionRuntime for MessageRuntime {
+    type Listener = ListenerRole;
     type Error = MessageDaemonError;
 
-    const PROCESS_NAME: &'static str = "message-daemon";
-
-    fn load_configuration(
-        path: &std::path::Path,
-    ) -> Result<Self::Configuration, Self::ConfigurationError> {
-        Configuration::from_binary_path(path)
-    }
-
-    fn build_runtime(configuration: &Self::Configuration) -> Result<Self::Engine, Self::Error> {
-        Ok(MessageEngine::from_configuration(configuration)?)
-    }
-
-    async fn handle_working_input(
-        engine: &mut Self::Engine,
-        input: Input,
-        connection: &triad_runtime::ConnectionContext,
-    ) -> Result<Output, Self::Error> {
-        Ok(engine.handle(input, connection).await?)
-    }
-
-    async fn handle_meta_connection(
-        _engine: &mut Self::Engine,
+    async fn handle_connection(
+        &self,
+        listener: Self::Listener,
         mut connection: AcceptedConnection,
     ) -> Result<(), Self::Error> {
-        let codec = MetaMessageFrameCodec::default();
-        let first_frame = codec.read_frame_bytes(connection.stream_mut()).await?;
-        match codec.decode_request_frame(&first_frame) {
-            Ok((exchange, operation)) => {
-                codec
+        match listener {
+            ListenerRole::Ordinary => {
+                let body = self
+                    .ordinary_codec
+                    .read_body_async(connection.stream_mut())
+                    .await?;
+                let (exchange, input) = ContractMarker::decode_single_request(body.bytes())?;
+                let context = *connection.context();
+                let output = self.engine.lock().await.handle(input, &context).await?;
+                self.ordinary_codec
+                    .write_body_async(
+                        connection.stream_mut(),
+                        &FrameBody::new(output.encode_reply_frame(exchange)?),
+                    )
+                    .await?;
+                Ok(())
+            }
+            ListenerRole::Owner => {
+                let (exchange, operation) = self
+                    .meta_codec
+                    .read_request(connection.stream_mut())
+                    .await?;
+                self.meta_codec
                     .write_unimplemented_reply(connection.stream_mut(), exchange, operation)
                     .await?;
                 Ok(())
             }
-            Err(MetaMessageFrameDecode::NotMeta) => {
-                Err(MessageError::UnexpectedMetaFrame("expected meta-signal-message frame").into())
-            }
-            Err(MetaMessageFrameDecode::UnexpectedFrame(message)) => {
-                Err(MessageError::UnexpectedMetaFrame(message).into())
-            }
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MessageDaemonError {
+    #[error("configuration: {0}")]
+    Configuration(#[from] ConfigurationError),
+    #[error("runtime construction: {0}")]
+    Runtime(std::io::Error),
+    #[error("listener runtime: {0}")]
+    Listener(String),
+    #[error("component: {0}")]
+    Component(#[from] MessageError),
+    #[error("ordinary frame: {0}")]
+    OrdinaryFrame(#[from] signal_message::schema::lib::SignalFrameError),
+    #[error("meta frame: {0}")]
+    MetaFrame(#[from] meta_signal_message::schema::lib::SignalFrameError),
+    #[error("transport frame: {0}")]
+    TransportFrame(#[from] triad_runtime::FrameError),
+}
+
+impl MessageDaemonError {
+    fn from_daemon(error: AsyncMultiListenerDaemonError<Self>) -> Self {
+        match error {
+            AsyncMultiListenerDaemonError::Listener(error) => Self::Listener(error.to_string()),
+            AsyncMultiListenerDaemonError::Start(error)
+            | AsyncMultiListenerDaemonError::Stop(error) => error,
         }
     }
 }

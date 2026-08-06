@@ -1,30 +1,21 @@
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "nota-text")]
-use std::{fs, io::Write};
+#[cfg(feature = "dotos-text")]
+use std::io::Write;
 
-#[cfg(feature = "nota-text")]
-use meta_signal_message::Request as MetaMessageRequest;
-use meta_signal_message::{
-    Frame as MetaMessageFrame, FrameBody as MetaMessageFrameBody, MetaMessageReply,
-    Operation as MetaMessageOperation, Reason, RequestUnimplemented, UnimplementedOperationKind,
-    UnimplementedReason,
+#[cfg(feature = "dotos-text")]
+use dotos::{DotosEncode, DotosSource};
+use meta_signal_message::schema::lib::{
+    ContractMarker, Frame, FrameBody, SignalFrameError, z2VKyZ, z2VM7X, z2VR6z, z2VUdf, z2VY5P,
+    z2VYLc, z2Vc2e,
 };
-#[cfg(feature = "nota-text")]
-use nota::{NotaEncode, NotaSource};
-use signal_frame::{
-    ExchangeIdentifier, ExchangeLane, LaneSequence, NonEmpty, Reply, RequestPayload, SessionEpoch,
-    SubReply,
-};
-use tokio::io::AsyncWriteExt;
+use signal_frame::{ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply};
 use tokio::net::UnixStream;
-#[cfg(feature = "nota-text")]
-use triad_runtime::{ComponentArgument, ComponentCommand};
+use triad_runtime::{FrameBody as TransportBody, LengthPrefixedCodec, MaximumFrameLength};
 
-use crate::frame_bytes::LengthPrefixedFrameBytes;
 use crate::{Error, Result};
 
-#[cfg(feature = "nota-text")]
+#[cfg(feature = "dotos-text")]
 const DEFAULT_META_MESSAGE_SOCKET: &str = "/tmp/meta-message.sock";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,113 +37,65 @@ impl MetaMessageEndpoint {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MetaMessageFrameCodec {
-    maximum_frame_bytes: usize,
-}
-
-#[derive(Debug)]
-pub enum MetaMessageFrameDecode {
-    NotMeta,
-    UnexpectedFrame(&'static str),
+    transport: LengthPrefixedCodec,
 }
 
 impl MetaMessageFrameCodec {
     pub const fn new(maximum_frame_bytes: usize) -> Self {
         Self {
-            maximum_frame_bytes,
+            transport: LengthPrefixedCodec::new(MaximumFrameLength::new(maximum_frame_bytes)),
         }
     }
 
-    fn synthetic_exchange(&self) -> ExchangeIdentifier {
-        let _codec_configuration = self.maximum_frame_bytes;
+    fn connector_exchange(&self) -> ExchangeIdentifier {
         ExchangeIdentifier::new(
-            SessionEpoch::new(0),
+            SessionEpoch::new(1),
             ExchangeLane::Connector,
             LaneSequence::first(),
         )
     }
 
-    pub async fn read_frame_bytes(
-        &self,
-        stream: &mut UnixStream,
-    ) -> Result<LengthPrefixedFrameBytes> {
-        LengthPrefixedFrameBytes::read_from_stream(stream, self.maximum_frame_bytes).await
+    pub async fn read_frame(&self, stream: &mut UnixStream) -> Result<Frame> {
+        let body = self.transport.read_body_async(stream).await?;
+        Ok(ContractMarker::decode_frame(body.bytes())?)
     }
 
-    pub async fn read_frame(&self, stream: &mut UnixStream) -> Result<MetaMessageFrame> {
-        let bytes = self.read_frame_bytes(stream).await?;
-        Ok(MetaMessageFrame::decode_length_prefixed(bytes.as_slice())?)
-    }
-
-    pub async fn write_frame(
-        &self,
-        stream: &mut UnixStream,
-        frame: &MetaMessageFrame,
-    ) -> Result<()> {
-        let bytes = frame.encode_length_prefixed()?;
-        stream.write_all(bytes.as_slice()).await?;
-        stream.flush().await?;
+    async fn write_encoded(&self, stream: &mut UnixStream, bytes: Vec<u8>) -> Result<()> {
+        self.transport
+            .write_body_async(stream, &TransportBody::new(bytes))
+            .await?;
         Ok(())
     }
 
-    pub fn request_frame(&self, operation: MetaMessageOperation) -> MetaMessageFrame {
-        MetaMessageFrame::new(MetaMessageFrameBody::Request {
-            exchange: self.synthetic_exchange(),
-            request: operation.into_request(),
-        })
-    }
-
-    pub fn reply_frame(
+    pub async fn read_request(
         &self,
-        exchange: ExchangeIdentifier,
-        reply: MetaMessageReply,
-    ) -> MetaMessageFrame {
-        MetaMessageFrame::new(MetaMessageFrameBody::Reply {
-            exchange,
-            reply: Reply::committed(NonEmpty::single(SubReply::Ok(reply))),
-        })
-    }
-
-    pub fn decode_request_frame(
-        &self,
-        bytes: &LengthPrefixedFrameBytes,
-    ) -> std::result::Result<(ExchangeIdentifier, MetaMessageOperation), MetaMessageFrameDecode>
-    {
-        let frame = MetaMessageFrame::decode_length_prefixed(bytes.as_slice())
-            .map_err(|_error| MetaMessageFrameDecode::NotMeta)?;
-        match frame.into_body() {
-            MetaMessageFrameBody::Request { exchange, request } => {
-                let mut operations = request.payloads.into_vec();
-                if operations.len() != 1 {
-                    return Err(MetaMessageFrameDecode::UnexpectedFrame(
-                        "expected one meta message operation",
-                    ));
-                }
-                Ok((exchange, operations.remove(0)))
-            }
-            _ => Err(MetaMessageFrameDecode::UnexpectedFrame(
-                "expected meta message request operation",
-            )),
-        }
+        stream: &mut UnixStream,
+    ) -> Result<(ExchangeIdentifier, z2Vc2e)> {
+        let body = self.transport.read_body_async(stream).await?;
+        Ok(ContractMarker::decode_single_request(body.bytes())?)
     }
 
     pub async fn write_unimplemented_reply(
         &self,
         stream: &mut UnixStream,
         exchange: ExchangeIdentifier,
-        operation: MetaMessageOperation,
-    ) -> Result<MetaMessageReply> {
-        let reply = MetaMessageReply::RequestUnimplemented(RequestUnimplemented {
-            unimplemented_operation_kind: UnimplementedOperationKind::new(operation.kind()),
-            reason: Reason::new(UnimplementedReason::NotBuiltYet),
+        operation: z2Vc2e,
+    ) -> Result<z2VYLc> {
+        let operation_kind = match operation {
+            z2Vc2e::z2VWNS(_) => z2VY5P::z2Vdbu,
+        };
+        let reply = z2VYLc::z2Vc4F(z2VR6z {
+            field_0: z2VUdf::new(operation_kind),
+            field_1: z2VKyZ::new(z2VM7X::z2VKwC),
         });
-        let frame = self.reply_frame(exchange, reply.clone());
-        self.write_frame(stream, &frame).await?;
+        self.write_encoded(stream, reply.clone().encode_reply_frame(exchange)?)
+            .await?;
         Ok(reply)
     }
 
-    pub fn reply_from_frame(&self, frame: MetaMessageFrame) -> Result<MetaMessageReply> {
+    pub fn reply_from_frame(&self, frame: Frame) -> Result<z2VYLc> {
         match frame.into_body() {
-            MetaMessageFrameBody::Reply { reply, .. } => match reply {
+            FrameBody::Reply { reply, .. } => match reply {
                 Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
                     SubReply::Ok(payload) => Ok(payload),
                     other => Err(Error::UnexpectedMetaSubReply(format!("{other:?}"))),
@@ -163,6 +106,16 @@ impl MetaMessageFrameCodec {
                 "expected meta message reply operation",
             )),
         }
+    }
+
+    async fn submit(&self, stream: &mut UnixStream, operation: z2Vc2e) -> Result<z2VYLc> {
+        self.write_encoded(
+            stream,
+            operation.encode_request_frame(self.connector_exchange())?,
+        )
+        .await?;
+        let frame = self.read_frame(stream).await?;
+        self.reply_from_frame(frame)
     }
 }
 
@@ -185,33 +138,30 @@ impl MetaMessageClient {
         }
     }
 
-    pub async fn submit(&self, operation: MetaMessageOperation) -> Result<MetaMessageReply> {
+    pub async fn submit(&self, operation: z2Vc2e) -> Result<z2VYLc> {
         let mut stream = UnixStream::connect(self.endpoint.as_path()).await?;
-        let frame = self.codec.request_frame(operation);
-        self.codec.write_frame(&mut stream, &frame).await?;
-        let reply = self.codec.read_frame(&mut stream).await?;
-        self.codec.reply_from_frame(reply)
+        self.codec.submit(&mut stream, operation).await
     }
 }
 
-#[cfg(feature = "nota-text")]
+#[cfg(feature = "dotos-text")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaMessageCommand {
-    command: ComponentCommand,
+    arguments: Vec<String>,
     environment: MetaMessageCommandEnvironment,
 }
 
-#[cfg(feature = "nota-text")]
+#[cfg(feature = "dotos-text")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaMessageCommandEnvironment {
     socket: String,
 }
 
-#[cfg(feature = "nota-text")]
+#[cfg(feature = "dotos-text")]
 impl MetaMessageCommand {
     pub fn from_env() -> Self {
         Self {
-            command: ComponentCommand::from_environment(),
+            arguments: std::env::args().skip(1).collect(),
             environment: MetaMessageCommandEnvironment::from_process(),
         }
     }
@@ -236,22 +186,30 @@ impl MetaMessageCommand {
         Argument: Into<String>,
     {
         Self {
-            command: ComponentCommand::from_arguments(arguments),
+            arguments: arguments.into_iter().map(Into::into).collect(),
             environment,
         }
     }
 
     pub async fn run(self, mut output: impl Write) -> Result<()> {
-        let operation = MetaMessageOperationSource::from_command(self.command)?.into_operation()?;
+        let [text] = self.arguments.as_slice() else {
+            return Err(Error::InvalidMetaArgument {
+                detail: format!(
+                    "expected exactly one inline Dotos value, received {}",
+                    self.arguments.len()
+                ),
+            });
+        };
+        let operation = DotosSource::new(text).parse::<z2Vc2e>()?;
         let reply = MetaMessageClient::new(self.environment.endpoint())
             .submit(operation)
             .await?;
-        writeln!(output, "{}", reply.to_nota())?;
+        writeln!(output, "{}", reply.to_dotos())?;
         Ok(())
     }
 }
 
-#[cfg(feature = "nota-text")]
+#[cfg(feature = "dotos-text")]
 impl MetaMessageCommandEnvironment {
     pub fn new(socket: impl Into<String>) -> Self {
         Self {
@@ -271,37 +229,8 @@ impl MetaMessageCommandEnvironment {
     }
 }
 
-#[cfg(feature = "nota-text")]
-struct MetaMessageOperationSource {
-    text: String,
-}
-
-#[cfg(feature = "nota-text")]
-impl MetaMessageOperationSource {
-    fn from_command(command: ComponentCommand) -> Result<Self> {
-        match command.nota_argument()? {
-            ComponentArgument::InlineNota(argument) => Ok(Self::new(argument.into_string())),
-            ComponentArgument::NotaFile(file) => {
-                let path = file.into_path();
-                fs::read_to_string(&path)
-                    .map(Self::new)
-                    .map_err(|source| Error::ReadNotaFile { path, source })
-            }
-            ComponentArgument::SignalFile(file) => {
-                let path = file.into_path();
-                fs::read_to_string(&path)
-                    .map(Self::new)
-                    .map_err(|source| Error::ReadNotaFile { path, source })
-            }
-        }
-    }
-
-    fn new(text: String) -> Self {
-        Self { text }
-    }
-
-    fn into_operation(self) -> Result<MetaMessageOperation> {
-        let request = NotaSource::new(&self.text).parse::<MetaMessageRequest>()?;
-        Ok(request.payloads().head().clone())
+impl From<SignalFrameError> for Error {
+    fn from(error: SignalFrameError) -> Self {
+        Self::MetaMessageFrame(error)
     }
 }

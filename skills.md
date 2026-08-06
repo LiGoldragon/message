@@ -1,39 +1,15 @@
-# message skill
+# Message work
 
-Work here when the change concerns the `message` CLI, `message-daemon`,
-`meta-message` CLI, NOTA message projection, message ingress, or real harness
-message tests.
+Work here for messenger behavior: ordinary or owner Dotos clients, the
+two-listener daemon, provenance, durable message state, delivery, and their
+proofs.
 
-Rules for work here:
+The public Types belong to the exact `signal-message` and
+`meta-signal-message` producer heads. Use those Types directly. Do not create a
+friendlier component vocabulary, structural generator, local frame model,
+compatibility reader, or retired text surface.
 
-- Keep the repo at the human/harness text boundary. Message binary records
-  belong in `signal-message`.
-- `message` sends length-prefixed rkyv Signal frames to
-  `message-daemon` through `MESSAGE_SOCKET` and prints one NOTA
-  reply projection.
-- `meta-message` sends one `meta-signal-message` request to the owner meta
-  socket through `MESSAGE_META_SOCKET` and prints one NOTA reply projection.
-- `message-daemon` binds the supervised `message.sock`, stamps
-  `MessageSubmission` frames into `StampedMessageSubmission`, forwards typed
-  frames to `router`, binds the owner meta socket, and owns no durable message
-  state.
-- The component must not write local message ledgers, pending logs, or
-  actor-registration files. Router-owned Sema tables are the durable message
-  owner.
-- Do not trust sender fields written by a model. The component does not include
-  a sender field, read a local actor index, resolve process ancestry, or
-  construct in-band proof material. Origin stamping is typed data minted from
-  SO_PEERCRED plus daemon configuration, not a string field from the caller.
-  A trusted owner peer stamps the configured local harness instance; other
-  peers stamp `NonOwnerUser(uid)`.
-- Supported input variants are `Send` and `Inbox`. Registry, listing, retry,
-  tail, and delivery operations belong to router, mind, harness, or terminal
-  surfaces as their contracts land.
-- Do not add a local ledger fallback, terminal endpoint vocabulary, or router
-  line-protocol fallback here.
-- Rebuild stateful harness workflows through `router`, `harness`,
-  `terminal`, and typed Signal contracts.
-
-Use component-to-component rkyv frames through relation-specific Signal
-contracts when the CLI or daemon crosses into router/store territory. Use NOTA
-only at CLI, harness, and audit projection boundaries.
+The component owns `messenger.sema`: a bounded ledger plus inbox, thread,
+agent-registry, and delivery-outbox arrangements. Preserve typed fail-closed
+store versioning. Public text is Dotos; component transport is the producer's
+bound Signal frame inside Triad's length prefix.

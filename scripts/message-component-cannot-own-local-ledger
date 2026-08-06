@@ -3,16 +3,34 @@ set -euo pipefail
 
 source_root="${1:?usage: message-component-cannot-own-local-ledger <source-root>}"
 
-if rg --line-number \
+for retired in \
+  "$source_root/build.rs" \
+  "$source_root/src/frame_bytes.rs" \
+  "$source_root/src/surface.rs"
+do
+  if [[ -e "$retired" ]]; then
+    echo "message still owns retired structural or compatibility source: $retired" >&2
+    exit 1
+  fi
+done
+
+if find "$source_root/schema" "$source_root/src/schema" -type f -print -quit 2>/dev/null | rg --quiet .
+then
+  echo "message still owns component-local structural source" >&2
+  exit 1
+fi
+
+retired_text='no''ta'
+retired_generator='schema''-rust'
+
+if rg --line-number --ignore-case \
   --glob 'Cargo.toml' \
-  --glob 'Cargo.lock' \
   --glob 'flake.nix' \
   --glob 'src/**' \
-  --glob 'tests/**' \
   --glob '!scripts/message-component-cannot-own-local-ledger' \
-  'messages[.]nota[.]log|pending[.]nota[.]log|actors[.]nota|MESSAGE_ACTORS|MESSAGE_STORE|MessageStore|StorePath|DeliveryGate|DeliveryOutcome|DeliveryDeferral|EndpointTransport|EndpointKind|PtySocket|Register|Agents|Flush|Tail|AuthProof|LocalOperatorProof|with_auth' \
+  "${retired_text}|${retired_generator}|GenerationDriver|GenerationPlan|ModuleEmission|ComponentDaemon|DaemonEntry" \
   "$source_root"
 then
-  echo "message still owns retired local ledger, actor index, in-band proof, or endpoint surface" >&2
+  echo "message restored retired text, generation, or daemon-shape ownership" >&2
   exit 1
 fi

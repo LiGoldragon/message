@@ -4,7 +4,7 @@
 //! durable consumer view of agent identity plus the local delivery registry.
 //! The ORCHESTRATOR is the mint (psyche-ruled 2026-07-17): identities arrive
 //! already allocated, and the registry seats them. The stored record IS the
-//! emitted wire noun (`AgentRegistryEntry`): agent identifier, endpoint
+//! emitted wire noun (`z2Vc72`): agent identifier, endpoint
 //! selection, resume identity, death mark, and an optional pid + start-time
 //! process pin (`None` until the allocated process launches; the start time
 //! disambiguates a recycled pid). This is the durability the router's
@@ -27,17 +27,17 @@ use sema_engine::{
     VersioningPolicy,
 };
 
-use crate::schema::signal::{
-    AgentDeathMark, AgentEndpointBinding, AgentIdentityAssignment, AgentRegistryEntry,
-    AgentRegistryQuery, AssignedAgentIdentity, BoundAgentEndpoint, EndpointSelection,
-    HarnessProcessPin, IdentityProvenance, InboxEntry, InboxQuery, InboxRecord, LedgerDraft,
-    LedgerHead, LedgerRecord, MessageCount, MessageSlot, NextMessageSlot, OldestMessageSlot,
-    ParticipantName, Participants, ProcessPinSelection, Recipient, Slots, SubmissionAcceptance,
-    ThreadContents, ThreadEntries, ThreadEntry, ThreadName, ThreadRecord,
-    ThreadRelationSelection, ThreadSubscription, ThreadSubscriptionAcknowledgment, ThreadSummary,
+use crate::Result;
+use crate::runtime_model::{
+    InboxRecord, LedgerDraft, LedgerHead, LedgerRecord, NextMessageSlot, OldestMessageSlot, Slots,
+    ThreadRecord,
 };
 use crate::store_preserve::PreMigrationPreserve;
-use crate::Result;
+use signal_message::schema::lib::{
+    z2VLZR, z2VLtS, z2VMa5, z2VMd2, z2VNbH, z2VQDX, z2VQpv, z2VQy1, z2VRQt, z2VSVi, z2VTE1, z2VTiK,
+    z2VUSt, z2VVAD, z2VVDs, z2VW54, z2VWzi, z2VXE7, z2VYJe, z2VYbP, z2Vari, z2VbGY, z2Vbmb, z2Vc72,
+    z2Vcfd, z2Vd8W, z2VdZd, z2Vdpc, z2VevD,
+};
 
 /// The storage kernel's own meta table and version key — the store-level
 /// schema stamp the additive re-stamp rewrites (the orchestrate convention;
@@ -51,7 +51,7 @@ const SEMA_SCHEMA_VERSION_KEY: &str = "schema_version";
 /// store-version bumps.
 ///
 /// Bumped 1 -> 2 for the mint relocation: the registry entry's mandatory pid
-/// pin became an optional `ProcessPinSelection` (an orchestrator-allocated
+/// pin became an optional `z2Vcfd` (an orchestrator-allocated
 /// identity exists before its process does). No v1 store was ever deployed,
 /// so a v1 file fails closed rather than migrating.
 ///
@@ -93,7 +93,7 @@ const LEDGER_HEAD_KEY: &str = "head";
 /// printing, and the table set is static.
 pub struct MessengerTables {
     engine: Engine,
-    agent_registry: TableReference<AgentRegistryEntry>,
+    agent_registry: TableReference<z2Vc72>,
     message_ledger: TableReference<LedgerRecord>,
     ledger_head: TableReference<LedgerHead>,
     recipient_inbox: TableReference<InboxRecord>,
@@ -190,68 +190,59 @@ impl MessengerTables {
     /// (`Reseated`) — process pin and resume identity refreshed, stale
     /// endpoint cleared until the new process re-binds, death mark reset,
     /// since a reseat declares fresh launch intent (e.g. a cold respawn).
-    pub fn seat_identity(
-        &self,
-        assignment: &AgentIdentityAssignment,
-    ) -> Result<AssignedAgentIdentity> {
-        let identity_provenance = if self
-            .entry(assignment.agent_identifier.payload())?
-            .is_some()
-        {
-            IdentityProvenance::Reseated
+    pub fn seat_identity(&self, assignment: &z2VevD) -> Result<z2VdZd> {
+        let identity_provenance = if self.entry(assignment.field_0.payload())?.is_some() {
+            z2Vdpc::z2Vb3J
         } else {
-            IdentityProvenance::Seated
+            z2Vdpc::z2VRYp
         };
-        let entry = AgentRegistryEntry {
-            agent_identifier: assignment.agent_identifier.clone(),
-            endpoint_selection: EndpointSelection::None,
-            resume_selection: assignment.resume_selection.clone(),
-            agent_death_mark: AgentDeathMark::NotDead,
-            process_pin_selection: assignment.process_pin_selection.clone(),
+        let entry = z2Vc72 {
+            field_0: assignment.field_0.clone(),
+            field_1: z2VNbH::z2VZTo,
+            field_2: assignment.field_2.clone(),
+            field_3: z2Vbmb::z2VSMd,
+            field_4: assignment.field_1.clone(),
         };
         self.upsert_entry(&entry)?;
-        Ok(AssignedAgentIdentity {
-            agent_identifier: assignment.agent_identifier.clone(),
-            identity_provenance,
+        Ok(z2VdZd {
+            field_0: assignment.field_0.clone(),
+            field_1: identity_provenance,
         })
     }
 
     /// Bind (or refresh) a registered agent's live delivery endpoint and
     /// process pin. `None` means the identifier is unknown — the caller owes
     /// the typed rejection.
-    pub fn bind_endpoint(
-        &self,
-        binding: &AgentEndpointBinding,
-    ) -> Result<Option<BoundAgentEndpoint>> {
-        let Some(existing) = self.entry(binding.agent_identifier.payload())? else {
+    pub fn bind_endpoint(&self, binding: &z2VVAD) -> Result<Option<z2VQy1>> {
+        let Some(existing) = self.entry(binding.field_0.payload())? else {
             return Ok(None);
         };
-        let bound = AgentRegistryEntry {
-            agent_identifier: existing.agent_identifier.clone(),
-            endpoint_selection: EndpointSelection::Bound(binding.agent_endpoint.clone()),
-            resume_selection: existing.resume_selection,
-            agent_death_mark: existing.agent_death_mark,
-            process_pin_selection: ProcessPinSelection::Pinned(HarnessProcessPin {
-                harness_pid: binding.harness_pid.clone(),
-                harness_start_time: binding.harness_start_time.clone(),
+        let bound = z2Vc72 {
+            field_0: existing.field_0.clone(),
+            field_1: z2VNbH::z2Vb3C(binding.field_1.clone()),
+            field_2: existing.field_2,
+            field_3: existing.field_3,
+            field_4: z2Vcfd::z2VNpk(z2VTE1 {
+                field_0: binding.field_2.clone(),
+                field_1: binding.field_3.clone(),
             }),
         };
         self.upsert_entry(&bound)?;
-        Ok(Some(BoundAgentEndpoint::new(existing.agent_identifier)))
+        Ok(Some(z2VQy1::new(existing.field_0)))
     }
 
     /// Read the registry: everything, or one agent's row.
-    pub fn query_entries(&self, query: &AgentRegistryQuery) -> Result<Vec<AgentRegistryEntry>> {
+    pub fn query_entries(&self, query: &z2VYJe) -> Result<Vec<z2Vc72>> {
         match query {
-            AgentRegistryQuery::All => self.registry_entries(),
-            AgentRegistryQuery::ByAgent(agent_identifier) => Ok(self
+            z2VYJe::z2VPkz => self.registry_entries(),
+            z2VYJe::z2VbtY(agent_identifier) => Ok(self
                 .entry(agent_identifier.payload())?
                 .into_iter()
                 .collect()),
         }
     }
 
-    fn registry_entries(&self) -> Result<Vec<AgentRegistryEntry>> {
+    fn registry_entries(&self) -> Result<Vec<z2Vc72>> {
         Ok(self
             .engine
             .match_records(QueryPlan::all(self.agent_registry))?
@@ -259,7 +250,7 @@ impl MessengerTables {
             .to_vec())
     }
 
-    fn entry(&self, agent_identifier: &str) -> Result<Option<AgentRegistryEntry>> {
+    fn entry(&self, agent_identifier: &str) -> Result<Option<z2Vc72>> {
         Ok(self
             .engine
             .match_records(QueryPlan::key(
@@ -271,8 +262,8 @@ impl MessengerTables {
             .cloned())
     }
 
-    fn upsert_entry(&self, entry: &AgentRegistryEntry) -> Result<()> {
-        let key = entry.agent_identifier.payload().as_str();
+    fn upsert_entry(&self, entry: &z2Vc72) -> Result<()> {
+        let key = entry.field_0.payload().as_str();
         let record_key = RecordKey::new(key);
         if self.entry(key)?.is_some() {
             self.engine.mutate_keyed(KeyedMutation::new(
@@ -292,7 +283,7 @@ impl MessengerTables {
 
     /// One registry row by agent identifier — the delivery runner's
     /// resolution read.
-    pub fn registry_entry(&self, agent_identifier: &str) -> Result<Option<AgentRegistryEntry>> {
+    pub fn registry_entry(&self, agent_identifier: &str) -> Result<Option<z2Vc72>> {
         self.entry(agent_identifier)
     }
 
@@ -305,7 +296,7 @@ impl MessengerTables {
     /// the delivery runner's fan-out read.
     pub fn thread_participants(&self, thread_name: &str) -> Result<Option<Vec<String>>> {
         Ok(self
-            .thread_record(&ThreadName::new(thread_name.to_owned()))?
+            .thread_record(&z2VUSt::new(thread_name.to_owned()))?
             .map(|record| {
                 record
                     .participants
@@ -339,12 +330,12 @@ impl MessengerTables {
                 if slots.iter().any(|kept| *kept.payload() == slot) {
                     return Ok(());
                 }
-                slots.push(MessageSlot::new(slot));
+                slots.push(z2VLZR::new(slot));
                 self.engine.mutate_keyed(KeyedMutation::new(
                     self.delivery_outbox,
                     RecordKey::new(agent_identifier),
                     InboxRecord {
-                        recipient: Recipient::new(agent_identifier.to_owned()),
+                        recipient: z2Vari::new(agent_identifier.to_owned()),
                         slots: Slots::new(slots),
                     },
                 ))?;
@@ -354,8 +345,8 @@ impl MessengerTables {
                     self.delivery_outbox,
                     RecordKey::new(agent_identifier),
                     InboxRecord {
-                        recipient: Recipient::new(agent_identifier.to_owned()),
-                        slots: Slots::new(vec![MessageSlot::new(slot)]),
+                        recipient: z2Vari::new(agent_identifier.to_owned()),
+                        slots: Slots::new(vec![z2VLZR::new(slot)]),
                     },
                 ))?;
             }
@@ -372,7 +363,7 @@ impl MessengerTables {
                 self.delivery_outbox,
                 RecordKey::new(agent_identifier),
                 InboxRecord {
-                    recipient: Recipient::new(agent_identifier.to_owned()),
+                    recipient: z2Vari::new(agent_identifier.to_owned()),
                     slots: Slots::new(slots),
                 },
             ))?;
@@ -408,86 +399,76 @@ impl MessengerTables {
     /// recipient auto-joined as participants. The ledger window is bounded:
     /// past `LEDGER_RETENTION_LIMIT`, the oldest messages are reaped together
     /// with their references before the new row commits its acceptance.
-    pub fn store_submission(&self, draft: &LedgerDraft) -> Result<SubmissionAcceptance> {
+    pub fn store_submission(&self, draft: &LedgerDraft) -> Result<z2VXE7> {
         let head = self.ledger_head()?;
         let slot = *head.next_message_slot.payload().payload();
         let record = LedgerRecord {
-            message_slot: MessageSlot::new(slot),
+            message_slot: z2VLZR::new(slot),
             message_submission: draft.message_submission.clone(),
             message_origin: draft.message_origin.clone(),
             sender_name: draft.sender_name.clone(),
             stamped_at: draft.stamped_at.clone(),
         };
         self.insert_ledger_record(&record)?;
-        self.append_inbox_slot(&draft.message_submission.recipient, slot)?;
-        if let crate::schema::signal::ThreadSelection::Named(thread_name) =
-            &draft.message_submission.thread_selection
-        {
+        self.append_inbox_slot(&draft.message_submission.field_0, slot)?;
+        if let z2VTiK::z2VPTM(thread_name) = &draft.message_submission.field_3 {
             self.append_thread_slot(
                 thread_name,
                 slot,
                 &[
-                    ParticipantName::new(draft.sender_name.payload().clone()),
-                    ParticipantName::new(draft.message_submission.recipient.payload().clone()),
+                    z2Vd8W::new(draft.sender_name.payload().clone()),
+                    z2Vd8W::new(draft.message_submission.field_0.payload().clone()),
                 ],
             )?;
         }
         let advanced = LedgerHead {
-            next_message_slot: NextMessageSlot::new(MessageSlot::new(slot + 1)),
+            next_message_slot: NextMessageSlot::new(z2VLZR::new(slot + 1)),
             oldest_message_slot: head.oldest_message_slot,
         };
         self.write_ledger_head(&advanced)?;
         self.reap_beyond_retention(&advanced)?;
-        Ok(SubmissionAcceptance::new(MessageSlot::new(slot)))
+        Ok(z2VXE7::new(z2VLZR::new(slot)))
     }
 
     /// Subscribe a participant to a thread, creating the thread when absent
     /// (threads are plain sender-chosen names — no minting ceremony). A
     /// `Related` selection sets or replaces the thread's relation; `None`
     /// leaves any existing relation untouched.
-    pub fn subscribe_thread(
-        &self,
-        subscription: &ThreadSubscription,
-    ) -> Result<ThreadSubscriptionAcknowledgment> {
-        let existing = self.thread_record(&subscription.thread_name)?;
+    pub fn subscribe_thread(&self, subscription: &z2VMd2) -> Result<z2VbGY> {
+        let existing = self.thread_record(&subscription.field_0)?;
         let mut record = existing.unwrap_or_else(|| ThreadRecord {
-            thread_name: subscription.thread_name.clone(),
-            thread_relation_selection: ThreadRelationSelection::None,
-            participants: Participants::new(Vec::new()),
+            thread_name: subscription.field_0.clone(),
+            thread_relation_selection: z2VVDs::z2VRQJ,
+            participants: z2VMa5::new(Vec::new()),
             slots: Slots::new(Vec::new()),
         });
-        if let ThreadRelationSelection::Related(relation) =
-            &subscription.thread_relation_selection
-        {
-            record.thread_relation_selection =
-                ThreadRelationSelection::Related(relation.clone());
+        if let z2VVDs::z2VaXN(relation) = &subscription.field_2 {
+            record.thread_relation_selection = z2VVDs::z2VaXN(relation.clone());
         }
-        record.join_participant(&subscription.participant_name);
+        record.join_participant(&subscription.field_1);
         self.upsert_thread_record(&record)?;
-        Ok(ThreadSubscriptionAcknowledgment {
-            thread_name: subscription.thread_name.clone(),
-            participant_name: subscription.participant_name.clone(),
+        Ok(z2VbGY {
+            field_0: subscription.field_0.clone(),
+            field_1: subscription.field_1.clone(),
         })
     }
 
     /// The recipient's inbox, resolved through the ledger into typed entries.
     /// Reaped slots drop out naturally: only slots whose ledger row still
     /// exists are listed.
-    pub fn inbox_entries(&self, query: &InboxQuery) -> Result<Vec<InboxEntry>> {
+    pub fn inbox_entries(&self, query: &z2VSVi) -> Result<Vec<z2VRQt>> {
         let Some(record) = self.inbox_record(query.payload().payload().as_str())? else {
             return Ok(Vec::new());
         };
         let mut entries = Vec::new();
         for slot in record.slots.payload() {
             if let Some(row) = self.ledger_record(*slot.payload())? {
-                entries.push(InboxEntry {
-                    message_slot: row.message_slot,
-                    sender: crate::schema::signal::Sender::new(
-                        row.sender_name.into_payload(),
-                    ),
-                    body: row.message_submission.body,
-                    thread_selection: row.message_submission.thread_selection,
-                    stamped_at: row.stamped_at,
+                entries.push(z2VRQt {
+                    field_0: row.message_slot,
+                    field_1: z2VW54::new(row.sender_name.into_payload()),
+                    field_2: row.message_submission.field_2,
+                    field_3: row.message_submission.field_3,
+                    field_4: row.stamped_at,
                 });
             }
         }
@@ -496,34 +477,32 @@ impl MessengerTables {
 
     /// One thread's contents: relation, participants, and its surviving
     /// ledger entries. `None` means the thread does not exist.
-    pub fn thread_contents(&self, thread_name: &ThreadName) -> Result<Option<ThreadContents>> {
+    pub fn thread_contents(&self, thread_name: &z2VUSt) -> Result<Option<z2VYbP>> {
         let Some(record) = self.thread_record(thread_name)? else {
             return Ok(None);
         };
         let mut entries = Vec::new();
         for slot in record.slots.payload() {
             if let Some(row) = self.ledger_record(*slot.payload())? {
-                entries.push(ThreadEntry {
-                    message_slot: row.message_slot,
-                    sender: crate::schema::signal::Sender::new(
-                        row.sender_name.into_payload(),
-                    ),
-                    body: row.message_submission.body,
-                    stamped_at: row.stamped_at,
+                entries.push(z2VQpv {
+                    field_0: row.message_slot,
+                    field_1: z2VW54::new(row.sender_name.into_payload()),
+                    field_2: row.message_submission.field_2,
+                    field_3: row.stamped_at,
                 });
             }
         }
-        Ok(Some(ThreadContents {
-            thread_name: record.thread_name,
-            thread_relation_selection: record.thread_relation_selection,
-            participants: record.participants,
-            thread_entries: ThreadEntries::new(entries),
+        Ok(Some(z2VYbP {
+            field_0: record.thread_name,
+            field_1: record.thread_relation_selection,
+            field_2: record.participants,
+            field_3: z2VWzi::new(entries),
         }))
     }
 
     /// Every thread, summarized: relation, participants, surviving message
     /// count.
-    pub fn thread_summaries(&self) -> Result<Vec<ThreadSummary>> {
+    pub fn thread_summaries(&self) -> Result<Vec<z2VLtS>> {
         let records = self
             .engine
             .match_records(QueryPlan::all(self.thread_index))?
@@ -537,11 +516,11 @@ impl MessengerTables {
                     count += 1;
                 }
             }
-            summaries.push(ThreadSummary {
-                thread_name: record.thread_name,
-                thread_relation_selection: record.thread_relation_selection,
-                participants: record.participants,
-                message_count: MessageCount::new(count),
+            summaries.push(z2VLtS {
+                field_0: record.thread_name,
+                field_1: record.thread_relation_selection,
+                field_2: record.participants,
+                field_3: z2VQDX::new(count),
             });
         }
         Ok(summaries)
@@ -550,13 +529,16 @@ impl MessengerTables {
     fn ledger_head(&self) -> Result<LedgerHead> {
         Ok(self
             .engine
-            .match_records(QueryPlan::key(self.ledger_head, RecordKey::new(LEDGER_HEAD_KEY)))?
+            .match_records(QueryPlan::key(
+                self.ledger_head,
+                RecordKey::new(LEDGER_HEAD_KEY),
+            ))?
             .records()
             .first()
             .cloned()
             .unwrap_or_else(|| LedgerHead {
-                next_message_slot: NextMessageSlot::new(MessageSlot::new(0)),
-                oldest_message_slot: OldestMessageSlot::new(MessageSlot::new(0)),
+                next_message_slot: NextMessageSlot::new(z2VLZR::new(0)),
+                oldest_message_slot: OldestMessageSlot::new(z2VLZR::new(0)),
             }))
     }
 
@@ -564,7 +546,10 @@ impl MessengerTables {
         let key = RecordKey::new(LEDGER_HEAD_KEY);
         let exists = !self
             .engine
-            .match_records(QueryPlan::key(self.ledger_head, RecordKey::new(LEDGER_HEAD_KEY)))?
+            .match_records(QueryPlan::key(
+                self.ledger_head,
+                RecordKey::new(LEDGER_HEAD_KEY),
+            ))?
             .records()
             .is_empty();
         if exists {
@@ -613,18 +598,21 @@ impl MessengerTables {
     fn inbox_record(&self, recipient: &str) -> Result<Option<InboxRecord>> {
         Ok(self
             .engine
-            .match_records(QueryPlan::key(self.recipient_inbox, RecordKey::new(recipient)))?
+            .match_records(QueryPlan::key(
+                self.recipient_inbox,
+                RecordKey::new(recipient),
+            ))?
             .records()
             .first()
             .cloned())
     }
 
-    fn append_inbox_slot(&self, recipient: &Recipient, slot: u64) -> Result<()> {
+    fn append_inbox_slot(&self, recipient: &z2Vari, slot: u64) -> Result<()> {
         let key = recipient.payload().as_str();
         match self.inbox_record(key)? {
             Some(record) => {
                 let mut slots = record.slots.into_payload();
-                slots.push(MessageSlot::new(slot));
+                slots.push(z2VLZR::new(slot));
                 self.engine.mutate_keyed(KeyedMutation::new(
                     self.recipient_inbox,
                     RecordKey::new(key),
@@ -640,7 +628,7 @@ impl MessengerTables {
                     RecordKey::new(key),
                     InboxRecord {
                         recipient: recipient.clone(),
-                        slots: Slots::new(vec![MessageSlot::new(slot)]),
+                        slots: Slots::new(vec![z2VLZR::new(slot)]),
                     },
                 ))?;
             }
@@ -648,7 +636,7 @@ impl MessengerTables {
         Ok(())
     }
 
-    fn thread_record(&self, thread_name: &ThreadName) -> Result<Option<ThreadRecord>> {
+    fn thread_record(&self, thread_name: &z2VUSt) -> Result<Option<ThreadRecord>> {
         Ok(self
             .engine
             .match_records(QueryPlan::key(
@@ -680,20 +668,20 @@ impl MessengerTables {
 
     fn append_thread_slot(
         &self,
-        thread_name: &ThreadName,
+        thread_name: &z2VUSt,
         slot: u64,
-        joining: &[ParticipantName],
+        joining: &[z2Vd8W],
     ) -> Result<()> {
         let mut record = self
             .thread_record(thread_name)?
             .unwrap_or_else(|| ThreadRecord {
                 thread_name: thread_name.clone(),
-                thread_relation_selection: ThreadRelationSelection::None,
-                participants: Participants::new(Vec::new()),
+                thread_relation_selection: z2VVDs::z2VRQJ,
+                participants: z2VMa5::new(Vec::new()),
                 slots: Slots::new(Vec::new()),
             });
         let mut slots = record.slots.into_payload();
-        slots.push(MessageSlot::new(slot));
+        slots.push(z2VLZR::new(slot));
         record.slots = Slots::new(slots);
         for participant in joining {
             record.join_participant(participant);
@@ -714,10 +702,8 @@ impl MessengerTables {
         }
         while next - oldest > LEDGER_RETENTION_LIMIT {
             if let Some(record) = self.ledger_record(oldest)? {
-                self.remove_inbox_slot(&record.message_submission.recipient, oldest)?;
-                if let crate::schema::signal::ThreadSelection::Named(thread_name) =
-                    &record.message_submission.thread_selection
-                {
+                self.remove_inbox_slot(&record.message_submission.field_0, oldest)?;
+                if let z2VTiK::z2VPTM(thread_name) = &record.message_submission.field_3 {
                     self.remove_thread_slot(thread_name, oldest)?;
                 }
                 self.remove_ledger_record(oldest)?;
@@ -726,11 +712,11 @@ impl MessengerTables {
         }
         self.write_ledger_head(&LedgerHead {
             next_message_slot: head.next_message_slot.clone(),
-            oldest_message_slot: OldestMessageSlot::new(MessageSlot::new(oldest)),
+            oldest_message_slot: OldestMessageSlot::new(z2VLZR::new(oldest)),
         })
     }
 
-    fn remove_inbox_slot(&self, recipient: &Recipient, slot: u64) -> Result<()> {
+    fn remove_inbox_slot(&self, recipient: &z2Vari, slot: u64) -> Result<()> {
         let key = recipient.payload().as_str();
         if let Some(record) = self.inbox_record(key)? {
             let mut slots = record.slots.into_payload();
@@ -747,7 +733,7 @@ impl MessengerTables {
         Ok(())
     }
 
-    fn remove_thread_slot(&self, thread_name: &ThreadName, slot: u64) -> Result<()> {
+    fn remove_thread_slot(&self, thread_name: &z2VUSt, slot: u64) -> Result<()> {
         if let Some(mut record) = self.thread_record(thread_name)? {
             let mut slots = record.slots.into_payload();
             slots.retain(|kept| *kept.payload() != slot);
@@ -761,7 +747,7 @@ impl MessengerTables {
 impl ThreadRecord {
     /// Add a participant if absent — participants accumulate, never
     /// duplicate.
-    fn join_participant(&mut self, participant: &ParticipantName) {
+    fn join_participant(&mut self, participant: &z2Vd8W) {
         let present = self
             .participants
             .payload()
@@ -770,7 +756,7 @@ impl ThreadRecord {
         if !present {
             let mut names = self.participants.clone().into_payload();
             names.push(participant.clone());
-            self.participants = Participants::new(names);
+            self.participants = z2VMa5::new(names);
         }
     }
 }
@@ -784,14 +770,14 @@ pub struct PinnedAgentIdentity {
 }
 
 impl PinnedAgentIdentity {
-    fn from_entry(entry: AgentRegistryEntry) -> Option<Self> {
-        match entry.process_pin_selection {
-            ProcessPinSelection::Pinned(pin) => Some(Self {
-                identifier: entry.agent_identifier.into_payload(),
-                harness_pid: *pin.harness_pid.payload(),
-                harness_start_time: *pin.harness_start_time.payload(),
+    fn from_entry(entry: z2Vc72) -> Option<Self> {
+        match entry.field_4 {
+            z2Vcfd::z2VNpk(pin) => Some(Self {
+                identifier: entry.field_0.into_payload(),
+                harness_pid: *pin.field_0.payload(),
+                harness_start_time: *pin.field_1.payload(),
             }),
-            ProcessPinSelection::None => None,
+            z2Vcfd::z2VRLv => None,
         }
     }
 
@@ -852,14 +838,11 @@ impl<'store> MessengerStoreMigration<'store> {
     /// families keep their rows; families introduced since the prior version
     /// open empty on the next registration.
     fn stamp_current_schema_version(&self, found: SchemaVersion) -> Result<()> {
-        let storage = sema::Sema::open_with_schema(
-            self.store,
-            &sema::Schema { version: found },
-        )
-        .map_err(sema_engine::Error::from)?;
+        let storage = sema::Sema::open_with_schema(self.store, &sema::Schema { version: found })
+            .map_err(sema_engine::Error::from)?;
         drop(storage);
-        let database =
-            redb::Database::create(self.store).map_err(|source| self.failure(source.to_string()))?;
+        let database = redb::Database::create(self.store)
+            .map_err(|source| self.failure(source.to_string()))?;
         let transaction = database
             .begin_write()
             .map_err(|source| self.failure(source.to_string()))?;

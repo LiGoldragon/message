@@ -14,11 +14,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use triad_runtime::{ConnectionContext, PeerIdentity, UnixCredentials};
 
-use crate::schema::signal::{
-    ComponentInstanceName, ComponentName, ConnectionClass, InternalComponentInstanceOrigin,
-    MessageOrigin, NetworkPeer, SenderName, StampedAt, TimestampNanos, UnixUserIdentifier,
-};
+use crate::runtime_model::SenderName;
 use crate::tables::{MessengerTables, PinnedAgentIdentity};
+use signal_message::schema::lib::{
+    z2VLai, z2VPn2, z2VPq6, z2VTJ1, z2VTaw, z2VY3v, z2VY18, z2Vdkj, z2Vf2p,
+};
 
 /// Classifies an accepted connection into the daemon-local stored origin and
 /// stamps ingress time. The owner identity comes from daemon configuration,
@@ -54,32 +54,30 @@ impl OriginPolicy {
     /// component instance; any other local user is `NonOwnerUser(uid)`; a
     /// TCP peer carries no Unix credentials and classifies as a network
     /// peer by remote address.
-    pub fn origin_for_connection(&self, connection: &ConnectionContext) -> MessageOrigin {
+    pub fn origin_for_connection(&self, connection: &ConnectionContext) -> z2VTJ1 {
         match connection.peer() {
             PeerIdentity::Unix(credentials) if credentials.user_id() == self.owner_user_id => {
-                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {
-                    component_name: ComponentName::Harness,
-                    component_instance_name: ComponentInstanceName::new(self.owner_name.clone()),
+                z2VTJ1::z2VS4W(z2VPq6 {
+                    field_0: z2Vdkj::z2VPrB,
+                    field_1: z2VTaw::new(self.owner_name.clone()),
                 })
             }
-            PeerIdentity::Unix(credentials) => MessageOrigin::External(
-                ConnectionClass::NonOwnerUser(UnixUserIdentifier::new(u64::from(
-                    credentials.user_id(),
-                ))),
-            ),
-            PeerIdentity::Tcp(address) => MessageOrigin::External(ConnectionClass::Network(
-                NetworkPeer::new(address.to_string()),
-            )),
+            PeerIdentity::Unix(credentials) => z2VTJ1::z2VWSr(z2VY3v::z2VN6o(z2VPn2::new(
+                u64::from(credentials.user_id()),
+            ))),
+            PeerIdentity::Tcp(address) => {
+                z2VTJ1::z2VWSr(z2VY3v::z2VVrk(z2VLai::new(address.to_string())))
+            }
         }
     }
 
     /// Daemon-minted ingress timestamp for a stored message.
-    pub fn ingress_stamp(&self) -> StampedAt {
+    pub fn ingress_stamp(&self) -> z2VY18 {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos().min(u128::from(u64::MAX)) as u64)
             .unwrap_or(0);
-        StampedAt::new(TimestampNanos::new(nanos))
+        z2VY18::new(z2Vf2p::new(nanos))
     }
 }
 
@@ -157,7 +155,10 @@ impl ProcessAncestry {
                 return None;
             }
             let stat = ProcessStat::read(current)?;
-            if let Some(pin) = pins.iter().find(|pin| pin.matches(current, stat.start_time)) {
+            if let Some(pin) = pins
+                .iter()
+                .find(|pin| pin.matches(current, stat.start_time))
+            {
                 return Some(pin.identifier().to_owned());
             }
             current = stat.parent_pid;

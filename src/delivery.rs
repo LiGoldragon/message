@@ -1,5 +1,4 @@
-//! The messenger's local delivery leg (packet 3.2a) — moved in from the
-//! router, which is no longer in the local loop.
+//! The messenger's local delivery leg.
 //!
 //! Resolution reads the messenger's OWN durable registry: a recipient name
 //! resolves first as an agent identifier (the orchestrator-minted short
@@ -9,7 +8,7 @@
 //! agent's endpoint appears (`BindAgentEndpoint`). A killed agent is never
 //! attempted (the phase-4 bounce owns that seam).
 //!
-//! Two harness legs, ported byte-for-byte from the router's proven wire:
+//! Two delivery legs:
 //! - `PtySocket` — terminal-cell `data.sock`: `b"P"` + u64 big-endian length
 //!   + the rendered message text, acknowledged by one `b'A'`.
 //! - `HarnessSocket` — the harness daemon: a `signal-harness`
@@ -20,21 +19,19 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use nota::NotaEncode;
-use signal_frame::{
-    ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply,
-};
+#[cfg(feature = "dotos-text")]
+use dotos::DotosEncode;
+use signal_frame::{ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply};
 use signal_harness::{
     HarnessEvent, HarnessFrame, HarnessFrameBody, HarnessName, HarnessRequest,
     MessageBody as HarnessMessageBody, MessageDelivery, MessageSender as HarnessMessageSender,
-    MessageSlot as HarnessMessageSlot, Request as HarnessSignalRequest,
+    MessageSlot as HarnessMessageSlot,
 };
 
-use crate::schema::signal::{
-    AgentDeathMark, AgentEndpoint, AgentEndpointKind, AgentRegistryEntry, EndpointSelection,
-    InboxEntry, LedgerRecord, Sender,
-};
-use crate::tables::MessengerTables;
+use crate::{runtime_model::LedgerRecord, tables::MessengerTables};
+use signal_message::schema::lib::{z2VMBf, z2VNbH, z2VUs6, z2Vbmb, z2Vc72};
+#[cfg(feature = "dotos-text")]
+use signal_message::schema::lib::{z2VRQt, z2VW54};
 
 /// Why a message parked instead of delivering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,7 +82,7 @@ impl<'runtime> DeliveryRunner<'runtime> {
     /// Failures park (durably, in the outbox) — they never fail the
     /// submission, whose acceptance is the existence fact.
     pub fn deliver_committed(&self, record: &LedgerRecord) -> DeliveryDisposition {
-        let recipient = record.message_submission.recipient.payload().clone();
+        let recipient = record.message_submission.field_0.payload().clone();
         self.deliver_to_name(&recipient, record, ParkPolicy::ParkDurably)
     }
 
@@ -138,15 +135,15 @@ impl<'runtime> DeliveryRunner<'runtime> {
 
     fn deliver_to_agent(
         &self,
-        entry: &AgentRegistryEntry,
+        entry: &z2Vc72,
         record: &LedgerRecord,
         park_policy: ParkPolicy,
     ) -> DeliveryDisposition {
-        let agent = entry.agent_identifier.payload().as_str();
-        if entry.agent_death_mark == AgentDeathMark::Killed {
+        let agent = entry.field_0.payload().as_str();
+        if entry.field_3 == z2Vbmb::z2VbAt {
             return DeliveryDisposition::Parked(ParkReason::Killed);
         }
-        let EndpointSelection::Bound(endpoint) = &entry.endpoint_selection else {
+        let z2VNbH::z2Vb3C(endpoint) = &entry.field_1 else {
             if park_policy == ParkPolicy::ParkDurably {
                 let _ = self
                     .tables
@@ -171,25 +168,26 @@ impl<'runtime> DeliveryRunner<'runtime> {
 /// One bound endpoint's delivery leg.
 #[derive(Debug)]
 struct EndpointLeg<'endpoint> {
-    endpoint: &'endpoint AgentEndpoint,
+    endpoint: &'endpoint z2VMBf,
 }
 
 impl<'endpoint> EndpointLeg<'endpoint> {
-    fn new(endpoint: &'endpoint AgentEndpoint) -> Self {
+    fn new(endpoint: &'endpoint z2VMBf) -> Self {
         Self { endpoint }
     }
 
     fn deliver(&self, agent: &str, record: &LedgerRecord) -> std::io::Result<bool> {
-        let path = self.endpoint.endpoint_path.payload().as_str();
-        match self.endpoint.agent_endpoint_kind {
-            AgentEndpointKind::PtySocket => Self::deliver_to_terminal(path, record),
-            AgentEndpointKind::HarnessSocket => Self::deliver_to_harness(path, agent, record),
+        let path = self.endpoint.field_1.payload().payload().as_str();
+        match self.endpoint.field_0 {
+            z2VUs6::z2VZk6 => Self::deliver_to_terminal(path, record),
+            z2VUs6::z2VTin => Self::deliver_to_harness(path, agent, record),
         }
     }
 
     /// Terminal-cell programmatic input: `'P'` + u64 BE length + text, one
     /// `'A'` acceptance byte back. The rendered text is the typed
-    /// `InboxEntry` NOTA projection — the same record an inbox read returns.
+    /// producer-owned `InboxEntry` Dotos projection — the same record an
+    /// inbox read returns.
     ///
     /// Current terminal-cell serves programmatic input on the session's
     /// CONTROL socket (its data socket answers input frames with an attach
@@ -200,7 +198,7 @@ impl<'endpoint> EndpointLeg<'endpoint> {
     /// other bound path is used exactly as bound. Proven end-to-end by
     /// `tests/pty_end_to_end.rs` against a live terminal-cell PTY.
     fn deliver_to_terminal(path: &str, record: &LedgerRecord) -> std::io::Result<bool> {
-        let text = Self::rendered(record);
+        let text = Self::rendered(record)?;
         let mut stream = UnixStream::connect(Self::programmatic_input_path(path))?;
         stream.write_all(b"P")?;
         stream.write_all(&(text.len() as u64).to_be_bytes())?;
@@ -213,40 +211,49 @@ impl<'endpoint> EndpointLeg<'endpoint> {
 
     fn programmatic_input_path(path: &str) -> std::path::PathBuf {
         let bound = Path::new(path);
-        if bound.file_name() == Some(std::ffi::OsStr::new("data.sock")) {
-            if let Some(parent) = bound.parent() {
-                return parent.join("control.sock");
-            }
+        if bound.file_name() == Some(std::ffi::OsStr::new("data.sock"))
+            && let Some(parent) = bound.parent()
+        {
+            return parent.join("control.sock");
         }
         bound.to_path_buf()
     }
 
-    fn rendered(record: &LedgerRecord) -> String {
-        InboxEntry {
-            message_slot: record.message_slot.clone(),
-            sender: Sender::new(record.sender_name.payload().clone()),
-            body: record.message_submission.body.clone(),
-            thread_selection: record.message_submission.thread_selection.clone(),
-            stamped_at: record.stamped_at.clone(),
+    #[cfg(feature = "dotos-text")]
+    fn rendered(record: &LedgerRecord) -> std::io::Result<String> {
+        Ok(z2VRQt {
+            field_0: record.message_slot.clone(),
+            field_1: z2VW54::new(record.sender_name.payload().clone()),
+            field_2: record.message_submission.field_2.clone(),
+            field_3: record.message_submission.field_3.clone(),
+            field_4: record.stamped_at.clone(),
         }
-        .to_nota()
+        .to_dotos())
+    }
+
+    #[cfg(not(feature = "dotos-text"))]
+    fn rendered(_record: &LedgerRecord) -> std::io::Result<String> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "PTY delivery requires the dotos-text surface",
+        ))
     }
 
     fn deliver_to_harness(path: &str, agent: &str, record: &LedgerRecord) -> std::io::Result<bool> {
-        let request = HarnessSignalRequest::from_payload(HarnessRequest::MessageDelivery(
-            MessageDelivery {
-                harness: HarnessName::new(agent),
-                sender: HarnessMessageSender::new(record.sender_name.payload().as_str()),
-                body: HarnessMessageBody::new(record.message_submission.body.payload().as_str()),
-                message_slot: HarnessMessageSlot::new(*record.message_slot.payload()),
-            },
-        ));
+        let request = HarnessRequest::MessageDelivery(MessageDelivery {
+            harness: HarnessName::new(agent),
+            sender: HarnessMessageSender::new(record.sender_name.payload().as_str()),
+            body: HarnessMessageBody::new(record.message_submission.field_2.payload().as_str()),
+            message_slot: HarnessMessageSlot::new(*record.message_slot.payload()),
+        });
         let exchange = ExchangeIdentifier::new(
             SessionEpoch::new(0),
             ExchangeLane::Connector,
             LaneSequence::first(),
         );
-        let frame = HarnessFrame::new(HarnessFrameBody::Request { exchange, request });
+        let frame = request
+            .into_frame(exchange)
+            .map_err(std::io::Error::other)?;
         let mut stream = UnixStream::connect(Path::new(path))?;
         stream.write_all(
             frame

@@ -1,38 +1,25 @@
 # Message
 
-`message` is the engine's message-ingress component. It owns the
-`message` CLI and the `message` daemon (binary:
-`message-daemon`), the supervised first-stack component.
+Message is the behavioral consumer of the ordinary and owner Message
+interfaces. `signal-message` owns every public ordinary Type and
+`meta-signal-message` owns every public owner Type; this repository imports
+those Types by identity.
 
-The `message` binary accepts exactly one NOTA input record, validates it
-through Rust types, sends one length-prefixed schema-derived signal frame to
-`message` on the engine's user-writable socket
-(`message.sock`, mode 0660), reads one typed reply frame, and prints one
-NOTA reply.
+It provides:
 
-The `message` daemon (binary file `message-daemon`) is the
-engine's user-writable ingress boundary: it binds `message.sock` (mode 0660,
-engine-owner group), stamps `MessageSubmission` frames with SO_PEERCRED-
-derived origin and ingress time, then forwards `StampedMessageSubmission`
-frames to `router` over the internal `router.sock`. No durable
-state; no local message ledger.
+- `message`, a one-value Dotos client for the ordinary interface;
+- `meta-message`, a one-value Dotos client for the owner interface;
+- `message-daemon`, the two-listener runtime;
+- `message-write-configuration`, a Dotos-to-binary startup helper;
+- `messenger.sema`, the bounded durable ledger, inbox, thread index, agent
+  registry, and delivery outbox.
 
-The supported input records are:
+The daemon receives one binary configuration path as its only argument. The
+ordinary CLI connects through `MESSAGE_SOCKET`; the owner CLI connects through
+`MESSAGE_META_SOCKET`. Both CLIs accept exactly one inline Dotos value and
+print the producer-owned reply in Dotos.
 
-```sh
-MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
-  message "(Send designer [Need a layout pass.])"
-
-MESSAGE_SOCKET=/run/persona/engine-main/message.sock \
-  message "(Inbox designer)"
-```
-
-The message component does not construct in-band proof material, read a local
-actor index, or write message ledgers, pending logs, terminal endpoints, or
-actor-registration files. Origin stamping is typed contract data at the
-daemon/router ingress boundary, not a caller-provided proof.
-
-Durable message acceptance, pending delivery, retry, owner approval, and
-terminal delivery state belong to `router` and its downstream
-`harness` / `terminal` path. This crate owns text projection at
-the edge: NOTA in, Signal out, Signal in, NOTA out.
+There is no component-local structural language, generated Rust, build script,
+frame model, or compatibility vocabulary. The producer contracts are the
+surface seen by humans, agents, harnesses, and GUIs; Message supplies the
+behavior behind them.

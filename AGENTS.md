@@ -1,54 +1,39 @@
-# Agent Instructions - Message
+# Agent Instructions — Message
 
-## Repo Role
+## Center
 
-Message is the engine message-ingress component. It owns the `message`
-CLI, owner-side `meta-message` CLI, and supervised `message-daemon`; together
-they carry ordinary NOTA message requests and owner meta-policy requests into
-typed Signal frames.
+Message executes the public Types owned by `signal-message` and
+`meta-signal-message`. Those producers are the structural authority. This
+component owns behavior only: durable messenger state, provenance, delivery,
+the ordinary and owner listeners, and Dotos command surfaces.
 
-## Rename: message → messenger
+Protos is the universal programming medium. Ethos and Dotos are how humans,
+agents, harnesses, and interfaces perceive code and data. Complete
+self-hosting and substrate replacement are expected outcomes, so component
+logic must not assume Rust, LLVM, or the current operating system is permanent.
+Beauty and elegant, extensible logic win every trade-off.
 
-This component is being renamed from `message` to `messenger`. The rename
-proceeds incrementally as code is touched: new and edited surfaces adopt
-`Messenger`/`messenger`, while untouched surfaces keep `Message`/`message` until
-they are next edited. Do not perform a big-bang sweep. Rename only the
-identifiers your own edits already touch; leave the rest for the change that
-next reaches them.
+## Invariants
 
-## Current Phase
+- Consume the exact producer heads directly. Do not copy, rename, wrap, or
+  re-export individual producer Types as a component vocabulary.
+- Do not add component-local structural inputs, generated Rust, build-time
+  generation, daemon-shape policy, or a second Signal/Nexus/SEMA contract.
+- The bootstrap generator is provisional: strict producer Types are generated;
+  current behavior and roles are handwritten until Logos can express them.
+- Public text is Dotos. Do not restore retired readers, aliases, feature gates,
+  or file formats.
+- Old surfaces die outright. Do not add legacy readers, names, aliases, or
+  feature-gated resurrection paths.
+- `message-daemon` reads one binary configuration path from argv. It does not
+  read control-plane environment variables.
+- `message` uses `MESSAGE_SOCKET`; `meta-message` uses
+  `MESSAGE_META_SOCKET`. Each accepts exactly one inline Dotos value.
+- `messenger.sema` is the component's durable store. Preserve its fail-closed
+  version discipline and bounded ledger.
 
-This repo is in supervised ingress phase. Keep the implementation narrow:
+## Work and history
 
-- A `message` binary that decodes one NOTA input record.
-- A `meta-message` binary that decodes one `meta-signal-message` NOTA request
-  and sends it to the owner meta socket.
-- A `message-daemon` binary that binds `message.sock`, accepts
-  length-prefixed schema-derived Signal frames, stamps them, and forwards
-  `signal-message` frames to `router` over the internal router socket. It also
-  binds the owner-only meta socket and answers `meta-signal-message` Configure
-  with typed `RequestUnimplemented(NotBuiltYet)` until reconfiguration is built.
-- The CLI uses `MESSAGE_SOCKET` / `PERSONA_SOCKET_PATH`; the daemon reads a
-  binary rkyv `Configuration` from its single argv argument and uses the
-  configured meta and router socket paths. `meta-message` uses
-  `MESSAGE_META_SOCKET`.
-- The component must not append to a local ledger or write actor registration
-  state.
-- The component must not construct in-band proof material or read a local actor
-  index. Origin stamping is typed `StampedMessageSubmission` data minted from
-  SO_PEERCRED, never caller-provided text.
-- Do not add a router line-protocol fallback.
-
-BEADS is transitional workspace coordination. Do not add a BEADS bridge here;
-Persona's typed fabric is intended to absorb that role later.
-
-## Version Control
-
-This is a Git-backed colocated Jujutsu repository. Use `jj` for local history
-work and keep Git as the remote/storage compatibility layer.
-
-## Rust
-
-Follow the Rust discipline: domain values are typed, behavior lives on the
-types, errors use one crate enum, and public surfaces speak NOTA unless the
-boundary is explicitly binary.
+Use fresh recorded-main Jujutsu workspaces. Treat dirty unpublished worktrees
+as neither reference nor design authority. Use exact-path coordination claims,
+release them immediately after proof/publication, and use `jj` for history.

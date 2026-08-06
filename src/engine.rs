@@ -1,25 +1,13 @@
-//! The message runtime — a thin composer over the three schema-emitted planes.
+//! Messenger behavior over the producer-owned Message contract.
 //!
-//! The messenger owns durable state: the agent registry (identity map +
-//! local delivery registry) since train packet 2.1, and — since the
-//! messenger promotion (packet 3.1) — the message ledger, per-recipient
-//! inbox, and thread index, all in `messenger.sema`. The Signal plane
-//! (`schema/signal.schema`) is its wire surface; the Nexus plane
-//! (`schema/nexus.schema`) is its internal-feature catalog — registry
-//! apply/read plus message-store apply/read effects; the SEMA plane
-//! (`schema/sema.schema`) owns the durable commits. The router is no longer
-//! in the local loop: a submission persists locally and is answered locally.
-//!
-//! `MessageEngine::handle` runs the record-970 flow: a decoded Signal `Input`
-//! becomes `NexusWork::SignalArrived`, the Nexus `decide` either replies
-//! directly (already-stamped -> Unimplemented) or emits an effect. Effects
-//! run through the `SemaEngine` plane and commit in the store; provenance
-//! (origin, resolved sender, ingress stamp) is minted in the effect runner
-//! from the accepted connection's kernel-vouched peer credentials. The
-//! generated `NexusEngine::execute` runner owns the recursion: it runs the
-//! effect, feeds the `EffectCompleted` work back into `decide`, and stops on
-//! the Signal `Output`.
+//! The component does not own a second Signal, Nexus, or Sema vocabulary.
+//! Each strict `signal-message::Input` is decided directly into one durable
+//! messenger action and one strict `signal-message::Output`.
 
+use signal_message::schema::lib::{
+    Input, Output, z2VLsC, z2VPEF, z2VPW5, z2VR9d, z2VRGD, z2VS1e, z2VUzX, z2VV6N, z2VW5p, z2VYJe,
+    z2VYf6, z2VZEr, z2VZuS, z2Vasi, z2Vc6L, z2Ve52,
+};
 use triad_runtime::ConnectionContext;
 
 use crate::{
@@ -27,44 +15,14 @@ use crate::{
     delivery::DeliveryRunner,
     error::Error,
     provenance::{OriginPolicy, SenderResolver},
-    schema::{
-        nexus::{
-            self as nexus_schema, NexusAction, NexusEffectCommand, NexusEffectResult, NexusEngine,
-            NexusWork,
-        },
-        sema::{
-            self as sema_schema, ReadInput as SemaReadInput, ReadOutput as SemaReadOutput,
-            WriteInput as SemaWriteInput, WriteOutput as SemaWriteOutput,
-        },
-        signal::{
-            AgentRegistryCommand, AgentRegistryEntries, AgentRegistryRejection,
-            AgentRegistryRejectionReason, Error as SignalError, ErrorMessage, ErrorReport,
-            InboxContents, InboxEntries, Input, LedgerDraft, OperationKind, Output,
-            RequestUnimplemented, StoreCommand, StoreQuery, StoreWrite, SubmissionRejection,
-            SubmissionRejectionReason, ThreadIndexEntries, ThreadRejection, ThreadRejectionReason,
-            Threads, Unimplemented, UnimplementedReason,
-        },
-    },
+    runtime_model::{AgentRegistryCommand, LedgerDraft, StoreQuery, StoreWrite},
     tables::MessengerTables,
 };
 
-/// The daemon runtime: the durable messenger store the SEMA plane commits
-/// into, and the origin policy provenance is minted from.
 #[derive(Debug)]
 pub struct MessageEngine {
     tables: MessengerTables,
     origin_policy: OriginPolicy,
-}
-
-/// One request's Nexus runner surface.
-///
-/// The generated runner needs a `NexusEngine` value for the typed decision
-/// entry. Decisions are pure (`decide_signal` / `decide_effect_completed`);
-/// effects run between the two `execute` calls in `handle`, where the engine
-/// is mutably available for the SEMA plane.
-#[derive(Debug)]
-struct RequestEngine<'request> {
-    engine: &'request MessageEngine,
 }
 
 impl MessageEngine {
@@ -75,259 +33,58 @@ impl MessageEngine {
         }
     }
 
-    /// Build the runtime from daemon configuration: the `messenger.sema`
-    /// store opened at the configured database path, plus the origin policy
-    /// carrying the configured owner identity.
     pub fn from_configuration(configuration: &Configuration) -> Result<Self, Error> {
         Ok(Self::new(
             MessengerTables::open(configuration.database_path())?,
             OriginPolicy::for_owner_user_id(
                 configuration.owner_user_id(),
-                configuration.owner_name(),
+                configuration.owner_label(),
             ),
         ))
     }
 
-    /// Run one decoded Signal `Input` end to end and return the Signal `Output`.
-    ///
-    /// `connection` carries the accepted stream's peer credentials; stored
-    /// provenance (origin, resolved sender, ingress stamp) is minted from
-    /// them.
     pub async fn handle(
         &mut self,
         input: Input,
         connection: &ConnectionContext,
     ) -> Result<Output, Error> {
-        let signal_action = RequestEngine::new(self)
-            .execute(NexusWork::signal_arrived(input).with_origin_route(Self::origin_route()))
-            .await
-            .into_root();
-        let action = match signal_action {
-            NexusAction::CommandEffect(command) => {
-                let effect_result = self.run_effect(command.into_payload(), connection);
-                RequestEngine::new(self)
-                    .execute(
-                        NexusWork::effect_completed(effect_result)
-                            .with_origin_route(Self::origin_route()),
-                    )
-                    .await
-                    .into_root()
-            }
-            other => other,
-        };
-        match action {
-            NexusAction::ReplyToSignal(output) => Ok(output.into_payload()),
-            other => Ok(Self::error_output(format!(
-                "nexus runner returned non-reply action: {other:?}"
-            ))),
-        }
-    }
-
-    /// Run one Nexus effect command and lift its outcome into a typed
-    /// `NexusEffectResult`. Registry and message-store effects both run
-    /// through the SEMA plane and commit in (or read from) `messenger.sema`;
-    /// a `RecordSubmission` command is provenance-stamped here first, where
-    /// the connection is available.
-    fn run_effect(
-        &mut self,
-        effect: NexusEffectCommand,
-        connection: &ConnectionContext,
-    ) -> NexusEffectResult {
-        match effect {
-            NexusEffectCommand::ApplyRegistry(command) => {
-                let sema_output = <Self as sema_schema::SemaEngine>::apply_inner(
-                    self,
-                    sema_schema::sema::Sema::new(
-                        Self::sema_origin_route(),
-                        SemaWriteInput::ApplyRegistry(command.into_payload()),
-                    ),
-                );
-                match sema_output.into_root() {
-                    SemaWriteOutput::RegistryApplied(reply) => {
-                        NexusEffectResult::registry_completed(reply)
-                    }
-                    SemaWriteOutput::StoreApplied(reply) => {
-                        NexusEffectResult::registry_completed(reply)
-                    }
-                }
-            }
-            NexusEffectCommand::ReadRegistry(query) => {
-                let sema_output = <Self as sema_schema::SemaEngine>::observe_inner(
-                    self,
-                    sema_schema::sema::Sema::new(
-                        Self::sema_origin_route(),
-                        SemaReadInput::ReadRegistry(query.into_payload()),
-                    ),
-                );
-                match sema_output.into_root() {
-                    SemaReadOutput::RegistryRead(reply) => {
-                        NexusEffectResult::registry_completed(reply)
-                    }
-                    SemaReadOutput::StoreRead(reply) => {
-                        NexusEffectResult::registry_completed(reply)
-                    }
-                }
-            }
-            NexusEffectCommand::ApplyMessageStore(command) => {
-                let write = self.stamped_store_write(command.into_payload(), connection);
-                let sema_output = <Self as sema_schema::SemaEngine>::apply_inner(
-                    self,
-                    sema_schema::sema::Sema::new(
-                        Self::sema_origin_route(),
-                        SemaWriteInput::ApplyMessageStore(write),
-                    ),
-                );
-                match sema_output.into_root() {
-                    SemaWriteOutput::RegistryApplied(reply) => {
-                        NexusEffectResult::store_completed(reply)
-                    }
-                    SemaWriteOutput::StoreApplied(reply) => {
-                        NexusEffectResult::store_completed(reply)
-                    }
-                }
-            }
-            NexusEffectCommand::ReadMessageStore(query) => {
-                let sema_output = <Self as sema_schema::SemaEngine>::observe_inner(
-                    self,
-                    sema_schema::sema::Sema::new(
-                        Self::sema_origin_route(),
-                        SemaReadInput::ReadMessageStore(query.into_payload()),
-                    ),
-                );
-                match sema_output.into_root() {
-                    SemaReadOutput::RegistryRead(reply) => {
-                        NexusEffectResult::store_completed(reply)
-                    }
-                    SemaReadOutput::StoreRead(reply) => {
-                        NexusEffectResult::store_completed(reply)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Mint provenance onto a store command: a raw submission gains its
-    /// origin, resolved sender, and ingress stamp; a subscription passes
-    /// through untouched. Provenance is never accepted from the caller
-    /// payload.
-    fn stamped_store_write(
-        &self,
-        command: StoreCommand,
-        connection: &ConnectionContext,
-    ) -> StoreWrite {
-        match command {
-            StoreCommand::RecordSubmission(submission) => {
+        Ok(match input {
+            Input::Submit(submission) => {
                 let sender =
                     SenderResolver::new(&self.tables, &self.origin_policy).resolve(connection);
-                StoreWrite::RecordSubmission(LedgerDraft {
+                self.apply_store_write(StoreWrite::RecordSubmission(LedgerDraft {
                     message_submission: submission,
                     message_origin: self.origin_policy.origin_for_connection(connection),
                     sender_name: sender,
                     stamped_at: self.origin_policy.ingress_stamp(),
-                })
+                }))
             }
-            StoreCommand::Subscribe(subscription) => StoreWrite::Subscribe(subscription),
-        }
-    }
-
-    /// The decision for an arrived Signal `Input`.
-    ///
-    /// - `Submit` → message-store apply effect (provenance minted at run).
-    /// - `QueryInbox` / `QueryThread` / `QueryThreads` → message-store read.
-    /// - `SubscribeThread` → message-store apply.
-    /// - `AssignAgentIdentity` / `BindAgentEndpoint` → registry apply effect.
-    /// - `QueryAgentRegistry` → registry read effect.
-    /// - `SubmitStamped` → typed `Unimplemented`: re-stamping an
-    ///   already-stamped submission is out of scope (the daemon mints
-    ///   provenance; it does not accept it from a peer).
-    fn decide_signal(&self, input: Input) -> NexusAction {
-        match input {
-            Input::Submit(submission) => {
-                NexusAction::command_effect(NexusEffectCommand::apply_message_store(
-                    StoreCommand::RecordSubmission(submission.into_payload()),
-                ))
-            }
-            Input::QueryInbox(query) => NexusAction::command_effect(
-                NexusEffectCommand::read_message_store(StoreQuery::Inbox(query.into_payload())),
-            ),
-            Input::QueryThread(query) => NexusAction::command_effect(
-                NexusEffectCommand::read_message_store(StoreQuery::Thread(query.into_payload())),
-            ),
-            Input::QueryThreads(query) => NexusAction::command_effect(
-                NexusEffectCommand::read_message_store(StoreQuery::Threads(query.into_payload())),
-            ),
-            Input::SubscribeThread(subscription) => {
-                NexusAction::command_effect(NexusEffectCommand::apply_message_store(
-                    StoreCommand::Subscribe(subscription.into_payload()),
-                ))
-            }
+            Input::SubmitStamped(_) => Output::MessageRequestUnimplemented(z2VYf6 {
+                field_0: z2VLsC::z2VT63,
+                field_1: z2Vc6L::z2VXy5,
+            }),
+            Input::QueryInbox(query) => self.read_store_query(StoreQuery::Inbox(query)),
             Input::AssignAgentIdentity(assignment) => {
-                NexusAction::command_effect(NexusEffectCommand::apply_registry(
-                    AgentRegistryCommand::AssignIdentity(assignment.into_payload()),
-                ))
+                self.apply_registry_command(AgentRegistryCommand::AssignIdentity(assignment))
             }
             Input::BindAgentEndpoint(binding) => {
-                NexusAction::command_effect(NexusEffectCommand::apply_registry(
-                    AgentRegistryCommand::BindEndpoint(binding.into_payload()),
-                ))
+                self.apply_registry_command(AgentRegistryCommand::BindEndpoint(binding))
             }
-            Input::QueryAgentRegistry(query) => NexusAction::command_effect(
-                NexusEffectCommand::read_registry(query.into_payload()),
-            ),
-            Input::SubmitStamped(_) => NexusAction::reply_to_signal(Output::Unimplemented(
-                Unimplemented::new(RequestUnimplemented {
-                    unimplemented_operation_kind: OperationKind::SubmitStamped.into(),
-                    reason: UnimplementedReason::NotInPrototypeScope.into(),
-                }),
-            )),
-        }
-    }
-
-    /// Turn a completed effect into the Signal `Output` to reply with.
-    fn decide_effect_completed(&self, result: NexusEffectResult) -> NexusAction {
-        match result {
-            NexusEffectResult::RegistryCompleted(reply) => {
-                NexusAction::reply_to_signal(reply.into_payload())
+            Input::QueryAgentRegistry(query) => self.read_registry_query(query),
+            Input::QueryThread(query) => self.read_store_query(StoreQuery::Thread(query)),
+            Input::SubscribeThread(subscription) => {
+                self.apply_store_write(StoreWrite::Subscribe(subscription))
             }
-            NexusEffectResult::StoreCompleted(reply) => {
-                NexusAction::reply_to_signal(reply.into_payload())
-            }
-        }
+            Input::QueryThreads(query) => self.read_store_query(StoreQuery::Threads(query)),
+        })
     }
 
-    /// The single origin route message stamps onto every in-flight mail.
-    /// Message serves one request per connection on its own call stack, so
-    /// there is no concurrent in-flight mail to disambiguate.
-    fn origin_route() -> nexus_schema::OriginRoute {
-        nexus_schema::OriginRoute::new(1)
-    }
-
-    /// The SEMA-plane counterpart of `origin_route`: same single in-flight
-    /// route, in the sema module's route type.
-    fn sema_origin_route() -> sema_schema::OriginRoute {
-        sema_schema::OriginRoute::new(1)
-    }
-
-    fn error_output(message: impl Into<String>) -> Output {
-        Output::Error(SignalError::new(ErrorReport::new(ErrorMessage::new(
-            message,
-        ))))
-    }
-
-    /// Project a registry write onto its typed Signal reply.
-    ///
-    /// Store failures become typed rejection replies, not engine errors: the
-    /// daemon spine closes the connection without a reply frame on an engine
-    /// `Err`, and a caller must be able to distinguish a rejected operation
-    /// from a dead daemon.
     fn apply_registry_command(&self, command: AgentRegistryCommand) -> Output {
         match command {
             AgentRegistryCommand::AssignIdentity(assignment) => {
                 match self.tables.seat_identity(&assignment) {
-                    Ok(assigned) => Output::agent_identity_assigned(assigned),
-                    Err(_) => {
-                        Self::registry_rejection(AgentRegistryRejectionReason::StoreRejected)
-                    }
+                    Ok(assigned) => Output::AgentIdentityAssigned(assigned),
+                    Err(_) => Self::registry_rejection(z2VW5p::z2VYC4),
                 }
             }
             AgentRegistryCommand::BindEndpoint(binding) => {
@@ -335,33 +92,24 @@ impl MessageEngine {
                     Ok(Some(bound)) => {
                         DeliveryRunner::new(&self.tables)
                             .drain_outbox(bound.payload().payload().as_str());
-                        Output::agent_endpoint_bound(bound)
+                        Output::AgentEndpointBound(bound)
                     }
-                    Ok(None) => Self::registry_rejection(
-                        AgentRegistryRejectionReason::UnknownAgentIdentifier,
-                    ),
-                    Err(_) => {
-                        Self::registry_rejection(AgentRegistryRejectionReason::StoreRejected)
-                    }
+                    Ok(None) => Self::registry_rejection(z2VW5p::z2VYA6),
+                    Err(_) => Self::registry_rejection(z2VW5p::z2VYC4),
                 }
             }
         }
     }
 
-    /// Project a registry read onto its typed Signal reply.
-    fn read_registry_query(
-        &self,
-        query: crate::schema::signal::AgentRegistryQuery,
-    ) -> Output {
+    fn read_registry_query(&self, query: z2VYJe) -> Output {
         match self.tables.query_entries(&query) {
-            Ok(entries) => Output::agent_registry_listing(AgentRegistryEntries::new(entries)),
-            Err(_) => Self::registry_rejection(AgentRegistryRejectionReason::StoreRejected),
+            Ok(entries) => Output::AgentRegistryListing(z2VUzX {
+                field_0: z2VS1e::new(entries),
+            }),
+            Err(_) => Self::registry_rejection(z2VW5p::z2VYC4),
         }
     }
 
-    /// Project a provenance-stamped message-store write onto its typed
-    /// Signal reply. Same discipline as the registry: store failures are
-    /// typed rejections, never reply-less closes.
     fn apply_store_write(&self, write: StoreWrite) -> Output {
         match write {
             StoreWrite::RecordSubmission(draft) => match self.tables.store_submission(&draft) {
@@ -372,120 +120,50 @@ impl MessageEngine {
                     {
                         DeliveryRunner::new(&self.tables).deliver_committed(&record);
                     }
-                    Output::submission_accepted(acceptance)
+                    Output::SubmissionAccepted(acceptance)
                 }
-                Err(_) => Output::submission_rejected(SubmissionRejection::new(
-                    SubmissionRejectionReason::StoreRejected,
-                )),
+                Err(_) => Output::SubmissionRejected(z2VZEr::new(z2VPW5::z2Veun)),
             },
             StoreWrite::Subscribe(subscription) => {
                 match self.tables.subscribe_thread(&subscription) {
-                    Ok(acknowledgment) => Output::thread_subscribed(acknowledgment),
-                    Err(_) => Output::thread_rejected(ThreadRejection::new(
-                        ThreadRejectionReason::StoreRejected,
-                    )),
+                    Ok(acknowledgment) => Output::ThreadSubscribed(acknowledgment),
+                    Err(_) => Output::ThreadRejected(z2VPEF::new(z2Ve52::z2Vdxv)),
                 }
             }
         }
     }
 
-    /// Project a message-store read onto its typed Signal reply.
     fn read_store_query(&self, query: StoreQuery) -> Output {
         match query {
-            StoreQuery::Inbox(inbox_query) => {
-                match self.tables.inbox_entries(&inbox_query) {
-                    Ok(entries) => Output::inbox_listing(InboxContents::new(InboxEntries::new(
-                        entries,
-                    ))),
-                    Err(_) => Output::submission_rejected(SubmissionRejection::new(
-                        SubmissionRejectionReason::StoreRejected,
-                    )),
-                }
-            }
+            StoreQuery::Inbox(inbox_query) => match self.tables.inbox_entries(&inbox_query) {
+                Ok(entries) => Output::InboxListing(z2VRGD {
+                    field_0: signal_message::schema::lib::z2Vb4S::new(entries),
+                }),
+                Err(_) => Output::SubmissionRejected(z2VZEr::new(z2VPW5::z2Veun)),
+            },
             StoreQuery::Thread(thread_query) => {
                 let thread_name = thread_query.into_payload();
                 match self.tables.thread_contents(&thread_name) {
-                    Ok(Some(contents)) => Output::thread_listing(contents),
-                    Ok(None) => Output::thread_rejected(ThreadRejection::new(
-                        ThreadRejectionReason::UnknownThread,
-                    )),
-                    Err(_) => Output::thread_rejected(ThreadRejection::new(
-                        ThreadRejectionReason::StoreRejected,
-                    )),
+                    Ok(Some(contents)) => Output::ThreadListing(contents),
+                    Ok(None) => Output::ThreadRejected(z2VPEF::new(z2Ve52::z2VQY2)),
+                    Err(_) => Output::ThreadRejected(z2VPEF::new(z2Ve52::z2Vdxv)),
                 }
             }
             StoreQuery::Threads(_) => match self.tables.thread_summaries() {
-                Ok(summaries) => {
-                    Output::thread_index_listing(ThreadIndexEntries::new(Threads::new(summaries)))
-                }
-                Err(_) => Output::thread_rejected(ThreadRejection::new(
-                    ThreadRejectionReason::StoreRejected,
-                )),
+                Ok(summaries) => Output::ThreadIndexListing(z2VR9d {
+                    field_0: z2VV6N::new(summaries),
+                }),
+                Err(_) => Output::ThreadRejected(z2VPEF::new(z2Ve52::z2Vdxv)),
             },
         }
     }
 
-    fn registry_rejection(reason: AgentRegistryRejectionReason) -> Output {
-        Output::agent_registry_rejected(AgentRegistryRejection::new(reason))
-    }
-}
-
-impl<'request> RequestEngine<'request> {
-    fn new(engine: &'request MessageEngine) -> Self {
-        Self { engine }
-    }
-}
-
-impl NexusEngine for RequestEngine<'_> {
-    fn decide(
-        &mut self,
-        input: nexus_schema::nexus::Nexus<nexus_schema::nexus::Work>,
-    ) -> nexus_schema::nexus::Nexus<nexus_schema::nexus::Action> {
-        let origin_route = input.origin_route();
-        let action = match input.into_root() {
-            NexusWork::SignalArrived(signal_input) => {
-                self.engine.decide_signal(signal_input.into_payload())
-            }
-            NexusWork::EffectCompleted(result) => {
-                self.engine.decide_effect_completed(result.into_payload())
-            }
-        };
-        action.with_origin_route(origin_route)
-    }
-}
-
-/// The SEMA plane commits the legal transition in `messenger.sema` and
-/// returns the typed Signal reply projection.
-impl sema_schema::SemaEngine for MessageEngine {
-    fn apply_inner(
-        &mut self,
-        input: sema_schema::sema::Sema<SemaWriteInput>,
-    ) -> sema_schema::sema::Sema<SemaWriteOutput> {
-        let origin_route = input.origin_route();
-        let output = match input.into_root() {
-            SemaWriteInput::ApplyRegistry(command) => {
-                SemaWriteOutput::registry_applied(self.apply_registry_command(command))
-            }
-            SemaWriteInput::ApplyMessageStore(write) => {
-                SemaWriteOutput::store_applied(self.apply_store_write(write))
-            }
-        };
-        sema_schema::sema::Sema::new(origin_route, output)
+    fn registry_rejection(reason: z2VW5p) -> Output {
+        Output::AgentRegistryRejected(signal_message::schema::lib::z2VP29::new(reason))
     }
 
-    fn observe_inner(
-        &self,
-        input: sema_schema::sema::Sema<SemaReadInput>,
-    ) -> sema_schema::sema::Sema<SemaReadOutput> {
-        let origin_route = input.origin_route();
-        let output = match input.into_root() {
-            SemaReadInput::ReadRegistry(query) => {
-                SemaReadOutput::registry_read(self.read_registry_query(query))
-            }
-            SemaReadInput::ReadMessageStore(query) => {
-                SemaReadOutput::store_read(self.read_store_query(query))
-            }
-        };
-        sema_schema::sema::Sema::new(origin_route, output)
+    #[allow(dead_code)]
+    fn error_output(message: impl Into<String>) -> Output {
+        Output::Error(z2Vasi::new(z2VZuS::new(message.into())))
     }
 }

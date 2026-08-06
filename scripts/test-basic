@@ -4,6 +4,7 @@ set -euo pipefail
 repo="${MESSAGE_REPO:-$PWD}"
 cd "$repo"
 
-cargo fmt --all
-cargo test
+cargo fmt --all -- --check
+cargo test --all-targets --no-default-features
+cargo test --all-targets
 nix flake check

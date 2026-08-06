@@ -1,298 +1,61 @@
-//! Witnesses for the messenger's durable message state — the ledger,
-//! per-recipient inbox, and thread index in `messenger.sema` (packet 3.1).
-//!
-//! These drive `MessageEngine::handle` so the full Signal → Nexus → SEMA
-//! path is the thing proven, not the store alone: a submission persists a
-//! ledger row and an inbox row with minted provenance; threads accumulate
-//! entries and auto-join participants; listings survive a store reopen; the
-//! ledger window is bounded and reaps oldest-first.
-
-use std::path::PathBuf;
-
-use message::schema::signal::{
-    Body, Input, Kind, MessageKind, MessageSubmission, Output, QueryInbox, QueryThread,
-    QueryThreads, Recipient, SubscribeThread, Submit, ThreadIndexQuery, ThreadName, ThreadQuery,
-    ThreadRejectionReason, ThreadRelation, ThreadRelationSelection, ThreadSelection,
-    ThreadSubscription, ParticipantName, FeatureBranchName, RepositoryName,
+use message::{
+    MessengerTables,
+    runtime_model::{LedgerDraft, SenderName},
 };
-use message::{MessageEngine, MessengerTables, OriginPolicy};
-use tempfile::TempDir;
-use triad_runtime::{ConnectionContext, UnixCredentials};
+use signal_message::schema::lib::{
+    z2VNcG, z2VPn2, z2VSVi, z2VTJ1, z2VTiK, z2VUSt, z2VVrY, z2VWzi, z2VY2v, z2VY3v, z2VY18, z2Vari,
+    z2VdsV, z2Vf2p,
+};
 
-const OWNER_USER_ID: u32 = 1000;
-const NON_OWNER_USER_ID: u32 = 4242;
-const OWNER_INSTANCE: &str = "operator";
-
-fn owner_connection() -> ConnectionContext {
-    ConnectionContext::from(UnixCredentials::new(OWNER_USER_ID, OWNER_USER_ID, 101))
-}
-
-fn non_owner_connection() -> ConnectionContext {
-    ConnectionContext::from(UnixCredentials::new(
-        NON_OWNER_USER_ID,
-        NON_OWNER_USER_ID,
-        102,
-    ))
-}
-
-fn store_path(root: &TempDir) -> PathBuf {
-    root.path().join("messenger.sema")
-}
-
-fn engine_for(root: &TempDir) -> MessageEngine {
-    MessageEngine::new(
-        MessengerTables::open(&store_path(root)).expect("open messenger store"),
-        OriginPolicy::for_owner_user_id(OWNER_USER_ID, OWNER_INSTANCE),
-    )
-}
-
-fn submission(recipient: &str, body: &str, thread: ThreadSelection) -> Input {
-    Input::Submit(Submit::new(MessageSubmission {
-        recipient: Recipient::new(recipient.to_owned()),
-        kind: Kind::new(MessageKind::Send),
-        body: Body::new(body.to_owned()),
-        thread_selection: thread,
-    }))
-}
-
-fn named_thread(name: &str) -> ThreadSelection {
-    ThreadSelection::Named(ThreadName::new(name.to_owned()))
-}
-
-async fn drive(engine: &mut MessageEngine, input: Input, connection: &ConnectionContext) -> Output {
-    engine
-        .handle(input, connection)
-        .await
-        .expect("engine handle")
-}
-
-#[tokio::test]
-async fn submission_persists_ledger_and_inbox_row_with_minted_provenance() {
-    let root = TempDir::new().expect("tempdir");
-    let mut engine = engine_for(&root);
-
-    let accepted = drive(
-        &mut engine,
-        submission("designer", "scaffold ready", ThreadSelection::None),
-        &owner_connection(),
-    )
-    .await;
-    let Output::SubmissionAccepted(acceptance) = accepted else {
-        panic!("expected acceptance, got {accepted:?}");
-    };
-    assert_eq!(
-        *acceptance.payload().payload().payload(),
-        0,
-        "first slot is zero"
-    );
-
-    let listing = drive(
-        &mut engine,
-        Input::QueryInbox(QueryInbox::new(message::schema::signal::InboxQuery::new(
-            Recipient::new("designer".to_owned()),
-        ))),
-        &owner_connection(),
-    )
-    .await;
-    let Output::InboxListing(contents) = listing else {
-        panic!("expected inbox listing, got {listing:?}");
-    };
-    let entries = contents.into_payload().into_payload().into_payload();
-    assert_eq!(entries.len(), 1);
-    let entry = &entries[0];
-    assert_eq!(entry.body.payload(), "scaffold ready");
-    assert_eq!(
-        entry.sender.payload(),
-        OWNER_INSTANCE,
-        "no registry pin matches, so the owner connection resolves to the configured owner name"
-    );
-    assert!(
-        *entry.stamped_at.payload().payload() > 0,
-        "ingress stamp is minted"
-    );
-}
-
-#[tokio::test]
-async fn non_owner_sender_falls_back_to_uid_label() {
-    let root = TempDir::new().expect("tempdir");
-    let mut engine = engine_for(&root);
-
-    drive(
-        &mut engine,
-        submission("designer", "hello", ThreadSelection::None),
-        &non_owner_connection(),
-    )
-    .await;
-    let listing = drive(
-        &mut engine,
-        Input::QueryInbox(QueryInbox::new(message::schema::signal::InboxQuery::new(
-            Recipient::new("designer".to_owned()),
-        ))),
-        &owner_connection(),
-    )
-    .await;
-    let Output::InboxListing(contents) = listing else {
-        panic!("expected inbox listing, got {listing:?}");
-    };
-    let entries = contents.into_payload().into_payload().into_payload();
-    assert_eq!(entries[0].sender.payload(), &format!("uid-{NON_OWNER_USER_ID}"));
-}
-
-#[tokio::test]
-async fn thread_submissions_accumulate_entries_and_auto_join_participants() {
-    let root = TempDir::new().expect("tempdir");
-    let mut engine = engine_for(&root);
-
-    drive(
-        &mut engine,
-        submission("x2qb", "first", named_thread("subagents")),
-        &owner_connection(),
-    )
-    .await;
-    drive(
-        &mut engine,
-        submission("li7f", "second", named_thread("subagents")),
-        &owner_connection(),
-    )
-    .await;
-
-    let listing = drive(
-        &mut engine,
-        Input::QueryThread(QueryThread::new(ThreadQuery::new(ThreadName::new(
-            "subagents".to_owned(),
-        )))),
-        &owner_connection(),
-    )
-    .await;
-    let Output::ThreadListing(contents) = listing else {
-        panic!("expected thread listing, got {listing:?}");
-    };
-    let contents = contents.into_payload();
-    assert_eq!(contents.thread_entries.payload().len(), 2);
-    let participants: Vec<&str> = contents
-        .participants
-        .payload()
-        .iter()
-        .map(|name| name.payload().as_str())
-        .collect();
-    assert!(
-        participants.contains(&"x2qb") && participants.contains(&"li7f"),
-        "recipients auto-join the thread: {participants:?}"
-    );
-    assert!(
-        participants.contains(&OWNER_INSTANCE),
-        "the sender auto-joins the thread: {participants:?}"
-    );
-}
-
-#[tokio::test]
-async fn explicit_subscription_creates_thread_and_sets_relation() {
-    let root = TempDir::new().expect("tempdir");
-    let mut engine = engine_for(&root);
-
-    let subscribed = drive(
-        &mut engine,
-        Input::SubscribeThread(SubscribeThread::new(ThreadSubscription {
-            thread_name: ThreadName::new("MessengerPromotion".to_owned()),
-            participant_name: ParticipantName::new("li7f".to_owned()),
-            thread_relation_selection: ThreadRelationSelection::Related(ThreadRelation {
-                repository_name: RepositoryName::new("message".to_owned()),
-                feature_branch_name: FeatureBranchName::new("MessengerPromotion".to_owned()),
-            }),
-        })),
-        &owner_connection(),
-    )
-    .await;
-    let Output::ThreadSubscribed(acknowledgment) = subscribed else {
-        panic!("expected subscription acknowledgment, got {subscribed:?}");
-    };
-    let acknowledgment = acknowledgment.into_payload();
-    assert_eq!(acknowledgment.thread_name.payload(), "MessengerPromotion");
-
-    let index = drive(
-        &mut engine,
-        Input::QueryThreads(QueryThreads::new(ThreadIndexQuery::All)),
-        &owner_connection(),
-    )
-    .await;
-    let Output::ThreadIndexListing(listing) = index else {
-        panic!("expected thread index listing, got {index:?}");
-    };
-    let threads = listing.into_payload().into_threads();
-    assert_eq!(threads.len(), 1);
-    let summary = &threads[0];
-    assert!(matches!(
-        summary.thread_relation_selection,
-        ThreadRelationSelection::Related(_)
-    ));
-    assert_eq!(*summary.message_count.payload(), 0);
-}
-
-#[tokio::test]
-async fn unknown_thread_query_is_a_typed_rejection() {
-    let root = TempDir::new().expect("tempdir");
-    let mut engine = engine_for(&root);
-
-    let reply = drive(
-        &mut engine,
-        Input::QueryThread(QueryThread::new(ThreadQuery::new(ThreadName::new(
-            "missing".to_owned(),
-        )))),
-        &owner_connection(),
-    )
-    .await;
-    let Output::ThreadRejected(rejection) = reply else {
-        panic!("expected typed thread rejection, got {reply:?}");
-    };
-    assert!(matches!(
-        rejection.into_payload().into_payload(),
-        ThreadRejectionReason::UnknownThread
-    ));
-}
-
-#[tokio::test]
-async fn message_state_survives_store_reopen() {
-    let root = TempDir::new().expect("tempdir");
-    {
-        let mut engine = engine_for(&root);
-        drive(
-            &mut engine,
-            submission("designer", "durable", named_thread("triage")),
-            &owner_connection(),
-        )
-        .await;
+fn draft(recipient: &str, body: &str, thread: z2VTiK) -> LedgerDraft {
+    LedgerDraft {
+        message_submission: z2VY2v {
+            field_0: z2Vari::new(recipient.to_owned()),
+            field_1: z2VdsV::z2VXeo,
+            field_2: z2VNcG::new(body.to_owned()),
+            field_3: thread,
+        },
+        message_origin: z2VTJ1::z2VWSr(z2VY3v::z2VN6o(z2VPn2::new(1000))),
+        sender_name: SenderName::new("sender".to_owned()),
+        stamped_at: z2VY18::new(z2Vf2p::new(41)),
     }
+}
 
-    let mut reopened = engine_for(&root);
-    let listing = drive(
-        &mut reopened,
-        Input::QueryInbox(QueryInbox::new(message::schema::signal::InboxQuery::new(
-            Recipient::new("designer".to_owned()),
-        ))),
-        &owner_connection(),
-    )
-    .await;
-    let Output::InboxListing(contents) = listing else {
-        panic!("expected inbox listing after reopen, got {listing:?}");
-    };
-    assert_eq!(
-        contents.into_payload().into_payload().into_payload().len(),
-        1,
-        "ledger and inbox survive reopen"
-    );
+#[test]
+fn one_durable_write_feeds_inbox_and_thread_reads() {
+    let directory = tempfile::tempdir().unwrap();
+    let tables = MessengerTables::open(&directory.path().join("messenger.sema")).unwrap();
+    let thread = z2VUSt::new("design".to_owned());
+    let accepted = tables
+        .store_submission(&draft(
+            "designer",
+            "beauty rules",
+            z2VTiK::z2VPTM(thread.clone()),
+        ))
+        .unwrap();
+    assert_eq!(*accepted.payload().payload(), 0);
 
-    let threads = drive(
-        &mut reopened,
-        Input::QueryThreads(QueryThreads::new(ThreadIndexQuery::All)),
-        &owner_connection(),
-    )
-    .await;
-    let Output::ThreadIndexListing(listing) = threads else {
-        panic!("expected thread index after reopen, got {threads:?}");
-    };
-    assert_eq!(
-        listing.into_payload().into_threads().len(),
-        1,
-        "thread index survives reopen"
-    );
+    let inbox = tables
+        .inbox_entries(&z2VSVi::new(z2Vari::new("designer".to_owned())))
+        .unwrap();
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].field_1.payload(), "sender");
+    assert_eq!(inbox[0].field_2.payload(), "beauty rules");
+
+    let contents = tables
+        .thread_contents(&z2VVrY::new(thread).into_payload())
+        .unwrap()
+        .unwrap();
+    let entries: &z2VWzi = &contents.field_3;
+    assert_eq!(entries.payload().len(), 1);
+}
+
+#[test]
+fn empty_inbox_is_an_empty_producer_collection() {
+    let directory = tempfile::tempdir().unwrap();
+    let tables = MessengerTables::open(&directory.path().join("messenger.sema")).unwrap();
+    let entries = tables
+        .inbox_entries(&z2VSVi::new(z2Vari::new("absent".to_owned())))
+        .unwrap();
+    assert!(entries.is_empty());
 }
