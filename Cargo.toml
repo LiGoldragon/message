@@ -1,6 +1,6 @@
 [package]
 name         = "message"
-version      = "0.11.0"
+version      = "0.11.1"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -51,17 +51,17 @@ dotos-text = ["signal-message/dotos-text", "meta-signal-message/dotos-text"]
 
 [dependencies]
 dotos = { package = "dotos", git = "https://github.com/LiGoldragon/dotos.git", rev = "80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "c349f1252f0544fced18912abdb845bfc95ba826", default-features = false }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "96099d5f240cf16235d35a78cde80d384ec28158", default-features = false }
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", rev = "01676293a623d97b65e320d4138c4b480c6d5dad", default-features = false }
-signal-harness  = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "bf9722f4fd7553b1821ce55dd04fa14efe4e7062", default-features = false, features = ["dotos-text"] }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "1c7e2e0209cd0e27ce01c290e3318a20905e1142", default-features = false }
+signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", rev = "8aa0bcaeb29fe9e461a11706a469638d2fd109ac", default-features = false }
+signal-harness  = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "c05eacf167b9bee5245bdf46906428c8dee47c1b", default-features = false, features = ["dotos-text"] }
+signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31", default-features = false }
 redb            = "4.1"
 sema            = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
-sema-engine     = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "72015662fc0f238d80ca6b82fe5a69817179163d" }
+sema-engine     = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
 thiserror       = "2"
 tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync"] }
-triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "895d2e6b9023b2d901fe1ab20e6f8f431c6113b7" }
+triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "7d10bb9d9a08ce363a0be8cff2716103f0a326fe" }
 
 [dev-dependencies]
 rustix = { version = "1", features = ["process"] }

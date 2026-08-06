@@ -128,8 +128,8 @@ dependencies = [
 
 [[package]]
 name = "core-ethos"
-version = "0.29.0"
-source = "git+https://github.com/LiGoldragon/core-ethos.git?rev=427fd74a8217f557cfabdfe0ff23b784c855bf85#427fd74a8217f557cfabdfe0ff23b784c855bf85"
+version = "0.29.1"
+source = "git+https://github.com/LiGoldragon/core-ethos.git?rev=43b48c779c54ee9f05cbcc111d5d88074b162461#43b48c779c54ee9f05cbcc111d5d88074b162461"
 dependencies = [
  "name-table 0.3.0",
  "raw-discovery",
@@ -141,8 +141,8 @@ dependencies = [
 
 [[package]]
 name = "core-logos"
-version = "0.26.0"
-source = "git+https://github.com/LiGoldragon/core-logos.git?rev=f3655c5ba60d2aec5a6bffa0962eef6b5964ee4e#f3655c5ba60d2aec5a6bffa0962eef6b5964ee4e"
+version = "0.26.1"
+source = "git+https://github.com/LiGoldragon/core-logos.git?rev=734363bd5fca01c7dab46028f4a36e3ce6ae6650#734363bd5fca01c7dab46028f4a36e3ce6ae6650"
 dependencies = [
  "content-identity 0.3.0",
  "content-identity 0.5.0",
@@ -158,8 +158,8 @@ dependencies = [
 
 [[package]]
 name = "core-nomos"
-version = "0.41.0"
-source = "git+https://github.com/LiGoldragon/core-nomos.git?rev=ff675b264e3650afb88291036ec2bdd97292a2e7#ff675b264e3650afb88291036ec2bdd97292a2e7"
+version = "0.41.1"
+source = "git+https://github.com/LiGoldragon/core-nomos.git?rev=7b60721d199551b648d42a49934a2f0ef950c595#7b60721d199551b648d42a49934a2f0ef950c595"
 dependencies = [
  "content-identity 0.5.0",
  "core-ethos",
@@ -403,7 +403,7 @@ dependencies = [
 [[package]]
 name = "kameo"
 version = "0.20.0"
-source = "git+https://github.com/LiGoldragon/kameo.git?branch=main#f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01"
+source = "git+https://github.com/LiGoldragon/kameo.git?rev=f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01#f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01"
 dependencies = [
  "downcast-rs",
  "dyn-clone",
@@ -417,7 +417,7 @@ dependencies = [
 [[package]]
 name = "kameo_macros"
 version = "0.20.0"
-source = "git+https://github.com/LiGoldragon/kameo.git?branch=main#f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01"
+source = "git+https://github.com/LiGoldragon/kameo.git?rev=f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01#f491b45d7dcb55e5837eddde3d5d7ca8ceaa9f01"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -457,7 +457,7 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "message"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "dotos",
  "meta-signal-message",
@@ -466,7 +466,7 @@ dependencies = [
  "rustix",
  "sema",
  "sema-engine",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-frame",
  "signal-harness",
  "signal-message",
  "tempfile",
@@ -477,8 +477,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-message"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=c349f1252f0544fced18912abdb845bfc95ba826#c349f1252f0544fced18912abdb845bfc95ba826"
+version = "0.3.1"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=96099d5f240cf16235d35a78cde80d384ec28158#96099d5f240cf16235d35a78cde80d384ec28158"
 dependencies = [
  "core-ethos",
  "dotos",
@@ -487,7 +487,7 @@ dependencies = [
  "rust-logos",
  "schema-rust",
  "sema-translator",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-frame",
  "signal-message",
  "signal-sema-translator",
  "structural-codec",
@@ -584,12 +584,12 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "0.5.0"
-source = "git+https://github.com/LiGoldragon/protos.git?rev=65e7c6d4692a40e1c49deffb3fb4a9a2c3555c5b#65e7c6d4692a40e1c49deffb3fb4a9a2c3555c5b"
+version = "0.5.1"
+source = "git+https://github.com/LiGoldragon/protos.git?rev=cdc74bd28187bdb39b8ddc2228eef4934873dd45#cdc74bd28187bdb39b8ddc2228eef4934873dd45"
 dependencies = [
  "content-identity 0.5.0",
  "rkyv",
- "signal-frame 0.4.0",
+ "signal-frame",
 ]
 
 [[package]]
@@ -696,8 +696,8 @@ dependencies = [
 
 [[package]]
 name = "rust-logos"
-version = "0.30.0"
-source = "git+https://github.com/LiGoldragon/rust-logos.git?rev=55501fddc2d7e154d71fff1659386cbbba712267#55501fddc2d7e154d71fff1659386cbbba712267"
+version = "0.30.1"
+source = "git+https://github.com/LiGoldragon/rust-logos.git?rev=081e99596826b15e2ff7f1356ae8d797b18aeffc#081e99596826b15e2ff7f1356ae8d797b18aeffc"
 dependencies = [
  "bs58",
  "core-logos",
@@ -735,8 +735,8 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "schema-rust"
-version = "0.15.0"
-source = "git+https://github.com/LiGoldragon/schema-rust.git?rev=9e36587c85bd69357e9042729ba2df0052799756#9e36587c85bd69357e9042729ba2df0052799756"
+version = "0.15.1"
+source = "git+https://github.com/LiGoldragon/schema-rust.git?rev=664335240a40728826cfaa09e3100cd867031912#664335240a40728826cfaa09e3100cd867031912"
 dependencies = [
  "core-ethos",
  "core-nomos",
@@ -757,21 +757,21 @@ dependencies = [
 
 [[package]]
 name = "sema-engine"
-version = "0.11.2"
-source = "git+https://github.com/LiGoldragon/sema-engine.git?rev=72015662fc0f238d80ca6b82fe5a69817179163d#72015662fc0f238d80ca6b82fe5a69817179163d"
+version = "0.15.1"
+source = "git+https://github.com/LiGoldragon/sema-engine.git?rev=7158e5503f37fd2fbca1d707f134e38a3fda1176#7158e5503f37fd2fbca1d707f134e38a3fda1176"
 dependencies = [
  "blake3",
  "rkyv",
  "sema",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234)",
+ "signal-frame",
  "signal-sema",
  "thiserror",
 ]
 
 [[package]]
 name = "sema-translator"
-version = "0.7.0"
-source = "git+https://github.com/LiGoldragon/sema-translator.git?rev=6b5499c0d25c801b56582fdcd8e021c3293a6d4d#6b5499c0d25c801b56582fdcd8e021c3293a6d4d"
+version = "0.8.0"
+source = "git+https://github.com/LiGoldragon/sema-translator.git?rev=287fbd728a05b1a6be1dc8a28bcf3ca06d9916b3#287fbd728a05b1a6be1dc8a28bcf3ca06d9916b3"
 dependencies = [
  "core-ethos",
  "name-table 0.3.0",
@@ -837,83 +837,20 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "signal-frame"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#fd7909d1497b7bb18751521387a1087cd9e7c91c"
-dependencies = [
- "paste",
- "rkyv",
- "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
- "thiserror",
-]
-
-[[package]]
-name = "signal-frame"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad#01676293a623d97b65e320d4138c4b480c6d5dad"
+version = "0.3.1"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=8aa0bcaeb29fe9e461a11706a469638d2fd109ac#8aa0bcaeb29fe9e461a11706a469638d2fd109ac"
 dependencies = [
  "dotos",
  "paste",
  "rkyv",
- "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
- "thiserror",
-]
-
-[[package]]
-name = "signal-frame"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234#f46872e7e8edae5264c892443d415a273b231234"
-dependencies = [
- "paste",
- "rkyv",
- "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234)",
- "thiserror",
-]
-
-[[package]]
-name = "signal-frame"
-version = "0.4.0"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=0786fbe8caf27552afcdd5deb85bc82ec6088337#0786fbe8caf27552afcdd5deb85bc82ec6088337"
-dependencies = [
- "paste",
- "rkyv",
- "signal-frame-macros 0.1.1 (git+https://github.com/LiGoldragon/signal-frame.git?rev=0786fbe8caf27552afcdd5deb85bc82ec6088337)",
+ "signal-frame-macros",
  "thiserror",
 ]
 
 [[package]]
 name = "signal-frame-macros"
-version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#fd7909d1497b7bb18751521387a1087cd9e7c91c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "signal-frame-macros"
-version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad#01676293a623d97b65e320d4138c4b480c6d5dad"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "signal-frame-macros"
-version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=0786fbe8caf27552afcdd5deb85bc82ec6088337#0786fbe8caf27552afcdd5deb85bc82ec6088337"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "signal-frame-macros"
-version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=f46872e7e8edae5264c892443d415a273b231234#f46872e7e8edae5264c892443d415a273b231234"
+version = "0.1.2"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=8aa0bcaeb29fe9e461a11706a469638d2fd109ac#8aa0bcaeb29fe9e461a11706a469638d2fd109ac"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -922,20 +859,20 @@ dependencies = [
 
 [[package]]
 name = "signal-harness"
-version = "0.5.0"
-source = "git+https://github.com/LiGoldragon/signal-harness.git?rev=bf9722f4fd7553b1821ce55dd04fa14efe4e7062#bf9722f4fd7553b1821ce55dd04fa14efe4e7062"
+version = "0.5.1"
+source = "git+https://github.com/LiGoldragon/signal-harness.git?rev=c05eacf167b9bee5245bdf46906428c8dee47c1b#c05eacf167b9bee5245bdf46906428c8dee47c1b"
 dependencies = [
  "dotos",
  "rkyv",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-frame",
  "signal-persona",
  "thiserror",
 ]
 
 [[package]]
 name = "signal-message"
-version = "0.8.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?rev=1c7e2e0209cd0e27ce01c290e3318a20905e1142#1c7e2e0209cd0e27ce01c290e3318a20905e1142"
+version = "0.8.1"
+source = "git+https://github.com/LiGoldragon/signal-message.git?rev=dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31#dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31"
 dependencies = [
  "core-ethos",
  "dotos",
@@ -944,7 +881,7 @@ dependencies = [
  "rust-logos",
  "schema-rust",
  "sema-translator",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-frame",
  "signal-sema-translator",
  "structural-codec",
  "thiserror",
@@ -952,8 +889,8 @@ dependencies = [
 
 [[package]]
 name = "signal-persona"
-version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/signal-persona.git?rev=7d2568d420869aa0cded49c3c04cc0ac180e66a2#7d2568d420869aa0cded49c3c04cc0ac180e66a2"
+version = "0.3.1"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?rev=2802259fb1344495b1ad3b701fe81e0b7f9df9c3#2802259fb1344495b1ad3b701fe81e0b7f9df9c3"
 dependencies = [
  "core-ethos",
  "dotos",
@@ -962,7 +899,7 @@ dependencies = [
  "rust-logos",
  "schema-rust",
  "sema-translator",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?rev=01676293a623d97b65e320d4138c4b480c6d5dad)",
+ "signal-frame",
  "signal-sema-translator",
  "structural-codec",
  "thiserror",
@@ -979,14 +916,14 @@ dependencies = [
 
 [[package]]
 name = "signal-sema-translator"
-version = "0.4.0"
-source = "git+https://github.com/LiGoldragon/signal-sema-translator.git?rev=3a26cb43f8ce7f9fe85da64d19aa55aa662943ce#3a26cb43f8ce7f9fe85da64d19aa55aa662943ce"
+version = "0.4.1"
+source = "git+https://github.com/LiGoldragon/signal-sema-translator.git?rev=3f41813dd63904c7e2b3da4382eff64ed1bf12fe#3f41813dd63904c7e2b3da4382eff64ed1bf12fe"
 dependencies = [
  "blake3",
  "name-table 0.3.0",
  "protos",
  "rkyv",
- "signal-frame 0.4.0",
+ "signal-frame",
  "thiserror",
 ]
 
@@ -1143,13 +1080,13 @@ dependencies = [
 
 [[package]]
 name = "triad-runtime"
-version = "0.6.1"
-source = "git+https://github.com/LiGoldragon/triad-runtime.git?rev=895d2e6b9023b2d901fe1ab20e6f8f431c6113b7#895d2e6b9023b2d901fe1ab20e6f8f431c6113b7"
+version = "0.8.1"
+source = "git+https://github.com/LiGoldragon/triad-runtime.git?rev=7d10bb9d9a08ce363a0be8cff2716103f0a326fe#7d10bb9d9a08ce363a0be8cff2716103f0a326fe"
 dependencies = [
  "kameo",
  "rkyv",
  "rustix",
- "signal-frame 0.3.0 (git+https://github.com/LiGoldragon/signal-frame.git?branch=main)",
+ "signal-frame",
  "thiserror",
  "tokio",
 ]
