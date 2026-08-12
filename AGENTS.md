@@ -37,3 +37,9 @@ Beauty and elegant, extensible logic win every trade-off.
 Use fresh recorded-main Jujutsu workspaces. Treat dirty unpublished worktrees
 as neither reference nor design authority. Use exact-path coordination claims,
 release them immediately after proof/publication, and use `jj` for history.
+
+## Protos estate status
+
+Stack: correct-new destination
+Status: active component, current checkout legacy-wired
+This checkout is not proof of correct-new adoption.
