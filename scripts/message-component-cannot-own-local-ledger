@@ -22,15 +22,17 @@ fi
 
 retired_text='no''ta'
 retired_generator='schema''-rust'
+retired_dialect='do''tos'
+retired_envelope='signal''-frame'
 
 if rg --line-number --ignore-case \
   --glob 'Cargo.toml' \
   --glob 'flake.nix' \
   --glob 'src/**' \
   --glob '!scripts/message-component-cannot-own-local-ledger' \
-  "${retired_text}|${retired_generator}|GenerationDriver|GenerationPlan|ModuleEmission|ComponentDaemon|DaemonEntry" \
+  "${retired_text}|${retired_generator}|${retired_dialect}|${retired_envelope}|GenerationDriver|GenerationPlan|ModuleEmission|ComponentDaemon|DaemonEntry" \
   "$source_root"
 then
-  echo "message restored retired text, generation, or daemon-shape ownership" >&2
+  echo "message restored a retired dialect, envelope, generator, or daemon shape" >&2
   exit 1
 fi

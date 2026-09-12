@@ -1,21 +1,16 @@
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "dotos-text")]
 use std::io::Write;
 
-#[cfg(feature = "dotos-text")]
-use dotos::{DotosEncode, DotosSource};
-use meta_signal_message::schema::lib::{
-    ContractMarker, Frame, FrameBody, SignalFrameError, z2VKyZ, z2VM7X, z2VR6z, z2VUdf, z2VY5P,
-    z2VYLc, z2Vc2e,
+use meta_signal_message::{
+    OperationKind, Query, RequestUnimplemented, Response, UnimplementedReason,
 };
-use signal_frame::{ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply};
+use signal::{ByteViewable, Restorable, Signal, Signalizable};
 use tokio::net::UnixStream;
 use triad_runtime::{FrameBody as TransportBody, LengthPrefixedCodec, MaximumFrameLength};
 
-use crate::{Error, Result};
+use crate::Result;
 
-#[cfg(feature = "dotos-text")]
 const DEFAULT_META_MESSAGE_SOCKET: &str = "/tmp/meta-message.sock";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,19 +42,6 @@ impl MetaMessageFrameCodec {
         }
     }
 
-    fn connector_exchange(&self) -> ExchangeIdentifier {
-        ExchangeIdentifier::new(
-            SessionEpoch::new(1),
-            ExchangeLane::Connector,
-            LaneSequence::first(),
-        )
-    }
-
-    pub async fn read_frame(&self, stream: &mut UnixStream) -> Result<Frame> {
-        let body = self.transport.read_body_async(stream).await?;
-        Ok(ContractMarker::decode_frame(body.bytes())?)
-    }
-
     async fn write_encoded(&self, stream: &mut UnixStream, bytes: Vec<u8>) -> Result<()> {
         self.transport
             .write_body_async(stream, &TransportBody::new(bytes))
@@ -67,55 +49,35 @@ impl MetaMessageFrameCodec {
         Ok(())
     }
 
-    pub async fn read_request(
-        &self,
-        stream: &mut UnixStream,
-    ) -> Result<(ExchangeIdentifier, z2Vc2e)> {
+    pub async fn read_request(&self, stream: &mut UnixStream) -> Result<Query> {
         let body = self.transport.read_body_async(stream).await?;
-        Ok(ContractMarker::decode_single_request(body.bytes())?)
+        Ok(Signal::<Query>::from(body.bytes().to_vec()).restore()?)
     }
 
+    /// The privileged relation is vocabulary only until a manager owns it;
+    /// every request is answered with the typed unimplemented reply.
     pub async fn write_unimplemented_reply(
         &self,
         stream: &mut UnixStream,
-        exchange: ExchangeIdentifier,
-        operation: z2Vc2e,
-    ) -> Result<z2VYLc> {
-        let operation_kind = match operation {
-            z2Vc2e::z2VWNS(_) => z2VY5P::z2Vdbu,
+        operation: Query,
+    ) -> Result<Response> {
+        let unimplemented_operation_kind = match operation {
+            Query::Configure(_) => OperationKind::Configure,
         };
-        let reply = z2VYLc::z2Vc4F(z2VR6z {
-            field_0: z2VUdf::new(operation_kind),
-            field_1: z2VKyZ::new(z2VM7X::z2VKwC),
+        let reply = Response::OperationUnimplemented(RequestUnimplemented {
+            unimplemented_operation_kind,
+            reason: UnimplementedReason::NotBuiltYet,
         });
-        self.write_encoded(stream, reply.clone().encode_reply_frame(exchange)?)
+        self.write_encoded(stream, reply.signalize()?.bytes().to_vec())
             .await?;
         Ok(reply)
     }
 
-    pub fn reply_from_frame(&self, frame: Frame) -> Result<z2VYLc> {
-        match frame.into_body() {
-            FrameBody::Reply { reply, .. } => match reply {
-                Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
-                    SubReply::Ok(payload) => Ok(payload),
-                    other => Err(Error::UnexpectedMetaSubReply(format!("{other:?}"))),
-                },
-                Reply::Rejected { reason } => Err(Error::MetaReplyRejected(reason)),
-            },
-            _ => Err(Error::UnexpectedMetaFrame(
-                "expected meta message reply operation",
-            )),
-        }
-    }
-
-    async fn submit(&self, stream: &mut UnixStream, operation: z2Vc2e) -> Result<z2VYLc> {
-        self.write_encoded(
-            stream,
-            operation.encode_request_frame(self.connector_exchange())?,
-        )
-        .await?;
-        let frame = self.read_frame(stream).await?;
-        self.reply_from_frame(frame)
+    async fn submit(&self, stream: &mut UnixStream, operation: Query) -> Result<Response> {
+        self.write_encoded(stream, operation.signalize()?.bytes().to_vec())
+            .await?;
+        let body = self.transport.read_body_async(stream).await?;
+        Ok(Signal::<Response>::from(body.bytes().to_vec()).restore()?)
     }
 }
 
@@ -138,26 +100,23 @@ impl MetaMessageClient {
         }
     }
 
-    pub async fn submit(&self, operation: z2Vc2e) -> Result<z2VYLc> {
+    pub async fn submit(&self, operation: Query) -> Result<Response> {
         let mut stream = UnixStream::connect(self.endpoint.as_path()).await?;
         self.codec.submit(&mut stream, operation).await
     }
 }
 
-#[cfg(feature = "dotos-text")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaMessageCommand {
     arguments: Vec<String>,
     environment: MetaMessageCommandEnvironment,
 }
 
-#[cfg(feature = "dotos-text")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaMessageCommandEnvironment {
     socket: String,
 }
 
-#[cfg(feature = "dotos-text")]
 impl MetaMessageCommand {
     pub fn from_env() -> Self {
         Self {
@@ -192,24 +151,16 @@ impl MetaMessageCommand {
     }
 
     pub async fn run(self, mut output: impl Write) -> Result<()> {
-        let [text] = self.arguments.as_slice() else {
-            return Err(Error::InvalidMetaArgument {
-                detail: format!(
-                    "expected exactly one inline Dotos value, received {}",
-                    self.arguments.len()
-                ),
-            });
-        };
-        let operation = DotosSource::new(text).parse::<z2Vc2e>()?;
+        let text = crate::text::sole_argument(&self.arguments)?;
+        let operation = crate::text::read::<Query>(text)?;
         let reply = MetaMessageClient::new(self.environment.endpoint())
             .submit(operation)
             .await?;
-        writeln!(output, "{}", reply.to_dotos())?;
+        writeln!(output, "{}", crate::text::write(&reply))?;
         Ok(())
     }
 }
 
-#[cfg(feature = "dotos-text")]
 impl MetaMessageCommandEnvironment {
     pub fn new(socket: impl Into<String>) -> Self {
         Self {
@@ -226,11 +177,5 @@ impl MetaMessageCommandEnvironment {
 
     fn endpoint(&self) -> MetaMessageEndpoint {
         MetaMessageEndpoint::new(PathBuf::from(&self.socket))
-    }
-}
-
-impl From<SignalFrameError> for Error {
-    fn from(error: SignalFrameError) -> Self {
-        Self::MetaMessageFrame(error)
     }
 }

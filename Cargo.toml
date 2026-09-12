@@ -1,11 +1,11 @@
 [package]
 name         = "message"
-version      = "0.11.1"
+version      = "0.12.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/message"
-description  = "Dotos Message surface, durable messenger, and supervised ingress daemon."
+description  = "Message surface, durable messenger, and supervised ingress daemon."
 
 [lib]
 name = "message"
@@ -14,7 +14,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "message"
 path = "src/main.rs"
-required-features = ["dotos-text"]
 
 [[bin]]
 name = "message-daemon"
@@ -23,47 +22,32 @@ path = "src/bin/message_daemon.rs"
 [[bin]]
 name = "meta-message"
 path = "src/bin/meta_message.rs"
-required-features = ["dotos-text"]
 
 [[bin]]
 name = "message-validate-output"
 path = "src/bin/message_validate_output.rs"
-required-features = ["dotos-text"]
 
 [[bin]]
 name = "message-write-configuration"
 path = "src/bin/message_write_configuration.rs"
-required-features = ["dotos-text"]
-
-[[test]]
-name = "process_boundary"
-path = "tests/process_boundary.rs"
-required-features = ["dotos-text"]
-
-[[test]]
-name = "pty_end_to_end"
-path = "tests/pty_end_to_end.rs"
-required-features = ["dotos-text"]
-
-[features]
-default = ["dotos-text"]
-dotos-text = ["signal-message/dotos-text", "meta-signal-message/dotos-text"]
 
 [dependencies]
-dotos = { package = "dotos", git = "https://github.com/LiGoldragon/dotos.git", rev = "80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "96099d5f240cf16235d35a78cde80d384ec28158", default-features = false }
-rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", rev = "8aa0bcaeb29fe9e461a11706a469638d2fd109ac", default-features = false }
-signal-harness  = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "cdfd4e3cd9bba8d8fab3e1d2f65490639db0069c", default-features = false, features = ["dotos-text"] }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31", default-features = false }
-redb            = "4.1"
-sema            = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
-sema-engine     = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
-thiserror       = "2"
-tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync"] }
-triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "02cdd49df63a1769b3cf1b2761261a87eeaa75a4" }
+datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6dccc76b75918a91d3370a9d4fe88aa7dd567876" }
+protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "35676fb9367eed718d1c3f8e430fe8777ccb1407", features = ["datom"] }
+signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
+signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "f692865ae9620d6b6bb5a140d9721e50fdc64b03", features = ["datom"] }
+signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
+rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
+redb           = "4.1"
+sema           = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
+sema-engine    = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "516f01fe0b03157efc6cc3d38b588f0ca123ac94" }
+thiserror      = "2"
+tokio          = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync"] }
+triad-runtime  = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "2abec17849fe270755bb04a13d052e1edbb2a7ab" }
 
 [dev-dependencies]
+redb = "4.1"
 rustix = { version = "1", features = ["process"] }
 tempfile = "3"
 

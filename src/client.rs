@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
 
 use crate::error::Result;
-use signal_frame::{ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply};
-use signal_message::schema::lib::{ContractMarker, FrameBody as SignalFrameBody, Input, Output};
+use signal::{ByteViewable, Restorable, Signal, Signalizable};
+use signal_message::{Query, Response};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageSocket {
@@ -47,31 +47,14 @@ impl MessageClient {
         }
     }
 
-    pub fn submit(&self, input: Input) -> Result<Output> {
+    /// One connection carries one request and one reply. The body is the bare
+    /// rkyv archive of the contract root; the length prefix is the framing.
+    pub fn submit(&self, query: Query) -> Result<Response> {
         let mut stream = UnixStream::connect(self.socket.path())?;
-        let request = FrameBody::new(input.encode_request_frame(ExchangeIdentifier::new(
-            SessionEpoch::new(1),
-            ExchangeLane::Connector,
-            LaneSequence::first(),
-        ))?);
+        let request = FrameBody::new(query.signalize()?.bytes().to_vec());
         self.codec.write_body(&mut stream, &request)?;
         stream.flush()?;
         let reply = self.codec.read_body(&mut stream)?;
-        match ContractMarker::decode_frame(&reply.into_bytes())?.into_body() {
-            SignalFrameBody::Reply { reply, .. } => match reply {
-                Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
-                    SubReply::Ok(output) => Ok(output),
-                    other => Err(crate::Error::UnexpectedOrdinaryReply {
-                        got: format!("{other:?}"),
-                    }),
-                },
-                Reply::Rejected { reason } => Err(crate::Error::UnexpectedOrdinaryReply {
-                    got: format!("{reason:?}"),
-                }),
-            },
-            other => Err(crate::Error::UnexpectedOrdinaryReply {
-                got: format!("{other:?}"),
-            }),
-        }
+        Ok(Signal::<Response>::from(reply.into_bytes()).restore()?)
     }
 }

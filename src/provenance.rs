@@ -16,8 +16,8 @@ use triad_runtime::{ConnectionContext, PeerIdentity, UnixCredentials};
 
 use crate::runtime_model::SenderName;
 use crate::tables::{MessengerTables, PinnedAgentIdentity};
-use signal_message::schema::lib::{
-    z2VLai, z2VPn2, z2VPq6, z2VTJ1, z2VTaw, z2VY3v, z2VY18, z2Vdkj, z2Vf2p,
+use signal_message::{
+    ComponentName, ConnectionClass, InternalComponentInstanceOrigin, MessageOrigin, StampedAt,
 };
 
 /// Classifies an accepted connection into the daemon-local stored origin and
@@ -54,30 +54,30 @@ impl OriginPolicy {
     /// component instance; any other local user is `NonOwnerUser(uid)`; a
     /// TCP peer carries no Unix credentials and classifies as a network
     /// peer by remote address.
-    pub fn origin_for_connection(&self, connection: &ConnectionContext) -> z2VTJ1 {
+    pub fn origin_for_connection(&self, connection: &ConnectionContext) -> MessageOrigin {
         match connection.peer() {
             PeerIdentity::Unix(credentials) if credentials.user_id() == self.owner_user_id => {
-                z2VTJ1::z2VS4W(z2VPq6 {
-                    field_0: z2Vdkj::z2VPrB,
-                    field_1: z2VTaw::new(self.owner_name.clone()),
+                MessageOrigin::InternalComponentInstance(InternalComponentInstanceOrigin {
+                    component_name: ComponentName::Harness,
+                    component_instance_name: self.owner_name.clone(),
                 })
             }
-            PeerIdentity::Unix(credentials) => z2VTJ1::z2VWSr(z2VY3v::z2VN6o(z2VPn2::new(
-                u64::from(credentials.user_id()),
-            ))),
+            PeerIdentity::Unix(credentials) => MessageOrigin::External(
+                ConnectionClass::NonOwnerUser(i64::from(credentials.user_id())),
+            ),
             PeerIdentity::Tcp(address) => {
-                z2VTJ1::z2VWSr(z2VY3v::z2VVrk(z2VLai::new(address.to_string())))
+                MessageOrigin::External(ConnectionClass::Network(address.to_string()))
             }
         }
     }
 
     /// Daemon-minted ingress timestamp for a stored message.
-    pub fn ingress_stamp(&self) -> z2VY18 {
+    pub fn ingress_stamp(&self) -> StampedAt {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos().min(u128::from(u64::MAX)) as u64)
             .unwrap_or(0);
-        z2VY18::new(z2Vf2p::new(nanos))
+        nanos as StampedAt
     }
 }
 
@@ -157,7 +157,7 @@ impl ProcessAncestry {
             let stat = ProcessStat::read(current)?;
             if let Some(pin) = pins
                 .iter()
-                .find(|pin| pin.matches(current, stat.start_time))
+                .find(|pin| pin.matches(current, stat.start_time as i64))
             {
                 return Some(pin.identifier().to_owned());
             }

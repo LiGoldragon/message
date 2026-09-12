@@ -2,7 +2,8 @@
 
 use std::fmt::{Display, Formatter};
 
-use signal_message::schema::lib::ContractMarker;
+use signal::{ByteViewable, Restorable, Signal, Signalizable};
+use signal_message::Query;
 use thiserror::Error;
 use triad_runtime::{
     AcceptedConnection, AsyncListenerSocket, AsyncMultiConnectionRuntime, AsyncMultiListenerDaemon,
@@ -99,24 +100,24 @@ impl AsyncMultiConnectionRuntime for MessageRuntime {
                     .ordinary_codec
                     .read_body_async(connection.stream_mut())
                     .await?;
-                let (exchange, input) = ContractMarker::decode_single_request(body.bytes())?;
+                let query = Signal::<Query>::from(body.bytes().to_vec()).restore()?;
                 let context = *connection.context();
-                let output = self.engine.lock().await.handle(input, &context).await?;
+                let response = self.engine.lock().await.handle(query, &context).await?;
                 self.ordinary_codec
                     .write_body_async(
                         connection.stream_mut(),
-                        &FrameBody::new(output.encode_reply_frame(exchange)?),
+                        &FrameBody::new(response.signalize()?.bytes().to_vec()),
                     )
                     .await?;
                 Ok(())
             }
             ListenerRole::Owner => {
-                let (exchange, operation) = self
+                let operation = self
                     .meta_codec
                     .read_request(connection.stream_mut())
                     .await?;
                 self.meta_codec
-                    .write_unimplemented_reply(connection.stream_mut(), exchange, operation)
+                    .write_unimplemented_reply(connection.stream_mut(), operation)
                     .await?;
                 Ok(())
             }
@@ -134,10 +135,8 @@ pub enum MessageDaemonError {
     Listener(String),
     #[error("component: {0}")]
     Component(#[from] MessageError),
-    #[error("ordinary frame: {0}")]
-    OrdinaryFrame(#[from] signal_message::schema::lib::SignalFrameError),
-    #[error("meta frame: {0}")]
-    MetaFrame(#[from] meta_signal_message::schema::lib::SignalFrameError),
+    #[error("message archive: {0}")]
+    Archive(#[from] rkyv::rancor::Error),
     #[error("transport frame: {0}")]
     TransportFrame(#[from] triad_runtime::FrameError),
 }

@@ -1,5 +1,5 @@
 {
-  description = "Dotos Message surface, durable messenger, and ingress daemon.";
+  description = "Message surface, durable messenger, and ingress daemon.";
 
   inputs = {
     nixpkgs.url = "github:LiGoldragon/nixpkgs?ref=main";
@@ -69,19 +69,6 @@
                 cargoTestExtraArgs = "--test ${testFile} ${testName} -- --exact";
               }
             );
-          cargoTestFileWithFeatures =
-            testFile: testName: features: craneLib.cargoTest (
-              commonArgs
-              // {
-                inherit cargoArtifacts;
-                nativeBuildInputs = [ pkgs.ripgrep ];
-                preCheck = ''
-                  rg --fixed-strings ${pkgs.lib.escapeShellArg "fn ${testName}("} \
-                    tests/${testFile}.rs
-                '';
-                cargoTestExtraArgs = "--features ${features} --test ${testFile} ${testName} -- --exact";
-              }
-            );
           context = {
             inherit
               pkgs
@@ -91,7 +78,6 @@
               cargoArtifacts
               sourceConstraintCheck
               cargoTestFile
-              cargoTestFileWithFeatures
               ;
           };
         in
@@ -113,16 +99,6 @@
             // {
               inherit (context) cargoArtifacts;
               pname = "message";
-              cargoExtraArgs = "--features dotos-text";
-              meta.mainProgram = "message";
-            }
-          );
-          text = context.craneLib.buildPackage (
-            context.commonArgs
-            // {
-              inherit (context) cargoArtifacts;
-              cargoExtraArgs = "--features dotos-text";
-              pname = "message-text";
               meta.mainProgram = "message";
             }
           );
@@ -158,11 +134,19 @@
               inherit (context) cargoArtifacts;
             }
           );
-          binary-only = context.craneLib.cargoTest (
+          clippy = context.craneLib.cargoClippy (
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--all-targets --no-default-features";
+              cargoClippyExtraArgs = "--all-targets --all-features -- -D warnings";
+            }
+          );
+          fmt = context.craneLib.cargoFmt { inherit (context.commonArgs) src; };
+          doc = context.craneLib.cargoDoc (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              RUSTDOCFLAGS = "-D warnings";
             }
           );
           message-runtime-cannot-reference-retired-terminal-brand =
@@ -171,20 +155,27 @@
             context.sourceConstraintCheck "message-component-cannot-own-local-ledger" ./scripts/message-component-cannot-own-local-ledger;
           message-daemon-reads-no-control-plane-environment-variables =
             context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
-          message-consumes-producer-contract-directly =
+          message-request-frame-is-a-bare-length-prefixed-archive =
             context.cargoTestFile "contract_convergence"
-              "component_executes_the_producer_contract_by_identity";
-          message-has-no-structural-ownership-inputs =
+              "a_request_frame_is_a_length_prefix_over_a_bare_contract_archive";
+          message-roots-are-distinct-on-the-wire =
             context.cargoTestFile "contract_convergence"
-              "component_has_no_structural_ownership_inputs";
+              "a_reply_archive_is_not_readable_as_a_request";
           message-daemon-executes-both-producer-contracts =
-            context.cargoTestFileWithFeatures "process_boundary"
-              "daemon_executes_both_producer_owned_contracts"
-              "dotos-text";
-          message-pty-delivery-speaks-producer-dotos =
-            context.cargoTestFileWithFeatures "pty_end_to_end"
-              "pty_leg_sends_the_producer_inbox_entry_in_dotos"
-              "dotos-text";
+            context.cargoTestFile "process_boundary"
+              "daemon_executes_both_producer_owned_contracts";
+          message-pty-delivery-speaks-producer-datom =
+            context.cargoTestFile "pty_end_to_end"
+              "pty_leg_sends_the_producer_inbox_entry_as_datom";
+          message-startup-request-round-trips-as-datom =
+            context.cargoTestFile "startup_configuration"
+              "the_startup_request_round_trips_through_its_own_datom_text";
+          message-startup-request-writes-a-loadable-configuration =
+            context.cargoTestFile "startup_configuration"
+              "writing_the_startup_request_produces_a_configuration_the_daemon_loads";
+          message-previous-store-schema-fails-closed =
+            context.cargoTestFile "store_migration"
+              "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
         }
       );
 

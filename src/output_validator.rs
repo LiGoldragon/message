@@ -1,8 +1,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use dotos::DotosSource;
-use signal_message::schema::lib::{Output, z2VRQt};
+use signal_message::{InboxEntry, Response};
 
 use crate::error::{Error, Result};
 
@@ -52,7 +51,7 @@ impl OutputValidation {
 
     fn check(&self) -> Result<()> {
         let text = std::fs::read_to_string(&self.output_path)?;
-        let output = DotosSource::new(&text).parse::<Output>()?;
+        let output = crate::text::read::<Response>(&text)?;
         self.expectation.check(&output)
     }
 }
@@ -86,10 +85,10 @@ impl OutputExpectation {
         }
     }
 
-    fn check(&self, output: &Output) -> Result<()> {
+    fn check(&self, output: &Response) -> Result<()> {
         match self {
             Self::SubmissionAccepted => match output {
-                Output::SubmissionAccepted(_) => Ok(()),
+                Response::SubmissionAccepted(_) => Ok(()),
                 other => Err(Error::OutputValidation {
                     detail: format!("expected SubmissionAccepted, got {other:?}"),
                 }),
@@ -97,10 +96,10 @@ impl OutputExpectation {
             Self::InboxEntryPresent { sender, body } => {
                 let entries = Self::inbox_entries(output)?;
                 if entries.iter().any(|entry| {
-                    entry.field_2.payload() == body
+                    entry.message_body.as_str() == body
                         && sender
                             .as_ref()
-                            .map(|expected| entry.field_1.payload() == expected)
+                            .map(|expected| entry.message_sender.as_str() == expected)
                             .unwrap_or(true)
                 }) {
                     Ok(())
@@ -114,7 +113,10 @@ impl OutputExpectation {
             }
             Self::InboxBodyAbsent { body } => {
                 let entries = Self::inbox_entries(output)?;
-                if entries.iter().any(|entry| entry.field_2.payload() == body) {
+                if entries
+                    .iter()
+                    .any(|entry| entry.message_body.as_str() == body)
+                {
                     Err(Error::OutputValidation {
                         detail: format!(
                             "inbox unexpectedly contained body={body:?}; output={output:?}"
@@ -127,9 +129,9 @@ impl OutputExpectation {
         }
     }
 
-    fn inbox_entries(output: &Output) -> Result<&Vec<z2VRQt>> {
+    fn inbox_entries(output: &Response) -> Result<&Vec<InboxEntry>> {
         match output {
-            Output::InboxListing(listing) => Ok(listing.field_0.payload()),
+            Response::InboxListing(listing) => Ok(&listing.messages),
             other => Err(Error::OutputValidation {
                 detail: format!("expected InboxListing, got {other:?}"),
             }),

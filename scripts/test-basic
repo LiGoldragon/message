@@ -5,6 +5,6 @@ repo="${MESSAGE_REPO:-$PWD}"
 cd "$repo"
 
 cargo fmt --all -- --check
-cargo test --all-targets --no-default-features
-cargo test --all-targets
+cargo test --all-targets --all-features
+cargo clippy --all-targets --all-features -- -D warnings
 nix flake check

@@ -7,17 +7,22 @@ those Types by identity.
 
 It provides:
 
-- `message`, a one-value Dotos client for the ordinary interface;
-- `meta-message`, a one-value Dotos client for the owner interface;
+- `message`, a one-value Datom client for the ordinary interface;
+- `meta-message`, a one-value Datom client for the owner interface;
 - `message-daemon`, the two-listener runtime;
-- `message-write-configuration`, a Dotos-to-binary startup helper;
+- `message-write-configuration`, a Datom-to-binary startup helper;
 - `messenger.sema`, the bounded durable ledger, inbox, thread index, agent
   registry, and delivery outbox.
 
 The daemon receives one binary configuration path as its only argument. The
 ordinary CLI connects through `MESSAGE_SOCKET`; the owner CLI connects through
-`MESSAGE_META_SOCKET`. Both CLIs accept exactly one inline Dotos value and
-print the producer-owned reply in Dotos.
+`MESSAGE_META_SOCKET`. Both CLIs accept exactly one inline Datom value and
+print the producer-owned reply in Datom.
+
+The wire is a 4-byte big-endian length prefix over the bare rkyv archive of
+the producer-owned contract root — no envelope, because one connection carries
+one request and one reply. The portable frame itself comes from `signal`, so
+every component speaks one frame type.
 
 There is no component-local structural language, generated Rust, build script,
 frame model, or compatibility vocabulary. The producer contracts are the

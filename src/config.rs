@@ -1,19 +1,19 @@
 //! Binary startup configuration for `message-daemon`.
 //!
 //! The public socket, owner, and ingress policy is the exact producer-owned
-//! `MessageDaemonConfiguration` coordinate (`z2VL2C`). The messenger adds only
+//! `MessageDaemonConfiguration` coordinate (`MessageDaemonConfiguration`). The messenger adds only
 //! its private durable-store path and sender fallback label; those values are
 //! runtime state, not a second wire contract.
 
 use std::{fs, path::Path};
 
-use signal_message::schema::lib::{z2VL2C, z2VUqb};
+use signal_message::{MessageDaemonConfiguration, OwnerIdentity};
 use thiserror::Error;
 use triad_runtime::SocketMode;
 
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq)]
 pub struct Configuration {
-    contract: z2VL2C,
+    contract: MessageDaemonConfiguration,
     database_path: RuntimePath,
     owner_label: String,
 }
@@ -33,7 +33,7 @@ impl RuntimePath {
 
 impl Configuration {
     pub fn new(
-        contract: z2VL2C,
+        contract: MessageDaemonConfiguration,
         database_path: impl AsRef<Path>,
         owner_label: impl Into<String>,
     ) -> Result<Self, ConfigurationError> {
@@ -46,24 +46,24 @@ impl Configuration {
         Ok(value)
     }
 
-    pub fn contract(&self) -> &z2VL2C {
+    pub fn contract(&self) -> &MessageDaemonConfiguration {
         &self.contract
     }
 
     pub fn socket_path(&self) -> &Path {
-        Path::new(self.contract.field_0.payload().payload())
+        Path::new(&self.contract.message_socket_path)
     }
 
     pub fn socket_mode(&self) -> SocketMode {
-        SocketMode::new(*self.contract.field_1.payload().payload() as u32)
+        SocketMode::new(self.contract.message_socket_mode as u32)
     }
 
     pub fn meta_socket_path(&self) -> &Path {
-        Path::new(self.contract.field_2.payload().payload())
+        Path::new(&self.contract.supervision_socket_path)
     }
 
     pub fn meta_socket_mode(&self) -> SocketMode {
-        SocketMode::new(*self.contract.field_3.payload().payload() as u32)
+        SocketMode::new(self.contract.supervision_socket_mode as u32)
     }
 
     pub fn database_path(&self) -> &Path {
@@ -75,27 +75,31 @@ impl Configuration {
     }
 
     pub fn owner_user_id(&self) -> u32 {
-        match &self.contract.field_6 {
-            z2VUqb::z2Vd9P(identifier) => *identifier.payload() as u32,
-            z2VUqb::z2VZGs(_) => unreachable!("validated Unix owner configuration"),
+        match &self.contract.owner_identity {
+            OwnerIdentity::UnixUser(identifier) => *identifier as u32,
+            OwnerIdentity::System(_) => unreachable!("validated Unix owner configuration"),
         }
     }
 
     pub fn validate(&self) -> Result<(), ConfigurationError> {
         for (surface, mode) in [
-            ("message", *self.contract.field_1.payload().payload()),
-            ("supervision", *self.contract.field_3.payload().payload()),
+            ("message", self.contract.message_socket_mode),
+            ("supervision", self.contract.supervision_socket_mode),
         ] {
-            if mode > u64::from(u32::MAX) {
+            if mode < 0 || mode > i64::from(u32::MAX) {
                 return Err(ConfigurationError::SocketModeOutOfRange { surface, mode });
             }
         }
-        match &self.contract.field_6 {
-            z2VUqb::z2Vd9P(identifier) if *identifier.payload() <= u64::from(u32::MAX) => Ok(()),
-            z2VUqb::z2Vd9P(identifier) => Err(ConfigurationError::OwnerUserOutOfRange {
-                value: *identifier.payload(),
-            }),
-            z2VUqb::z2VZGs(_) => Err(ConfigurationError::SystemOwnerUnsupported),
+        match &self.contract.owner_identity {
+            OwnerIdentity::UnixUser(identifier)
+                if *identifier >= 0 && *identifier <= i64::from(u32::MAX) =>
+            {
+                Ok(())
+            }
+            OwnerIdentity::UnixUser(identifier) => {
+                Err(ConfigurationError::OwnerUserOutOfRange { value: *identifier })
+            }
+            OwnerIdentity::System(_) => Err(ConfigurationError::SystemOwnerUnsupported),
         }
     }
 
@@ -123,6 +127,40 @@ impl Configuration {
     }
 }
 
+/// The one inline Datom value `message-write-configuration` takes.
+///
+/// This is the component's startup text surface: a peer that launches the
+/// daemon writes this value, so its shape is public and gated by a test
+/// rather than buried in a binary.
+#[derive(Debug, Clone, PartialEq, datom_codec::Datomizable, datom_codec::Composing)]
+pub struct ConfigurationWriteRequest {
+    pub contract: MessageDaemonConfiguration,
+    pub database_path: String,
+    pub owner_label: String,
+    pub output_path: String,
+}
+
+/// What `message-write-configuration` prints when it has written the file.
+#[derive(Debug, Clone, PartialEq, datom_codec::Datomizable, datom_codec::Composing)]
+pub struct ConfigurationWritten {
+    pub output_path: String,
+}
+
+impl ConfigurationWriteRequest {
+    /// Validate the request and write the binary configuration it names.
+    pub fn write(self) -> Result<ConfigurationWritten, ConfigurationError> {
+        let configuration = Configuration::new(
+            self.contract,
+            Path::new(&self.database_path),
+            self.owner_label,
+        )?;
+        configuration.write_binary_file(Path::new(&self.output_path))?;
+        Ok(ConfigurationWritten {
+            output_path: self.output_path,
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ConfigurationError {
     #[error("failed to read binary configuration: {0}")]
@@ -134,9 +172,9 @@ pub enum ConfigurationError {
     #[error("failed to decode binary configuration")]
     ArchiveDecode,
     #[error("{surface} socket mode {mode} does not fit the operating-system mode width")]
-    SocketModeOutOfRange { surface: &'static str, mode: u64 },
+    SocketModeOutOfRange { surface: &'static str, mode: i64 },
     #[error("owner Unix user identifier {value} does not fit the operating-system uid width")]
-    OwnerUserOutOfRange { value: u64 },
+    OwnerUserOutOfRange { value: i64 },
     #[error("the messenger runtime currently requires a Unix-user owner")]
     SystemOwnerUnsupported,
 }

@@ -1,18 +1,18 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 
-use dotos::DotosSource;
 use message::{
     DeliveryDisposition, DeliveryRunner, MessengerTables,
     runtime_model::{LedgerDraft, SenderName},
 };
-use signal_message::schema::lib::{
-    z2VMBf, z2VNPW, z2VNcG, z2VPEW, z2VPn2, z2VQY5, z2VRQt, z2VRqE, z2VTJ1, z2VTiK, z2VUs6, z2VVAD,
-    z2VXMQ, z2VY2v, z2VY3v, z2VY18, z2VYrY, z2Vari, z2Vcfd, z2VdsV, z2VevD, z2Vf2p,
+use signal_message::{
+    AgentEndpoint, AgentEndpointBinding, AgentEndpointKind, AgentIdentityAssignment,
+    ConnectionClass, InboxEntry, MessageKind, MessageOrigin, MessageSubmission,
+    ProcessPinSelection, ResumeSelection, ThreadSelection,
 };
 
 #[test]
-fn pty_leg_sends_the_producer_inbox_entry_in_dotos() {
+fn pty_leg_sends_the_producer_inbox_entry_as_datom() {
     let directory = tempfile::tempdir().unwrap();
     let session = directory.path().join("terminal-session");
     std::fs::create_dir(&session).unwrap();
@@ -34,47 +34,44 @@ fn pty_leg_sends_the_producer_inbox_entry_in_dotos() {
 
     let tables = MessengerTables::open(&directory.path().join("messenger.sema")).unwrap();
     tables
-        .seat_identity(&z2VevD {
-            field_0: z2VNPW::new("recipient".to_owned()),
-            field_1: z2Vcfd::z2VRLv,
-            field_2: z2VXMQ::z2VNZi,
+        .seat_identity(&AgentIdentityAssignment {
+            agent_identifier: "recipient".to_owned(),
+            process_pin_selection: ProcessPinSelection::None,
+            resume_selection: ResumeSelection::None,
         })
         .unwrap();
     tables
-        .bind_endpoint(&z2VVAD {
-            field_0: z2VNPW::new("recipient".to_owned()),
-            field_1: z2VMBf {
-                field_0: z2VUs6::z2VZk6,
-                field_1: z2VRqE::new(z2VQY5::new(data.to_string_lossy().into_owned())),
+        .bind_endpoint(&AgentEndpointBinding {
+            agent_identifier: "recipient".to_owned(),
+            agent_endpoint: AgentEndpoint {
+                agent_endpoint_kind: AgentEndpointKind::PtySocket,
+                endpoint_path: data.to_string_lossy().into_owned(),
             },
-            field_2: z2VPEW::new(1),
-            field_3: z2VYrY::new(1),
+            harness_pid: 1,
+            harness_start_time: 1,
         })
         .unwrap();
     let accepted = tables
         .store_submission(&LedgerDraft {
-            message_submission: z2VY2v {
-                field_0: z2Vari::new("recipient".to_owned()),
-                field_1: z2VdsV::z2VXeo,
-                field_2: z2VNcG::new("visible Dotos".to_owned()),
-                field_3: z2VTiK::z2VR2m,
+            message_submission: MessageSubmission {
+                message_recipient: "recipient".to_owned(),
+                message_kind: MessageKind::Send,
+                message_body: "visible Datom".to_owned(),
+                thread_selection: ThreadSelection::None,
             },
-            message_origin: z2VTJ1::z2VWSr(z2VY3v::z2VN6o(z2VPn2::new(1000))),
+            message_origin: MessageOrigin::External(ConnectionClass::NonOwnerUser(1000)),
             sender_name: SenderName::new("sender".to_owned()),
-            stamped_at: z2VY18::new(z2Vf2p::new(9)),
+            stamped_at: 9,
         })
         .unwrap();
-    let record = tables
-        .ledger_record_public(*accepted.payload().payload())
-        .unwrap()
-        .unwrap();
+    let record = tables.ledger_record_public(accepted).unwrap().unwrap();
     assert_eq!(
         DeliveryRunner::new(&tables).deliver_committed(&record),
         DeliveryDisposition::Delivered
     );
 
     let text = receiver.join().unwrap();
-    let entry = DotosSource::new(&text).parse::<z2VRQt>().unwrap();
-    assert_eq!(entry.field_1.payload(), "sender");
-    assert_eq!(entry.field_2.payload(), "visible Dotos");
+    let entry = message::text::read::<InboxEntry>(text.trim()).unwrap();
+    assert_eq!(entry.message_sender, "sender");
+    assert_eq!(entry.message_body, "visible Datom");
 }

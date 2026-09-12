@@ -1,11 +1,10 @@
 use std::io::Write;
 
-use dotos::{DotosEncode, DotosSource};
-use signal_message::schema::lib::Input;
+use signal_message::Query;
 
 use crate::{Error, Result, client::MessageSocket};
 
-/// The ordinary Message CLI is a direct Dotos view of the producer contract.
+/// The ordinary Message CLI is a direct Datom view of the producer contract.
 /// It does not own a friendlier request or reply vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandLine {
@@ -29,22 +28,15 @@ impl CommandLine {
         }
     }
 
-    pub fn decode_input(&self) -> Result<Input> {
-        let [text] = self.arguments.as_slice() else {
-            return Err(Error::InvalidCommandArgument {
-                detail: format!(
-                    "expected exactly one inline Dotos value, received {}",
-                    self.arguments.len()
-                ),
-            });
-        };
-        Ok(DotosSource::new(text).parse::<Input>()?)
+    pub fn decode_query(&self) -> Result<Query> {
+        let text = crate::text::sole_argument(&self.arguments)?;
+        Ok(crate::text::read::<Query>(text)?)
     }
 
     pub fn run(&self, mut output: impl Write) -> Result<()> {
         let socket = MessageSocket::from_environment().ok_or(Error::SignalMessageSocketMissing)?;
-        let reply = socket.client().submit(self.decode_input()?)?;
-        writeln!(output, "{}", reply.to_dotos())?;
+        let reply = socket.client().submit(self.decode_query()?)?;
+        writeln!(output, "{}", crate::text::write(&reply))?;
         Ok(())
     }
 }

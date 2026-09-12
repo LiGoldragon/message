@@ -21,18 +21,18 @@ The behavioral center is component-owned:
   agent-registry, and delivery-outbox arrangements.
 - `OriginPolicy` derives sender and ingress facts from the connection.
 - `DeliveryRunner` delivers producer-owned inbox entries through harness Signal
-  or terminal Dotos.
+  or terminal Datom.
 - `MessageDaemon` serves ordinary and owner sockets. Owner Configure currently
   returns the producer's typed `OperationUnimplemented(NotBuiltYet)` reply.
 
 Startup configuration embeds the exact producer-owned daemon configuration and
 adds only two private runtime values: the durable database path and fallback
 owner label. It is archived as binary state; the writer helper accepts one
-inline Dotos request.
+inline Datom request.
 
 Text and binary remain deliberately separate:
 
-- Humans, agents, harnesses, and GUIs see Dotos.
+- Humans, agents, harnesses, and GUIs see Datom.
 - Component connections carry the producer's bound archived frames.
 - Durable private arrangements are rkyv records inside `messenger.sema`.
 
@@ -46,7 +46,7 @@ text feature.
 - zero component structural ownership inputs;
 - registry seat/bind and unknown-agent rejection;
 - durable inbox/thread write and read;
-- durable delivery parking and Dotos terminal injection;
+- durable delivery parking and Datom terminal injection;
 - current-store reopen without repair or identity loss;
 - live ordinary and owner daemon listeners;
 - default and binary-only Cargo matrices plus Nix flake checks.

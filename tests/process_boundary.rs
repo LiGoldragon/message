@@ -3,44 +3,40 @@ use std::time::Duration;
 use message::{
     Configuration, MessageDaemon, MetaMessageClient, MetaMessageEndpoint, client::MessageSocket,
 };
-use meta_signal_message::schema::lib::{z2VYLc, z2Vc2e};
-use signal_message::schema::lib::{
-    Input, Output, z2VL2C, z2VPa3, z2VPn2, z2VQY5, z2VRJp, z2VRPH, z2VSVi, z2VUUz, z2VUqb, z2VYZK,
-    z2VZv9, z2VaVk, z2Vari,
-};
+use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
+use signal_message::{MessageDaemonConfiguration, OwnerIdentity, Query, Response};
 
-fn contract(directory: &std::path::Path) -> z2VL2C {
-    z2VL2C {
-        field_0: z2VUUz::new(z2VQY5::new(
-            directory
-                .join("message.sock")
-                .to_string_lossy()
-                .into_owned(),
-        )),
-        field_1: z2VPa3::new(z2VYZK::new(0o600)),
-        field_2: z2VRJp::new(z2VQY5::new(
-            directory
-                .join("meta-message.sock")
-                .to_string_lossy()
-                .into_owned(),
-        )),
-        field_3: z2VaVk::new(z2VYZK::new(0o600)),
-        field_4: z2VZv9::new(z2VQY5::new(
-            directory.join("router.sock").to_string_lossy().into_owned(),
-        )),
-        field_5: z2VRPH::new(Vec::new()),
-        field_6: z2VUqb::z2Vd9P(z2VPn2::new(u64::from(rustix::process::getuid().as_raw()))),
+fn contract(directory: &std::path::Path) -> MessageDaemonConfiguration {
+    MessageDaemonConfiguration {
+        message_socket_path: directory
+            .join("message.sock")
+            .to_string_lossy()
+            .into_owned(),
+        message_socket_mode: 0o600,
+        supervision_socket_path: directory
+            .join("meta-message.sock")
+            .to_string_lossy()
+            .into_owned(),
+        supervision_socket_mode: 0o600,
+        router_socket_path: directory.join("router.sock").to_string_lossy().into_owned(),
+        component_ingresses: Vec::new(),
+        owner_identity: OwnerIdentity::UnixUser(i64::from(rustix::process::getuid().as_raw())),
     }
 }
 
+/// Wait on the tested event — the listener binding its socket — with a
+/// generous upper bound so a stuck daemon fails the run instead of hanging it.
+/// The bound is a timeout, not a timing assumption: an unoptimised daemon
+/// opening its durable store takes seconds on a loaded builder.
 fn wait_for(path: &std::path::Path) {
-    for _ in 0..200 {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         if path.exists() {
             return;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("socket did not appear: {}", path.display());
+    panic!("socket did not appear within the bound: {}", path.display());
 }
 
 #[test]
@@ -69,12 +65,10 @@ fn daemon_executes_both_producer_owned_contracts() {
 
     let output = MessageSocket::from_path(configuration.socket_path())
         .client()
-        .submit(Input::QueryInbox(z2VSVi::new(z2Vari::new(
-            "empty".to_owned(),
-        ))))
+        .submit(Query::QueryInbox("empty".to_owned()))
         .unwrap();
     match output {
-        Output::InboxListing(listing) => assert!(listing.field_0.payload().is_empty()),
+        Response::InboxListing(listing) => assert!(listing.messages.is_empty()),
         other => panic!("unexpected ordinary reply: {other:?}"),
     }
 
@@ -82,8 +76,8 @@ fn daemon_executes_both_producer_owned_contracts() {
     let reply = runtime
         .block_on(
             MetaMessageClient::new(MetaMessageEndpoint::new(configuration.meta_socket_path()))
-                .submit(z2Vc2e::z2VWNS(contract)),
+                .submit(MetaQuery::Configure(contract)),
         )
         .unwrap();
-    assert!(matches!(reply, z2VYLc::z2Vc4F(_)));
+    assert!(matches!(reply, MetaResponse::OperationUnimplemented(_)));
 }
