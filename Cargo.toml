@@ -54,14 +54,14 @@ dotos = { package = "dotos", git = "https://github.com/LiGoldragon/dotos.git", r
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "96099d5f240cf16235d35a78cde80d384ec28158", default-features = false }
 rkyv            = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 signal-frame    = { git = "https://github.com/LiGoldragon/signal-frame.git", rev = "8aa0bcaeb29fe9e461a11706a469638d2fd109ac", default-features = false }
-signal-harness  = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "c05eacf167b9bee5245bdf46906428c8dee47c1b", default-features = false, features = ["dotos-text"] }
+signal-harness  = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "cdfd4e3cd9bba8d8fab3e1d2f65490639db0069c", default-features = false, features = ["dotos-text"] }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31", default-features = false }
 redb            = "4.1"
 sema            = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
 sema-engine     = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
 thiserror       = "2"
 tokio           = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync"] }
-triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "7d10bb9d9a08ce363a0be8cff2716103f0a326fe" }
+triad-runtime   = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "02cdd49df63a1769b3cf1b2761261a87eeaa75a4" }
 
 [dev-dependencies]
 rustix = { version = "1", features = ["process"] }
