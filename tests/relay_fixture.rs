@@ -72,6 +72,13 @@ fn ambiguous_write_is_not_retried_after_reopen() {
 }
 
 #[test]
+fn observation_rejects_pending_records() {
+    let directory = tempfile::tempdir().unwrap(); let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
+    relay.submit(input(PromptVariant::HumanPrompt, "pending"), &BusyPort).unwrap();
+    assert!(relay.recipient_observed("other-agent", "source-event-1").is_err());
+}
+
+#[test]
 fn busy_delivery_is_persisted_before_any_socket_write() {
     let directory = tempfile::tempdir().unwrap();
     let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();

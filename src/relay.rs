@@ -68,9 +68,9 @@ impl Relay {
 
     pub fn submit(&self, input: RelayInput, port: &impl DeliveryPort) -> Result<RelayDisposition> {
         let key = key(&input);
-        let readiness = port.readiness(&input.destination);
         let record = RelayRecord { destination: input.destination, origin: input.origin, envelope: input.envelope, state: DeliveryState::Pending };
         let admitted = self.admit(&key, &record)?;
+        let readiness = port.readiness(&record.destination);
         if !admitted {
             return match self.record(&key)?.state {
                 DeliveryState::Pending => Ok(RelayDisposition::DuplicatePending(readiness)),
@@ -94,7 +94,12 @@ impl Relay {
     }
 
     pub fn recipient_observed(&self, destination: &str, source_event_identifier: &str) -> Result<()> {
-        self.replace_state(&format!("{destination}\0{source_event_identifier}"), DeliveryState::RecipientObserved)
+        let key = key_parts(destination, source_event_identifier);
+        match self.record(&key)?.state {
+            DeliveryState::ByteAccepted => self.replace_state(&key, DeliveryState::RecipientObserved),
+            DeliveryState::RecipientObserved => Ok(()),
+            _ => Err(RelayError::Storage("recipient observation requires prior byte acceptance".into())),
+        }
     }
 
     pub fn pending_count(&self) -> Result<usize> {
@@ -137,7 +142,8 @@ impl Relay {
     }
 }
 
-fn key(input: &RelayInput) -> String { format!("{}\0{}", input.destination, input.envelope.source_event_identifier) }
+fn key(input: &RelayInput) -> String { key_parts(&input.destination, &input.envelope.source_event_identifier) }
+fn key_parts(destination: &str, source_event_identifier: &str) -> String { format!("{}:{destination}{}:{source_event_identifier}", destination.len(), source_event_identifier.len()) }
 fn encode(record: &RelayRecord) -> Result<Vec<u8>> { rkyv::to_bytes::<rkyv::rancor::Error>(record).map(|value| value.to_vec()).map_err(storage) }
 fn decode(bytes: &[u8]) -> Result<RelayRecord> { rkyv::from_bytes::<RelayRecord, rkyv::rancor::Error>(bytes).map_err(storage) }
 fn storage(error: impl std::fmt::Display) -> RelayError { RelayError::Storage(error.to_string()) }
