@@ -338,6 +338,7 @@ async fn deliver_prompt(
     tables: &MessengerTables,
     record: &crate::runtime_model::RelayRecord,
 ) -> bool {
+    let mut written = 0usize;
     let result = async {
         let entry = tables
             .registry_entry(&record.destination)
@@ -360,7 +361,13 @@ async fn deliver_prompt(
         .map_err(std::io::Error::other)?
         .bytes()
         .to_vec();
-        stream.write_all(&bytes).await?;
+        while written < bytes.len() {
+            let count = stream.write(&bytes[written..]).await?;
+            if count == 0 {
+                return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
+            }
+            written += count;
+        }
         stream.shutdown().await
     };
     timeout(Duration::from_secs(1), result)
