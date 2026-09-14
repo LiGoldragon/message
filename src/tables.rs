@@ -111,6 +111,7 @@ const LEDGER_HEAD_KEY: &str = "head";
 /// printing, and the table set is static.
 pub struct MessengerTables {
     engine: Engine,
+    pub(crate) prompt_dispatch_claim: std::sync::Mutex<()>,
     agent_registry: TableReference<AgentRegistryEntry>,
     message_ledger: TableReference<LedgerRecord>,
     ledger_head: TableReference<LedgerHead>,
@@ -187,6 +188,7 @@ impl MessengerTables {
         ))?;
         Ok(Self {
             engine,
+            prompt_dispatch_claim: std::sync::Mutex::new(()),
             agent_registry,
             message_ledger,
             ledger_head,

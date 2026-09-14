@@ -139,6 +139,11 @@ impl Relay {
         event: &str,
         readiness: TargetReadiness,
     ) -> Result<DispatchClaim> {
+        let _claim = self
+            .tables
+            .prompt_dispatch_claim
+            .lock()
+            .map_err(|_| RelayError::Storage("prompt dispatch claim mutex poisoned".into()))?;
         let key = key_parts(destination, source, event);
         let record = self.record(&key)?;
         if record.destination != destination || record.source_agent_identifier != source {

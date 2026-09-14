@@ -7,6 +7,10 @@ use std::{
     cell::Cell,
     io::Write,
     os::unix::net::{UnixListener, UnixStream},
+    sync::{
+        Arc, Barrier,
+        atomic::{AtomicU8, Ordering},
+    },
     thread,
 };
 
@@ -22,6 +26,60 @@ fn input() -> RelayInput {
             prompt_interpretation_selection: PromptInterpretationSelection::None,
         },
     }
+}
+
+#[test]
+fn simultaneous_ready_dispatches_claim_exactly_one_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let relay = Arc::new(Relay::open(dir.path().join("messenger.sema")).unwrap());
+    relay.submit(input()).unwrap();
+    struct ConcurrentPort(AtomicU8);
+    impl DeliveryPort for ConcurrentPort {
+        fn readiness(&self, _: &str) -> TargetReadiness {
+            TargetReadiness::Ready
+        }
+        fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    let port = Arc::new(ConcurrentPort(AtomicU8::new(0)));
+    let barrier = Arc::new(Barrier::new(2));
+    let joins: Vec<_> = (0..2)
+        .map(|_| {
+            let relay = relay.clone();
+            let port = port.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                relay
+                    .dispatch(
+                        "destination",
+                        "source",
+                        "event",
+                        TargetReadiness::Ready,
+                        &*port,
+                    )
+                    .unwrap()
+            })
+        })
+        .collect();
+    let results: Vec<_> = joins.into_iter().map(|join| join.join().unwrap()).collect();
+    assert_eq!(port.0.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| **result == RelayDisposition::ByteAccepted)
+            .count(),
+        1
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| **result == RelayDisposition::InFlight)
+            .count(),
+        1
+    );
 }
 struct Port(Cell<u8>);
 impl DeliveryPort for Port {
