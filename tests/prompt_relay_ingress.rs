@@ -1,10 +1,12 @@
 use message::{Configuration, MessengerTables, client::MessageSocket};
+use signal::{Restorable, Signal};
 use signal_message::{
     AgentEndpoint, AgentEndpointBinding, AgentEndpointKind, AgentIdentityAssignment,
     ComponentMessageIngress, ComponentName, InternalComponentInstanceOrigin,
     MessageDaemonConfiguration, OwnerIdentity, ProcessPinSelection, PromptInterpretationSelection,
-    PromptReceiptObservation, PromptRelayPermission, PromptRelayRejectionReason,
-    PromptRelaySubmission, PromptVariant, Query, Response, ResumeSelection, TypedPromptEnvelope,
+    PromptReceiptObservation, PromptRelayDelivery, PromptRelayPermission,
+    PromptRelayRejectionReason, PromptRelaySubmission, PromptVariant, Query, Response,
+    ResumeSelection, TypedPromptEnvelope,
 };
 use std::{
     io::{BufRead, BufReader, Write},
@@ -237,7 +239,17 @@ fn prompt_relay_ingress_test_helper() {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut bytes = Vec::new();
                 std::io::Read::read_to_end(&mut stream, &mut bytes).unwrap();
-                writeln!(output, "OUTBOUND {}", String::from_utf8(bytes).unwrap()).unwrap();
+                let delivery = Signal::<PromptRelayDelivery>::from(bytes)
+                    .restore()
+                    .unwrap();
+                writeln!(
+                    output,
+                    "OUTBOUND {} {} {}",
+                    delivery.source_agent_identifier,
+                    delivery.destination_agent_identifier,
+                    delivery.typed_prompt_envelope.raw_prompt_text,
+                )
+                .unwrap();
             }
             ["NO_OUTBOUND"] => {
                 let listener = destination_listener.as_ref().expect("destination listener");
@@ -359,7 +371,7 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
     ));
     assert_eq!(source.expect("RESULT "), "ACCEPTED");
     destination.command("OUTBOUND");
-    assert_eq!(destination.expect("OUTBOUND "), "raw");
+    assert_eq!(destination.expect("OUTBOUND "), "source destination raw");
     assert_eq!(
         response_name(helper_submit(&[
             "SUBMIT",
