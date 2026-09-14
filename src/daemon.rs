@@ -119,7 +119,7 @@ impl AsyncMultiConnectionRuntime for MessageRuntime {
             ListenerRole::PromptRelay => {
                 let body = self.ordinary_codec.read_body_async(connection.stream_mut()).await?;
                 let query = Signal::<Query>::from(body.bytes().to_vec()).restore()?;
-                if !matches!(query, Query::SubmitPrompt(_)) { return Err(MessageDaemonError::Listener("prompt relay ingress only accepts SubmitPrompt".into())); }
+                if !matches!(query, Query::SubmitPrompt(_) | Query::ObservePromptReceipt(_)) { return Err(MessageDaemonError::Listener("prompt relay ingress only accepts typed prompt operations".into())); }
                 let context = *connection.context();
                 let response = self.engine.lock().await.handle(query, &context).await?;
                 self.ordinary_codec.write_body_async(connection.stream_mut(), &FrameBody::new(response.signalize()?.bytes().to_vec())).await?;
