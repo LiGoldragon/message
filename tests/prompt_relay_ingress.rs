@@ -185,6 +185,18 @@ fn prompt_relay_ingress_test_helper() {
                 destination_listener = Some(UnixListener::bind(path).unwrap());
                 writeln!(output, "READY").unwrap();
             }
+            ["STALL"] => {
+                let listener = destination_listener
+                    .as_ref()
+                    .expect("destination listener")
+                    .try_clone()
+                    .unwrap();
+                std::thread::spawn(move || {
+                    let (_stream, _) = listener.accept().unwrap();
+                    std::thread::sleep(Duration::from_secs(2));
+                });
+                writeln!(output, "STALLED").unwrap();
+            }
             ["CLIENT"] => writeln!(output, "READY").unwrap(),
             ["SUBMIT", ..] => {
                 writeln!(output, "RESULT {}", response_name(helper_submit(&parts))).unwrap()
@@ -307,6 +319,7 @@ fn prompt_relay_ingress_test_helper() {
 fn prompt_ingress_uses_kernel_peer_and_observation_key() {
     let directory = tempfile::tempdir().unwrap();
     let ingress = directory.path().join("prompt.sock");
+    let admission_ingress = directory.path().join("admission.sock");
     let ordinary = directory.path().join("message.sock");
     let destination_socket = directory.path().join("destination.sock");
     let configuration_path = directory.path().join("configuration");
@@ -325,14 +338,24 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
         supervision_socket_path: directory.path().join("meta.sock").display().to_string(),
         supervision_socket_mode: 0o600,
         router_socket_path: directory.path().join("router.sock").display().to_string(),
-        component_ingresses: vec![ComponentMessageIngress {
-            internal_component_instance_origin: InternalComponentInstanceOrigin {
-                component_name: ComponentName::Harness,
-                component_instance_name: "test".into(),
+        component_ingresses: vec![
+            ComponentMessageIngress {
+                internal_component_instance_origin: InternalComponentInstanceOrigin {
+                    component_name: ComponentName::Harness,
+                    component_instance_name: "test".into(),
+                },
+                ingress_socket_path: ingress.display().to_string(),
+                socket_mode: 0o600,
             },
-            ingress_socket_path: ingress.display().to_string(),
-            socket_mode: 0o600,
-        }],
+            ComponentMessageIngress {
+                internal_component_instance_origin: InternalComponentInstanceOrigin {
+                    component_name: ComponentName::Harness,
+                    component_instance_name: "test".into(),
+                },
+                ingress_socket_path: admission_ingress.display().to_string(),
+                socket_mode: 0o600,
+            },
+        ],
         prompt_relay_permissions: vec![PromptRelayPermission {
             source_agent_identifier: "source".into(),
             destination_agent_identifier: "destination".into(),
@@ -450,4 +473,108 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
     source.stop();
     destination.stop();
     other.stop();
+}
+
+#[test]
+fn stalled_dispatch_does_not_block_a_new_durable_admission() {
+    let directory = tempfile::tempdir().unwrap();
+    let ingress = directory.path().join("prompt.sock");
+    let admission_ingress = directory.path().join("admission.sock");
+    let destination_socket = directory.path().join("destination.sock");
+    let configuration_path = directory.path().join("configuration");
+    let mut source = Helper::spawn();
+    let mut destination = Helper::spawn();
+    destination.command(&format!("DESTINATION\t{}", destination_socket.display()));
+    destination.expect("READY");
+    let contract = MessageDaemonConfiguration {
+        message_socket_path: directory.path().join("message.sock").display().to_string(),
+        message_socket_mode: 0o600,
+        supervision_socket_path: directory.path().join("meta.sock").display().to_string(),
+        supervision_socket_mode: 0o600,
+        router_socket_path: directory.path().join("router.sock").display().to_string(),
+        component_ingresses: vec![
+            ComponentMessageIngress {
+                internal_component_instance_origin: InternalComponentInstanceOrigin {
+                    component_name: ComponentName::Harness,
+                    component_instance_name: "test".into(),
+                },
+                ingress_socket_path: ingress.display().to_string(),
+                socket_mode: 0o600,
+            },
+            ComponentMessageIngress {
+                internal_component_instance_origin: InternalComponentInstanceOrigin {
+                    component_name: ComponentName::Harness,
+                    component_instance_name: "test".into(),
+                },
+                ingress_socket_path: admission_ingress.display().to_string(),
+                socket_mode: 0o600,
+            },
+        ],
+        prompt_relay_permissions: vec![PromptRelayPermission {
+            source_agent_identifier: "source".into(),
+            destination_agent_identifier: "destination".into(),
+        }],
+        owner_identity: OwnerIdentity::UnixUser(rustix::process::getuid().as_raw().into()),
+    };
+    let configuration =
+        Configuration::new(contract, directory.path().join("messenger.sema"), "test").unwrap();
+    let tables = MessengerTables::open(configuration.database_path()).unwrap();
+    for (identifier, helper, endpoint) in [
+        ("source", &source, directory.path().join("source.sock")),
+        ("destination", &destination, destination_socket.clone()),
+    ] {
+        tables
+            .seat_identity(&AgentIdentityAssignment {
+                agent_identifier: identifier.into(),
+                process_pin_selection: ProcessPinSelection::None,
+                resume_selection: ResumeSelection::None,
+            })
+            .unwrap();
+        tables
+            .bind_endpoint(&AgentEndpointBinding {
+                agent_identifier: identifier.into(),
+                agent_endpoint: AgentEndpoint {
+                    agent_endpoint_kind: AgentEndpointKind::HarnessSocket,
+                    endpoint_path: endpoint.display().to_string(),
+                },
+                harness_pid: helper.pid() as i64,
+                harness_start_time: start_time(helper.pid()),
+            })
+            .unwrap();
+    }
+    drop(tables);
+    configuration
+        .write_binary_file(&configuration_path)
+        .unwrap();
+    let _daemon = Daemon::spawn(&configuration_path);
+    wait_for_path(&ingress);
+    wait_for_path(&admission_ingress);
+    let ingress = ingress.display().to_string();
+    let admission_ingress = admission_ingress.display().to_string();
+    let huge = "x".repeat(2 * 1024 * 1024);
+    source.command(&format!(
+        "SUBMIT\t{admission_ingress}\tdestination\tstalled\thuman\t{huge}"
+    ));
+    assert_eq!(source.expect("RESULT "), "ACCEPTED");
+    destination.command("STALL");
+    destination.expect("STALLED");
+    destination.command(&format!(
+        "DISPATCH\t{ingress}\tdestination\tsource\tstalled\tready"
+    ));
+    std::thread::sleep(Duration::from_millis(50));
+    let started = Instant::now();
+    source.command(&format!(
+        "SUBMIT\t{admission_ingress}\tdestination\tafter\thuman\traw"
+    ));
+    assert_eq!(source.expect("RESULT "), "ACCEPTED");
+    assert!(started.elapsed() < Duration::from_millis(500));
+    assert_eq!(destination.expect("RESULT "), "ACCEPTED");
+    destination.command(&format!(
+        "DISPATCH\t{ingress}\tdestination\tsource\tstalled\tready"
+    ));
+    assert_eq!(destination.expect("RESULT "), "ACCEPTED");
+    destination.command("NO_OUTBOUND");
+    destination.expect("NO_OUTBOUND");
+    source.stop();
+    destination.stop();
 }
