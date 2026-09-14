@@ -20,6 +20,7 @@ fn contract(directory: &std::path::Path) -> MessageDaemonConfiguration {
         supervision_socket_mode: 0o600,
         router_socket_path: directory.join("router.sock").to_string_lossy().into_owned(),
         component_ingresses: Vec::new(),
+        prompt_relay_permissions: vec![],
         owner_identity: OwnerIdentity::UnixUser(i64::from(rustix::process::getuid().as_raw())),
     }
 }

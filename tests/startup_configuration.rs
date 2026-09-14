@@ -14,6 +14,7 @@ fn configuration(directory: &std::path::Path) -> MessageDaemonConfiguration {
         supervision_socket_mode: 0o600,
         router_socket_path: directory.join("router.sock").display().to_string(),
         component_ingresses: Vec::new(),
+        prompt_relay_permissions: vec![],
         owner_identity: OwnerIdentity::UnixUser(1000),
     }
 }

@@ -4,11 +4,11 @@
 //! Each strict `signal-message::Query` is decided directly into one durable
 //! messenger action and one strict `signal-message::Response`.
 
-use std::sync::Arc;
+use std::{io::Write, os::unix::net::UnixStream, sync::Arc};
 
 use signal_message::{
     AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason, InboxListingReply,
-    MessageOperationKind, MessageRequestUnimplementedReply, MessageUnimplementedReason, Query,
+    AgentDeathMark, EndpointSelection, MessageOperationKind, MessageRequestUnimplementedReply, MessageUnimplementedReason, PromptRelayAcceptance, PromptRelayDeliveryDisposition, PromptRelayRejection, PromptRelayRejectionReason, PromptRelaySubmission, Query,
     Response, SubmissionRejectionReason, ThreadIndexEntries, ThreadRejectionReason,
 };
 use triad_runtime::ConnectionContext;
@@ -20,12 +20,14 @@ use crate::{
     provenance::{OriginPolicy, SenderResolver},
     runtime_model::{AgentRegistryCommand, LedgerDraft, StoreQuery, StoreWrite},
     tables::MessengerTables,
+    relay::{DeliveryPort, Relay, RelayDisposition, RelayInput, TargetReadiness},
 };
 
 #[derive(Debug)]
 pub struct MessageEngine {
     tables: Arc<MessengerTables>,
     origin_policy: OriginPolicy,
+    prompt_relay_permissions: Vec<signal_message::PromptRelayPermission>,
 }
 
 impl MessageEngine {
@@ -33,17 +35,14 @@ impl MessageEngine {
         Self {
             tables: Arc::new(tables),
             origin_policy,
+            prompt_relay_permissions: vec![],
         }
     }
 
     pub fn from_configuration(configuration: &Configuration) -> Result<Self, Error> {
-        Ok(Self::new(
-            MessengerTables::open(configuration.database_path())?,
-            OriginPolicy::for_owner_user_id(
-                configuration.owner_user_id(),
-                configuration.owner_label(),
-            ),
-        ))
+        let mut engine = Self::new(MessengerTables::open(configuration.database_path())?, OriginPolicy::for_owner_user_id(configuration.owner_user_id(), configuration.owner_label()));
+        engine.prompt_relay_permissions = configuration.prompt_relay_permissions().to_vec();
+        Ok(engine)
     }
 
     pub async fn handle(
@@ -62,7 +61,7 @@ impl MessageEngine {
                     stamped_at: self.origin_policy.ingress_stamp(),
                 }))
             }
-            Query::SubmitPrompt(_) => Response::PromptRelayRejected(signal_message::PromptRelayRejection { prompt_relay_rejection_reason: signal_message::PromptRelayRejectionReason::RelayDisabled }),
+            Query::SubmitPrompt(submission) => self.submit_prompt(submission, connection),
             Query::SubmitStamped(_) => {
                 Response::MessageRequestUnimplemented(MessageRequestUnimplementedReply {
                     message_operation_kind: MessageOperationKind::SubmitStamped,
@@ -83,6 +82,21 @@ impl MessageEngine {
             }
             Query::QueryThreads(query) => self.read_store_query(StoreQuery::Threads(query)),
         })
+    }
+
+    fn submit_prompt(&self, submission: PromptRelaySubmission, connection: &ConnectionContext) -> Response {
+        let resolver = SenderResolver::new(&self.tables, &self.origin_policy);
+        let Some(source) = resolver.registered_identifier(connection) else { return Response::PromptRelayRejected(PromptRelayRejection { prompt_relay_rejection_reason: PromptRelayRejectionReason::UnregisteredSource }); };
+        let allowed = self.prompt_relay_permissions.iter().any(|permission| permission.source_agent_identifier == source && permission.destination_agent_identifier == submission.destination_agent_identifier);
+        if !allowed { return Response::PromptRelayRejected(PromptRelayRejection { prompt_relay_rejection_reason: PromptRelayRejectionReason::DestinationNotPermitted }); }
+        let source_event_identifier = submission.typed_prompt_envelope.source_event_identifier.clone();
+        let port = RegistryPromptPort { tables: self.tables.clone() };
+        let relay = Relay::from_tables(self.tables.clone());
+        let disposition = relay.submit(RelayInput { destination: submission.destination_agent_identifier, origin: self.origin_policy.origin_for_connection(connection), envelope: submission.typed_prompt_envelope }, &port);
+        match disposition {
+            Ok(disposition) => Response::PromptRelayAccepted(PromptRelayAcceptance { source_event_identifier, prompt_relay_delivery_disposition: relay_disposition(disposition) }),
+            Err(_) => Response::PromptRelayRejected(PromptRelayRejection { prompt_relay_rejection_reason: PromptRelayRejectionReason::StoreRejected }),
+        }
     }
 
     fn apply_registry_command(&self, command: AgentRegistryCommand) -> Response {
@@ -167,3 +181,10 @@ impl MessageEngine {
         Response::Error(message.into())
     }
 }
+
+struct RegistryPromptPort { tables: Arc<MessengerTables> }
+impl DeliveryPort for RegistryPromptPort {
+ fn readiness(&self, destination: &str) -> TargetReadiness { match self.tables.registry_entry(destination).ok().flatten() { Some(entry) if entry.agent_death_mark != AgentDeathMark::Killed && matches!(entry.endpoint_selection, EndpointSelection::Bound(_)) => TargetReadiness::Ready, _ => TargetReadiness::Dirty } }
+ fn deliver(&self, destination: &str, bytes: &[u8]) -> std::io::Result<()> { let entry=self.tables.registry_entry(destination).map_err(std::io::Error::other)?.ok_or_else(|| std::io::Error::other("unregistered destination"))?; let EndpointSelection::Bound(endpoint)=entry.endpoint_selection else { return Err(std::io::Error::other("unbound destination")); }; let mut stream=UnixStream::connect(endpoint.endpoint_path.as_str())?; stream.write_all(bytes)?; stream.flush() }
+}
+fn relay_disposition(value: RelayDisposition) -> PromptRelayDeliveryDisposition { match value { RelayDisposition::Pending(TargetReadiness::Busy)=>PromptRelayDeliveryDisposition::Busy, RelayDisposition::Pending(TargetReadiness::Dirty)=>PromptRelayDeliveryDisposition::Dirty, RelayDisposition::Pending(TargetReadiness::Ready)=>PromptRelayDeliveryDisposition::Pending, RelayDisposition::RecordedOnly=>PromptRelayDeliveryDisposition::RecordedOnly, RelayDisposition::DuplicatePending(_)=>PromptRelayDeliveryDisposition::DuplicatePending, RelayDisposition::InFlight=>PromptRelayDeliveryDisposition::InFlight, RelayDisposition::ByteAccepted=>PromptRelayDeliveryDisposition::ByteAccepted, RelayDisposition::RecipientObserved=>PromptRelayDeliveryDisposition::RecipientObserved } }
