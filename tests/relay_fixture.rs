@@ -94,7 +94,7 @@ fn unix_socket_receives_unmodified_raw_prompt_and_observation_is_distinct() {
     );
     assert_eq!(reader.join().unwrap(), b"raw human words");
     relay
-        .recipient_observed("other-agent", "source-event-1")
+        .recipient_observed("other-agent", "source", "source-event-1")
         .unwrap();
     assert_eq!(
         relay
@@ -170,7 +170,7 @@ fn observation_rejects_pending_records() {
         .unwrap();
     assert!(
         relay
-            .recipient_observed("other-agent", "source-event-1")
+            .recipient_observed("other-agent", "source", "source-event-1")
             .is_err()
     );
 }
@@ -230,4 +230,20 @@ fn busy_delivery_is_persisted_before_any_socket_write() {
             .unwrap(),
         1
     );
+}
+
+#[test]
+fn same_event_from_distinct_sources_has_distinct_durable_records_after_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("messenger.sema");
+    let relay = Relay::open(&database).unwrap();
+    let port = CountingPort(Cell::new(0));
+    let first = input(PromptVariant::HumanPrompt, "first");
+    let mut second = input(PromptVariant::HumanPrompt, "second");
+    second.source_agent_identifier = "other-source".into();
+    relay.submit(first, &port).unwrap();
+    relay.submit(second, &port).unwrap();
+    assert_eq!(port.0.get(), 2);
+    drop(relay);
+    assert_eq!(Relay::open(&database).unwrap().pending_count().unwrap(), 0);
 }

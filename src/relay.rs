@@ -113,9 +113,14 @@ impl Relay {
     pub fn recipient_observed(
         &self,
         destination: &str,
+        source_agent_identifier: &str,
         source_event_identifier: &str,
     ) -> Result<()> {
-        let key = key_parts(destination, source_event_identifier);
+        let key = key_parts(
+            destination,
+            source_agent_identifier,
+            source_event_identifier,
+        );
         match self.record(&key)?.state {
             DeliveryState::ByteAccepted => {
                 self.replace_state(&key, DeliveryState::RecipientObserved)
@@ -140,7 +145,8 @@ impl Relay {
     fn admit(&self, key: &str, record: &RelayRecord) -> Result<bool> {
         let existing = self.tables.relay_record(key).map_err(storage)?;
         if let Some(existing) = existing {
-            if existing.destination != record.destination
+            if existing.source_agent_identifier != record.source_agent_identifier
+                || existing.destination != record.destination
                 || existing.origin != record.origin
                 || existing.envelope != record.envelope
             {
@@ -171,12 +177,21 @@ impl Relay {
 }
 
 fn key(input: &RelayInput) -> String {
-    key_parts(&input.destination, &input.envelope.source_event_identifier)
+    key_parts(
+        &input.destination,
+        &input.source_agent_identifier,
+        &input.envelope.source_event_identifier,
+    )
 }
-fn key_parts(destination: &str, source_event_identifier: &str) -> String {
+fn key_parts(
+    destination: &str,
+    source_agent_identifier: &str,
+    source_event_identifier: &str,
+) -> String {
     format!(
-        "{}:{destination}{}:{source_event_identifier}",
+        "{}:{destination}{}:{source_agent_identifier}{}:{source_event_identifier}",
         destination.len(),
+        source_agent_identifier.len(),
         source_event_identifier.len()
     )
 }

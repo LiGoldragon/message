@@ -162,6 +162,7 @@ impl MessageEngine {
         let relay = Relay::from_tables(self.tables.clone());
         match relay.recipient_observed(
             &observation.destination_agent_identifier,
+            &observation.source_agent_identifier,
             &observation.source_event_identifier,
         ) {
             Ok(()) => Response::PromptRelayAccepted(PromptRelayAcceptance {
