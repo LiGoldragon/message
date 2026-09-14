@@ -8,7 +8,7 @@ use std::{io::Write, os::unix::net::UnixStream, sync::Arc};
 
 use signal_message::{
     AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason, InboxListingReply,
-    AgentDeathMark, EndpointSelection, MessageOperationKind, MessageRequestUnimplementedReply, MessageUnimplementedReason, PromptRelayAcceptance, PromptRelayDeliveryDisposition, PromptRelayRejection, PromptRelayRejectionReason, PromptRelaySubmission, Query,
+    AgentDeathMark, EndpointSelection, MessageOperationKind, MessageRequestUnimplementedReply, MessageUnimplementedReason, PromptRelayAcceptance, PromptRelayDeliveryDisposition, PromptRelayRejection, PromptRelayRejectionReason, PromptRelaySubmission, PromptReceiptObservation, Query,
     Response, SubmissionRejectionReason, ThreadIndexEntries, ThreadRejectionReason,
 };
 use triad_runtime::ConnectionContext;
@@ -62,6 +62,7 @@ impl MessageEngine {
                 }))
             }
             Query::SubmitPrompt(submission) => self.submit_prompt(submission, connection),
+            Query::ObservePromptReceipt(observation) => self.observe_prompt(observation, connection),
             Query::SubmitStamped(_) => {
                 Response::MessageRequestUnimplemented(MessageRequestUnimplementedReply {
                     message_operation_kind: MessageOperationKind::SubmitStamped,
@@ -95,6 +96,16 @@ impl MessageEngine {
         let disposition = relay.submit(RelayInput { destination: submission.destination_agent_identifier, origin: self.origin_policy.origin_for_connection(connection), envelope: submission.typed_prompt_envelope }, &port);
         match disposition {
             Ok(disposition) => Response::PromptRelayAccepted(PromptRelayAcceptance { source_event_identifier, prompt_relay_delivery_disposition: relay_disposition(disposition) }),
+            Err(_) => Response::PromptRelayRejected(PromptRelayRejection { prompt_relay_rejection_reason: PromptRelayRejectionReason::StoreRejected }),
+        }
+    }
+
+    fn observe_prompt(&self, observation: PromptReceiptObservation, connection: &ConnectionContext) -> Response {
+        let resolver = SenderResolver::new(&self.tables, &self.origin_policy);
+        if resolver.registered_identifier(connection).as_deref() != Some(observation.destination_agent_identifier.as_str()) { return Response::PromptRelayRejected(PromptRelayRejection { prompt_relay_rejection_reason: PromptRelayRejectionReason::UnregisteredSource }); }
+        let relay = Relay::from_tables(self.tables.clone());
+        match relay.recipient_observed(&observation.destination_agent_identifier, &observation.source_event_identifier) {
+            Ok(()) => Response::PromptRelayAccepted(PromptRelayAcceptance { source_event_identifier: observation.source_event_identifier, prompt_relay_delivery_disposition: PromptRelayDeliveryDisposition::RecipientObserved }),
             Err(_) => Response::PromptRelayRejected(PromptRelayRejection { prompt_relay_rejection_reason: PromptRelayRejectionReason::StoreRejected }),
         }
     }
