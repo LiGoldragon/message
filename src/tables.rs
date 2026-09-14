@@ -906,3 +906,25 @@ impl<'store> MessengerStoreMigration<'store> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime_model::{LedgerHead, NextMessageSlot, OldestMessageSlot};
+
+    #[test]
+    fn v4_ledger_catalog_and_row_survive_v5_relay_addition() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("messenger.sema");
+        {
+            let mut engine = Engine::open(EngineOpen::new(&path, SchemaVersion::new(4)).with_versioning(VersioningPolicy::new(VersionedStoreName::new("messenger")))).unwrap();
+            let ledger_head = engine.register_table(TableDescriptor::new(LEDGER_HEAD, FamilyName::new("message-ledger-head"), SchemaHash::for_label("messenger-message-ledger-head-v4"))).unwrap();
+            engine.assert_keyed(KeyedAssertion::new(ledger_head, RecordKey::new(LEDGER_HEAD_KEY), LedgerHead { next_message_slot: NextMessageSlot::new(7), oldest_message_slot: OldestMessageSlot::new(1) })).unwrap();
+        }
+        let tables = MessengerTables::open(&path).unwrap();
+        let head = tables.ledger_head().unwrap();
+        assert_eq!(*head.next_message_slot.payload(), 7);
+        assert_eq!(*head.oldest_message_slot.payload(), 1);
+        assert!(tables.relay_records().unwrap().is_empty());
+    }
+}
