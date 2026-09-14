@@ -6,10 +6,8 @@
 //! retried automatically after reopening the store.
 
 use rkyv::{Archive, Deserialize, Serialize};
-use redb::{ReadableDatabase, ReadableTable};
 use signal_message::{MessageOrigin, PromptVariant, TypedPromptEnvelope};
-
-const RELAY_RECORDS: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("relay_records");
+use crate::{MessengerTables, runtime_model::RelayRecord};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RelayError {
@@ -47,23 +45,13 @@ pub enum RelayDisposition {
 }
 
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
-enum DeliveryState { Pending, InFlight, ByteAccepted, RecipientObserved, Unknown }
+pub(crate) enum DeliveryState { Pending, InFlight, ByteAccepted, RecipientObserved, Unknown }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
-struct RelayRecord {
-    destination: String,
-    origin: MessageOrigin,
-    envelope: TypedPromptEnvelope,
-    state: DeliveryState,
-}
-
-pub struct Relay { database: redb::Database }
+pub struct Relay { tables: MessengerTables }
 
 impl Relay {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let database = redb::Database::create(path.as_ref()).map_err(storage)?;
-        { let write = database.begin_write().map_err(storage)?; write.open_table(RELAY_RECORDS).map_err(storage)?; write.commit().map_err(storage)?; }
-        Ok(Self { database })
+        Ok(Self { tables: MessengerTables::open(path.as_ref()).map_err(storage)? })
     }
 
     pub fn submit(&self, input: RelayInput, port: &impl DeliveryPort) -> Result<RelayDisposition> {
@@ -103,47 +91,30 @@ impl Relay {
     }
 
     pub fn pending_count(&self) -> Result<usize> {
-        let read = self.database.begin_read().map_err(storage)?;
-        let table = read.open_table(RELAY_RECORDS).map_err(storage)?;
-        let mut count = 0;
-        for entry in table.iter().map_err(storage)? { let (_, value) = entry.map_err(storage)?; if matches!(decode(value.value())?.state, DeliveryState::Pending) { count += 1; } }
-        Ok(count)
+        Ok(self.tables.relay_records().map_err(storage)?.into_iter().filter(|record| matches!(record.state, DeliveryState::Pending)).count())
     }
 
     fn admit(&self, key: &str, record: &RelayRecord) -> Result<bool> {
-        let write = self.database.begin_write().map_err(storage)?;
-        let mut table = write.open_table(RELAY_RECORDS).map_err(storage)?;
-        let existing = table.get(key).map_err(storage)?.map(|value| decode(value.value())).transpose()?;
+        let existing = self.tables.relay_record(key).map_err(storage)?;
         if let Some(existing) = existing {
             if existing.destination != record.destination || existing.origin != record.origin || existing.envelope != record.envelope { return Err(RelayError::Conflict); }
-            drop(table); write.commit().map_err(storage)?; return Ok(false);
+            return Ok(false);
         }
-        let encoded = encode(record)?;
-        table.insert(key, encoded.as_slice()).map_err(storage)?;
-        drop(table); write.commit().map_err(storage)?;
+        self.tables.admit_relay_record(key, record.clone()).map_err(storage)?;
         Ok(true)
     }
 
     fn record(&self, key: &str) -> Result<RelayRecord> {
-        let read = self.database.begin_read().map_err(storage)?;
-        let table = read.open_table(RELAY_RECORDS).map_err(storage)?;
-        let value = table.get(key).map_err(storage)?.ok_or_else(|| RelayError::Storage("missing admitted relay record".into()))?;
-        decode(value.value())
+        self.tables.relay_record(key).map_err(storage)?.ok_or_else(|| RelayError::Storage("missing admitted relay record".into()))
     }
 
     fn replace_state(&self, key: &str, state: DeliveryState) -> Result<()> {
-        let write = self.database.begin_write().map_err(storage)?;
-        let mut table = write.open_table(RELAY_RECORDS).map_err(storage)?;
-        let mut record = table.get(key).map_err(storage)?.map(|value| decode(value.value())).transpose()?.ok_or_else(|| RelayError::Storage("missing admitted relay record".into()))?;
+        let mut record = self.record(key)?;
         record.state = state;
-        let encoded = encode(&record)?;
-        table.insert(key, encoded.as_slice()).map_err(storage)?;
-        drop(table); write.commit().map_err(storage)
+        self.tables.replace_relay_record(key, record).map_err(storage)
     }
 }
 
 fn key(input: &RelayInput) -> String { key_parts(&input.destination, &input.envelope.source_event_identifier) }
 fn key_parts(destination: &str, source_event_identifier: &str) -> String { format!("{}:{destination}{}:{source_event_identifier}", destination.len(), source_event_identifier.len()) }
-fn encode(record: &RelayRecord) -> Result<Vec<u8>> { rkyv::to_bytes::<rkyv::rancor::Error>(record).map(|value| value.to_vec()).map_err(storage) }
-fn decode(bytes: &[u8]) -> Result<RelayRecord> { rkyv::from_bytes::<RelayRecord, rkyv::rancor::Error>(bytes).map_err(storage) }
 fn storage(error: impl std::fmt::Display) -> RelayError { RelayError::Storage(error.to_string()) }

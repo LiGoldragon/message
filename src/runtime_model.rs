@@ -10,6 +10,15 @@ use signal_message::{
     MessageSlot, MessageSubmission, Participants, StampedAt, ThreadIndexQuery, ThreadName,
     ThreadRelationSelection, ThreadSubscription,
 };
+use crate::relay::DeliveryState;
+
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct RelayRecord {
+    pub destination: String,
+    pub origin: MessageOrigin,
+    pub envelope: signal_message::TypedPromptEnvelope,
+    pub state: DeliveryState,
+}
 
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SenderName(String);

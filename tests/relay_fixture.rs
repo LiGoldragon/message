@@ -6,6 +6,7 @@ use signal_message::{
 use std::io::Read;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::thread;
+use std::cell::Cell;
 
 struct BusyPort;
 
@@ -76,6 +77,16 @@ fn observation_rejects_pending_records() {
     let directory = tempfile::tempdir().unwrap(); let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
     relay.submit(input(PromptVariant::HumanPrompt, "pending"), &BusyPort).unwrap();
     assert!(relay.recipient_observed("other-agent", "source-event-1").is_err());
+}
+
+struct CountingPort(Cell<u8>);
+impl DeliveryPort for CountingPort { fn readiness(&self, _: &str) -> TargetReadiness { TargetReadiness::Ready } fn deliver(&self, _: &str, _: &[u8]) -> std::io::Result<()> { self.0.set(self.0.get() + 1); Ok(()) } }
+#[test]
+fn duplicate_event_does_not_deliver_twice() {
+    let directory = tempfile::tempdir().unwrap(); let relay = Relay::open(directory.path().join("messenger.sema")).unwrap(); let port = CountingPort(Cell::new(0));
+    relay.submit(input(PromptVariant::HumanPrompt, "raw"), &port).unwrap();
+    relay.submit(input(PromptVariant::HumanPrompt, "raw"), &port).unwrap();
+    assert_eq!(port.0.get(), 1);
 }
 
 #[test]
