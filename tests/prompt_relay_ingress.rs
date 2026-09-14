@@ -3,10 +3,10 @@ use signal::{Restorable, Signal};
 use signal_message::{
     AgentEndpoint, AgentEndpointBinding, AgentEndpointKind, AgentIdentityAssignment,
     ComponentMessageIngress, ComponentName, InternalComponentInstanceOrigin,
-    MessageDaemonConfiguration, OwnerIdentity, ProcessPinSelection, PromptInterpretationSelection,
-    PromptReceiptObservation, PromptRelayDelivery, PromptRelayPermission,
-    PromptRelayRejectionReason, PromptRelaySubmission, PromptVariant, Query, Response,
-    ResumeSelection, TypedPromptEnvelope,
+    MessageDaemonConfiguration, MessageOrigin, OwnerIdentity, ProcessPinSelection,
+    PromptInterpretationSelection, PromptReceiptObservation, PromptRelayDelivery,
+    PromptRelayPermission, PromptRelayRejectionReason, PromptRelaySubmission, PromptVariant, Query,
+    Response, ResumeSelection, TypedPromptEnvelope,
 };
 use std::{
     io::{BufRead, BufReader, Write},
@@ -189,11 +189,12 @@ fn prompt_relay_ingress_test_helper() {
             ["SUBMIT", ..] => {
                 writeln!(output, "RESULT {}", response_name(helper_submit(&parts))).unwrap()
             }
-            ["OBSERVE", socket, destination, event] => {
+            ["OBSERVE", socket, destination, source, event] => {
                 let response = MessageSocket::from_path(socket)
                     .client()
                     .submit(Query::ObservePromptReceipt(PromptReceiptObservation {
                         destination_agent_identifier: (*destination).to_owned(),
+                        source_agent_identifier: (*source).to_owned(),
                         source_event_identifier: (*event).to_owned(),
                     }))
                     .unwrap();
@@ -233,7 +234,7 @@ fn prompt_relay_ingress_test_helper() {
                 );
                 writeln!(output, "REGISTRY_REJECTED").unwrap();
             }
-            ["OUTBOUND"] => {
+            ["OUTBOUND", source, destination, event, "human", raw, owner] => {
                 let listener = destination_listener.as_ref().expect("destination listener");
                 listener.set_nonblocking(false).unwrap();
                 let (mut stream, _) = listener.accept().unwrap();
@@ -242,14 +243,21 @@ fn prompt_relay_ingress_test_helper() {
                 let delivery = Signal::<PromptRelayDelivery>::from(bytes)
                     .restore()
                     .unwrap();
-                writeln!(
-                    output,
-                    "OUTBOUND {} {} {}",
-                    delivery.source_agent_identifier,
-                    delivery.destination_agent_identifier,
-                    delivery.typed_prompt_envelope.raw_prompt_text,
-                )
-                .unwrap();
+                assert_eq!(delivery.source_agent_identifier, *source);
+                assert_eq!(delivery.destination_agent_identifier, *destination);
+                assert_eq!(
+                    delivery.typed_prompt_envelope.source_event_identifier,
+                    *event
+                );
+                assert_eq!(delivery.typed_prompt_envelope.raw_prompt_text, *raw);
+                assert!(matches!(
+                    delivery.typed_prompt_envelope.prompt_variant,
+                    PromptVariant::HumanPrompt
+                ));
+                assert!(
+                    matches!(delivery.message_origin, MessageOrigin::InternalComponentInstance(origin) if origin.component_name == ComponentName::Harness && origin.component_instance_name == *owner)
+                );
+                writeln!(output, "OUTBOUND").unwrap();
             }
             ["NO_OUTBOUND"] => {
                 let listener = destination_listener.as_ref().expect("destination listener");
@@ -370,8 +378,8 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
         "SUBMIT\t{ingress}\tdestination\tevent\thuman\traw"
     ));
     assert_eq!(source.expect("RESULT "), "ACCEPTED");
-    destination.command("OUTBOUND");
-    assert_eq!(destination.expect("OUTBOUND "), "source destination raw");
+    destination.command("OUTBOUND\tsource\tdestination\tevent\thuman\traw\ttest");
+    assert_eq!(destination.expect("OUTBOUND"), "");
     assert_eq!(
         response_name(helper_submit(&[
             "SUBMIT",
@@ -391,13 +399,17 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
         "SUBMIT\t{ingress}\tother\tnot-permitted\thuman\traw"
     ));
     assert_eq!(source.expect("RESULT "), "NOT_PERMITTED");
-    source.command(&format!("OBSERVE\t{ingress}\tdestination\tevent"));
+    source.command(&format!("OBSERVE\t{ingress}\tdestination\tsource\tevent"));
     assert_eq!(source.expect("RESULT "), "UNREGISTERED");
-    other.command(&format!("OBSERVE\t{ingress}\tdestination\tevent"));
+    other.command(&format!("OBSERVE\t{ingress}\tdestination\tsource\tevent"));
     assert_eq!(other.expect("RESULT "), "UNREGISTERED");
-    destination.command(&format!("OBSERVE\t{ingress}\tdestination\twrong"));
+    destination.command(&format!("OBSERVE\t{ingress}\tdestination\tsource\twrong"));
     assert_eq!(destination.expect("RESULT "), "STORE_REJECTED");
-    destination.command(&format!("OBSERVE\t{ingress}\tdestination\tevent"));
+    destination.command(&format!(
+        "OBSERVE\t{ingress}\tdestination\twrong-source\tevent"
+    ));
+    assert_eq!(destination.expect("RESULT "), "STORE_REJECTED");
+    destination.command(&format!("OBSERVE\t{ingress}\tdestination\tsource\tevent"));
     assert_eq!(destination.expect("RESULT "), "ACCEPTED");
     source.command(&format!(
         "SUBMIT\t{ingress}\tdestination\tevent\thuman\traw"
