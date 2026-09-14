@@ -16,6 +16,7 @@ pub mod meta;
 pub mod output_validator;
 pub mod provenance;
 pub mod runtime_model;
+pub mod relay;
 pub mod store_preserve;
 pub mod tables;
 pub mod text;
