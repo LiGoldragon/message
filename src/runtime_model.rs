@@ -13,11 +13,12 @@ use signal_message::{
 };
 
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub(crate) struct RelayRecord {
+pub struct RelayRecord {
+    pub source_agent_identifier: String,
     pub destination: String,
     pub origin: MessageOrigin,
     pub envelope: signal_message::TypedPromptEnvelope,
-    pub state: DeliveryState,
+    pub(crate) state: DeliveryState,
 }
 
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]

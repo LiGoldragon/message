@@ -30,11 +30,12 @@ pub enum TargetReadiness {
 
 pub trait DeliveryPort {
     fn readiness(&self, destination: &str) -> TargetReadiness;
-    fn deliver(&self, destination: &str, bytes: &[u8]) -> std::io::Result<()>;
+    fn deliver(&self, destination: &str, record: &RelayRecord) -> std::io::Result<()>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RelayInput {
+    pub source_agent_identifier: String,
     pub destination: String,
     pub origin: MessageOrigin,
     pub envelope: TypedPromptEnvelope,
@@ -77,6 +78,7 @@ impl Relay {
     pub fn submit(&self, input: RelayInput, port: &impl DeliveryPort) -> Result<RelayDisposition> {
         let key = key(&input);
         let record = RelayRecord {
+            source_agent_identifier: input.source_agent_identifier,
             destination: input.destination,
             origin: input.origin,
             envelope: input.envelope,
@@ -99,13 +101,8 @@ impl Relay {
             return Ok(RelayDisposition::Pending(readiness));
         }
         self.replace_state(&key, DeliveryState::InFlight)?;
-        let bytes = self
-            .record(&key)?
-            .envelope
-            .raw_prompt_text
-            .as_bytes()
-            .to_vec();
-        if port.deliver(&record.destination, &bytes).is_err() {
+        let durable = self.record(&key)?;
+        if port.deliver(&record.destination, &durable).is_err() {
             self.replace_state(&key, DeliveryState::Unknown)?;
             return Ok(RelayDisposition::InFlight);
         }

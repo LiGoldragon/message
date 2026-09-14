@@ -101,7 +101,7 @@ const LEDGER_HEAD: TableName = TableName::new("ledger_head");
 const RECIPIENT_INBOX: TableName = TableName::new("recipient_inbox");
 const THREAD_INDEX: TableName = TableName::new("thread_index");
 const DELIVERY_OUTBOX: TableName = TableName::new("delivery_outbox");
-const PROMPT_RELAY: TableName = TableName::new("prompt_relay");
+const PROMPT_RELAY: TableName = TableName::new("prompt_relay_v2");
 
 const LEDGER_HEAD_KEY: &str = "head";
 

@@ -14,7 +14,7 @@ impl DeliveryPort for BusyPort {
     fn readiness(&self, _: &str) -> TargetReadiness {
         TargetReadiness::Busy
     }
-    fn deliver(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
         panic!("busy must not write")
     }
 }
@@ -23,7 +23,7 @@ impl DeliveryPort for DirtyPort {
     fn readiness(&self, _: &str) -> TargetReadiness {
         TargetReadiness::Dirty
     }
-    fn deliver(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
         panic!("dirty must not write")
     }
 }
@@ -35,8 +35,12 @@ impl DeliveryPort for SocketPort {
     fn readiness(&self, _: &str) -> TargetReadiness {
         TargetReadiness::Ready
     }
-    fn deliver(&self, _: &str, bytes: &[u8]) -> std::io::Result<()> {
-        UnixStream::connect(&self.path)?.write_all(bytes)
+    fn deliver(
+        &self,
+        _: &str,
+        record: &message::runtime_model::RelayRecord,
+    ) -> std::io::Result<()> {
+        UnixStream::connect(&self.path)?.write_all(record.envelope.raw_prompt_text.as_bytes())
     }
 }
 
@@ -55,6 +59,7 @@ use std::io::Write;
 
 fn input(variant: PromptVariant, raw: &str) -> RelayInput {
     RelayInput {
+        source_agent_identifier: "source".into(),
         destination: "other-agent".into(),
         origin: MessageOrigin::External(ConnectionClass::NonOwnerUser(1000)),
         envelope: TypedPromptEnvelope {
@@ -130,7 +135,7 @@ impl DeliveryPort for FailingPort {
     fn readiness(&self, _: &str) -> TargetReadiness {
         TargetReadiness::Ready
     }
-    fn deliver(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
         Err(std::io::Error::other("ambiguous write"))
     }
 }
@@ -175,7 +180,7 @@ impl DeliveryPort for CountingPort {
     fn readiness(&self, _: &str) -> TargetReadiness {
         TargetReadiness::Ready
     }
-    fn deliver(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
         self.0.set(self.0.get() + 1);
         Ok(())
     }
@@ -199,6 +204,7 @@ fn busy_delivery_is_persisted_before_any_socket_write() {
     let directory = tempfile::tempdir().unwrap();
     let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
     let input = RelayInput {
+        source_agent_identifier: "source".into(),
         destination: "other-agent".into(),
         origin: MessageOrigin::External(ConnectionClass::NonOwnerUser(1000)),
         envelope: TypedPromptEnvelope {

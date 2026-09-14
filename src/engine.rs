@@ -4,6 +4,7 @@
 //! Each strict `signal-message::Query` is decided directly into one durable
 //! messenger action and one strict `signal-message::Response`.
 
+use signal::{ByteViewable, Signalizable};
 use std::{io::Write, os::unix::net::UnixStream, sync::Arc};
 
 use signal_message::{
@@ -127,6 +128,7 @@ impl MessageEngine {
         let relay = Relay::from_tables(self.tables.clone());
         let disposition = relay.submit(
             RelayInput {
+                source_agent_identifier: source,
                 destination: submission.destination_agent_identifier,
                 origin: self.origin_policy.origin_for_connection(connection),
                 envelope: submission.typed_prompt_envelope,
@@ -277,7 +279,11 @@ impl DeliveryPort for RegistryPromptPort {
             _ => TargetReadiness::Dirty,
         }
     }
-    fn deliver(&self, destination: &str, bytes: &[u8]) -> std::io::Result<()> {
+    fn deliver(
+        &self,
+        destination: &str,
+        record: &crate::runtime_model::RelayRecord,
+    ) -> std::io::Result<()> {
         let entry = self
             .tables
             .registry_entry(destination)
@@ -287,7 +293,17 @@ impl DeliveryPort for RegistryPromptPort {
             return Err(std::io::Error::other("unbound destination"));
         };
         let mut stream = UnixStream::connect(endpoint.endpoint_path.as_str())?;
-        stream.write_all(bytes)?;
+        let bytes = signal_message::PromptRelayDelivery {
+            source_agent_identifier: record.source_agent_identifier.clone(),
+            destination_agent_identifier: destination.to_owned(),
+            message_origin: record.origin.clone(),
+            typed_prompt_envelope: record.envelope.clone(),
+        }
+        .signalize()
+        .map_err(std::io::Error::other)?
+        .bytes()
+        .to_vec();
+        stream.write_all(&bytes)?;
         stream.flush()
     }
 }
