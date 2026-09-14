@@ -87,6 +87,7 @@ const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 1] = [SchemaVersion::new(4)];
 
 /// The store version at which the agent registry's layout was last set.
 const AGENT_REGISTRY_LAYOUT_VERSION: SchemaVersion = SchemaVersion::new(4);
+const MESSAGE_LAYOUT_VERSION: SchemaVersion = SchemaVersion::new(4);
 
 /// The bounded ledger window: the store keeps at most this many messages;
 /// older messages are reaped oldest-first together with their inbox and
@@ -157,27 +158,27 @@ impl MessengerTables {
         let message_ledger = engine.register_table(Self::family_descriptor(
             MESSAGE_LEDGER,
             "message-ledger",
-            MESSENGER_SCHEMA_VERSION,
+            MESSAGE_LAYOUT_VERSION,
         ))?;
         let ledger_head = engine.register_table(Self::family_descriptor(
             LEDGER_HEAD,
             "message-ledger-head",
-            MESSENGER_SCHEMA_VERSION,
+            MESSAGE_LAYOUT_VERSION,
         ))?;
         let recipient_inbox = engine.register_table(Self::family_descriptor(
             RECIPIENT_INBOX,
             "recipient-inbox",
-            MESSENGER_SCHEMA_VERSION,
+            MESSAGE_LAYOUT_VERSION,
         ))?;
         let thread_index = engine.register_table(Self::family_descriptor(
             THREAD_INDEX,
             "thread-index",
-            MESSENGER_SCHEMA_VERSION,
+            MESSAGE_LAYOUT_VERSION,
         ))?;
         let delivery_outbox = engine.register_table(Self::family_descriptor(
             DELIVERY_OUTBOX,
             "delivery-outbox",
-            MESSENGER_SCHEMA_VERSION,
+            MESSAGE_LAYOUT_VERSION,
         ))?;
         let prompt_relay = engine.register_table(Self::family_descriptor(
             PROMPT_RELAY, "prompt-relay", MESSENGER_SCHEMA_VERSION,

@@ -61,3 +61,20 @@ fn a_store_from_the_previous_schema_is_refused_rather_than_re_stamped() {
         "a store stamped at the previous schema must fail closed, not open"
     );
 }
+
+#[test]
+fn v4_catalog_and_rows_survive_the_additive_v5_relay_family() {
+    const SEMA_META: redb::TableDefinition<&str, u64> = redb::TableDefinition::new("__sema_meta");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("messenger.sema");
+    {
+        let tables = MessengerTables::open(&path).unwrap();
+        tables.seat_identity(&AgentIdentityAssignment { agent_identifier: "v4-row".into(), process_pin_selection: ProcessPinSelection::None, resume_selection: ResumeSelection::None }).unwrap();
+    }
+    {
+        let database = redb::Database::create(&path).unwrap(); let transaction = database.begin_write().unwrap();
+        transaction.open_table(SEMA_META).unwrap().insert("schema_version", 4_u64).unwrap(); transaction.commit().unwrap();
+    }
+    let reopened = MessengerTables::open(&path).unwrap();
+    assert_eq!(reopened.query_entries(&AgentRegistryQuery::All).unwrap()[0].agent_identifier, "v4-row");
+}
