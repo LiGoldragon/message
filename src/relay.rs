@@ -5,6 +5,8 @@
 //! so an interrupted write is retained as `InFlight`/`Unknown` rather than
 //! retried automatically after reopening the store.
 
+use std::sync::Arc;
+
 use rkyv::{Archive, Deserialize, Serialize};
 use signal_message::{MessageOrigin, PromptVariant, TypedPromptEnvelope};
 use crate::{MessengerTables, runtime_model::RelayRecord};
@@ -47,12 +49,14 @@ pub enum RelayDisposition {
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub(crate) enum DeliveryState { Pending, InFlight, ByteAccepted, RecipientObserved, Unknown }
 
-pub struct Relay { tables: MessengerTables }
+pub struct Relay { tables: Arc<MessengerTables> }
 
 impl Relay {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        Ok(Self { tables: MessengerTables::open(path.as_ref()).map_err(storage)? })
+        Ok(Self { tables: Arc::new(MessengerTables::open(path.as_ref()).map_err(storage)?) })
     }
+
+    pub(crate) fn from_tables(tables: Arc<MessengerTables>) -> Self { Self { tables } }
 
     pub fn submit(&self, input: RelayInput, port: &impl DeliveryPort) -> Result<RelayDisposition> {
         let key = key(&input);

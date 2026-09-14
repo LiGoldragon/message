@@ -4,6 +4,8 @@
 //! Each strict `signal-message::Query` is decided directly into one durable
 //! messenger action and one strict `signal-message::Response`.
 
+use std::sync::Arc;
+
 use signal_message::{
     AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason, InboxListingReply,
     MessageOperationKind, MessageRequestUnimplementedReply, MessageUnimplementedReason, Query,
@@ -22,14 +24,14 @@ use crate::{
 
 #[derive(Debug)]
 pub struct MessageEngine {
-    tables: MessengerTables,
+    tables: Arc<MessengerTables>,
     origin_policy: OriginPolicy,
 }
 
 impl MessageEngine {
     pub fn new(tables: MessengerTables, origin_policy: OriginPolicy) -> Self {
         Self {
-            tables,
+            tables: Arc::new(tables),
             origin_policy,
         }
     }
@@ -60,6 +62,7 @@ impl MessageEngine {
                     stamped_at: self.origin_policy.ingress_stamp(),
                 }))
             }
+            Query::SubmitPrompt(_) => Response::PromptRelayRejected(signal_message::PromptRelayRejection { prompt_relay_rejection_reason: signal_message::PromptRelayRejectionReason::RelayDisabled }),
             Query::SubmitStamped(_) => {
                 Response::MessageRequestUnimplemented(MessageRequestUnimplementedReply {
                     message_operation_kind: MessageOperationKind::SubmitStamped,
