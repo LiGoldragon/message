@@ -4,13 +4,13 @@
 //! only because the messenger owns their durable arrangement; none mirror a
 //! producer Type or form a second public contract.
 
+use crate::relay::DeliveryState;
 use rkyv::{Archive, Deserialize, Serialize};
 use signal_message::{
     AgentEndpointBinding, AgentIdentityAssignment, InboxQuery, MessageOrigin, MessageRecipient,
     MessageSlot, MessageSubmission, Participants, StampedAt, ThreadIndexQuery, ThreadName,
     ThreadRelationSelection, ThreadSubscription,
 };
-use crate::relay::DeliveryState;
 
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub(crate) struct RelayRecord {

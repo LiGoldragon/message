@@ -105,7 +105,9 @@ impl<'runtime> SenderResolver<'runtime> {
     /// Resolve the sender name for the accepted connection.
     pub fn registered_identifier(&self, connection: &ConnectionContext) -> Option<String> {
         match connection.peer() {
-            PeerIdentity::Unix(credentials) => self.pinned_ancestor_identifier(credentials.process_id()),
+            PeerIdentity::Unix(credentials) => {
+                self.pinned_ancestor_identifier(credentials.process_id())
+            }
             PeerIdentity::Tcp(_) => None,
         }
     }

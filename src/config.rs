@@ -70,7 +70,9 @@ impl Configuration {
         self.database_path.as_path()
     }
 
-    pub fn prompt_relay_permissions(&self) -> &[signal_message::PromptRelayPermission] { &self.contract.prompt_relay_permissions }
+    pub fn prompt_relay_permissions(&self) -> &[signal_message::PromptRelayPermission] {
+        &self.contract.prompt_relay_permissions
+    }
 
     pub fn owner_label(&self) -> &str {
         &self.owner_label

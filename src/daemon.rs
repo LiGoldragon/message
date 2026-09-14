@@ -68,7 +68,13 @@ impl MessageDaemon {
             .with_socket_mode(self.configuration.meta_socket_mode()),
         ];
         for ingress in &self.configuration.contract().component_ingresses {
-            sockets.push(AsyncListenerSocket::new(ListenerRole::PromptRelay, std::path::PathBuf::from(&ingress.ingress_socket_path)).with_socket_mode(triad_runtime::SocketMode::new(ingress.socket_mode as u32)));
+            sockets.push(
+                AsyncListenerSocket::new(
+                    ListenerRole::PromptRelay,
+                    std::path::PathBuf::from(&ingress.ingress_socket_path),
+                )
+                .with_socket_mode(triad_runtime::SocketMode::new(ingress.socket_mode as u32)),
+            );
         }
         let runtime = MessageRuntime {
             engine: tokio::sync::Mutex::new(MessageEngine::from_configuration(
@@ -117,12 +123,27 @@ impl AsyncMultiConnectionRuntime for MessageRuntime {
                 Ok(())
             }
             ListenerRole::PromptRelay => {
-                let body = self.ordinary_codec.read_body_async(connection.stream_mut()).await?;
+                let body = self
+                    .ordinary_codec
+                    .read_body_async(connection.stream_mut())
+                    .await?;
                 let query = Signal::<Query>::from(body.bytes().to_vec()).restore()?;
-                if !matches!(query, Query::SubmitPrompt(_) | Query::ObservePromptReceipt(_)) { return Err(MessageDaemonError::Listener("prompt relay ingress only accepts typed prompt operations".into())); }
+                if !matches!(
+                    query,
+                    Query::SubmitPrompt(_) | Query::ObservePromptReceipt(_)
+                ) {
+                    return Err(MessageDaemonError::Listener(
+                        "prompt relay ingress only accepts typed prompt operations".into(),
+                    ));
+                }
                 let context = *connection.context();
                 let response = self.engine.lock().await.handle(query, &context).await?;
-                self.ordinary_codec.write_body_async(connection.stream_mut(), &FrameBody::new(response.signalize()?.bytes().to_vec())).await?;
+                self.ordinary_codec
+                    .write_body_async(
+                        connection.stream_mut(),
+                        &FrameBody::new(response.signalize()?.bytes().to_vec()),
+                    )
+                    .await?;
                 Ok(())
             }
             ListenerRole::Owner => {

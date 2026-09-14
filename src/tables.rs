@@ -29,8 +29,8 @@ use sema_engine::{
 
 use crate::Result;
 use crate::runtime_model::{
-    InboxRecord, LedgerDraft, LedgerHead, LedgerRecord, NextMessageSlot, OldestMessageSlot, Slots,
-    RelayRecord, ThreadRecord,
+    InboxRecord, LedgerDraft, LedgerHead, LedgerRecord, NextMessageSlot, OldestMessageSlot,
+    RelayRecord, Slots, ThreadRecord,
 };
 use crate::store_preserve::PreMigrationPreserve;
 use signal_message::{
@@ -181,7 +181,9 @@ impl MessengerTables {
             MESSAGE_LAYOUT_VERSION,
         ))?;
         let prompt_relay = engine.register_table(Self::family_descriptor(
-            PROMPT_RELAY, "prompt-relay", MESSENGER_SCHEMA_VERSION,
+            PROMPT_RELAY,
+            "prompt-relay",
+            MESSENGER_SCHEMA_VERSION,
         ))?;
         Ok(Self {
             engine,
@@ -208,21 +210,38 @@ impl MessengerTables {
     }
 
     pub(crate) fn relay_record(&self, key: &str) -> Result<Option<RelayRecord>> {
-        Ok(self.engine.match_records(QueryPlan::key(self.prompt_relay, RecordKey::new(key)))?.records().first().cloned())
+        Ok(self
+            .engine
+            .match_records(QueryPlan::key(self.prompt_relay, RecordKey::new(key)))?
+            .records()
+            .first()
+            .cloned())
     }
 
     pub(crate) fn admit_relay_record(&self, key: &str, record: RelayRecord) -> Result<()> {
-        self.engine.assert_keyed(KeyedAssertion::new(self.prompt_relay, RecordKey::new(key), record))?;
+        self.engine.assert_keyed(KeyedAssertion::new(
+            self.prompt_relay,
+            RecordKey::new(key),
+            record,
+        ))?;
         Ok(())
     }
 
     pub(crate) fn replace_relay_record(&self, key: &str, record: RelayRecord) -> Result<()> {
-        self.engine.mutate_keyed(KeyedMutation::new(self.prompt_relay, RecordKey::new(key), record))?;
+        self.engine.mutate_keyed(KeyedMutation::new(
+            self.prompt_relay,
+            RecordKey::new(key),
+            record,
+        ))?;
         Ok(())
     }
 
     pub(crate) fn relay_records(&self) -> Result<Vec<RelayRecord>> {
-        Ok(self.engine.match_records(QueryPlan::all(self.prompt_relay))?.records().to_vec())
+        Ok(self
+            .engine
+            .match_records(QueryPlan::all(self.prompt_relay))?
+            .records()
+            .to_vec())
     }
 
     /// Seat an orchestrator-supplied identity. The orchestrator is the mint,
@@ -917,9 +936,28 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("messenger.sema");
         {
-            let mut engine = Engine::open(EngineOpen::new(&path, SchemaVersion::new(4)).with_versioning(VersioningPolicy::new(VersionedStoreName::new("messenger")))).unwrap();
-            let ledger_head = engine.register_table(TableDescriptor::new(LEDGER_HEAD, FamilyName::new("message-ledger-head"), SchemaHash::for_label("messenger-message-ledger-head-v4"))).unwrap();
-            engine.assert_keyed(KeyedAssertion::new(ledger_head, RecordKey::new(LEDGER_HEAD_KEY), LedgerHead { next_message_slot: NextMessageSlot::new(7), oldest_message_slot: OldestMessageSlot::new(1) })).unwrap();
+            let mut engine = Engine::open(
+                EngineOpen::new(&path, SchemaVersion::new(4))
+                    .with_versioning(VersioningPolicy::new(VersionedStoreName::new("messenger"))),
+            )
+            .unwrap();
+            let ledger_head = engine
+                .register_table(TableDescriptor::new(
+                    LEDGER_HEAD,
+                    FamilyName::new("message-ledger-head"),
+                    SchemaHash::for_label("messenger-message-ledger-head-v4"),
+                ))
+                .unwrap();
+            engine
+                .assert_keyed(KeyedAssertion::new(
+                    ledger_head,
+                    RecordKey::new(LEDGER_HEAD_KEY),
+                    LedgerHead {
+                        next_message_slot: NextMessageSlot::new(7),
+                        oldest_message_slot: OldestMessageSlot::new(1),
+                    },
+                ))
+                .unwrap();
         }
         let tables = MessengerTables::open(&path).unwrap();
         let head = tables.ledger_head().unwrap();
