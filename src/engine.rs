@@ -174,6 +174,12 @@ impl MessageEngine {
     }
 
     fn apply_registry_command(&self, command: AgentRegistryCommand) -> Response {
+        // An enabled prompt-relay allowlist is bootstrapped before this daemon starts.
+        // Keeping its registry immutable prevents another same-UID ordinary client from
+        // reseating an allowed identifier with its own process pin.
+        if !self.prompt_relay_permissions.is_empty() {
+            return Self::registry_rejection(AgentRegistryRejectionReason::StoreRejected);
+        }
         match command {
             AgentRegistryCommand::AssignIdentity(assignment) => {
                 match self.tables.seat_identity(&assignment) {
