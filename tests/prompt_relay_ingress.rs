@@ -4,9 +4,9 @@ use signal_message::{
     AgentEndpoint, AgentEndpointBinding, AgentEndpointKind, AgentIdentityAssignment,
     ComponentMessageIngress, ComponentName, InternalComponentInstanceOrigin,
     MessageDaemonConfiguration, MessageOrigin, OwnerIdentity, ProcessPinSelection,
-    PromptInterpretationSelection, PromptReceiptObservation, PromptRelayDelivery,
-    PromptRelayPermission, PromptRelayRejectionReason, PromptRelaySubmission, PromptVariant, Query,
-    Response, ResumeSelection, TypedPromptEnvelope,
+    PromptDispatchRequest, PromptInterpretationSelection, PromptReceiptObservation,
+    PromptRelayDelivery, PromptRelayPermission, PromptRelayRejectionReason, PromptRelaySubmission,
+    PromptTargetReadiness, PromptVariant, Query, Response, ResumeSelection, TypedPromptEnvelope,
 };
 use std::{
     io::{BufRead, BufReader, Write},
@@ -188,6 +188,24 @@ fn prompt_relay_ingress_test_helper() {
             ["CLIENT"] => writeln!(output, "READY").unwrap(),
             ["SUBMIT", ..] => {
                 writeln!(output, "RESULT {}", response_name(helper_submit(&parts))).unwrap()
+            }
+            ["DISPATCH", socket, destination, source, event, readiness] => {
+                let readiness = match *readiness {
+                    "ready" => PromptTargetReadiness::Ready,
+                    "busy" => PromptTargetReadiness::Busy,
+                    "dirty" => PromptTargetReadiness::Dirty,
+                    _ => panic!("unknown readiness"),
+                };
+                let response = MessageSocket::from_path(socket)
+                    .client()
+                    .submit(Query::DispatchPrompt(PromptDispatchRequest {
+                        destination_agent_identifier: (*destination).to_owned(),
+                        source_agent_identifier: (*source).to_owned(),
+                        source_event_identifier: (*event).to_owned(),
+                        prompt_target_readiness: readiness,
+                    }))
+                    .unwrap();
+                writeln!(output, "RESULT {}", response_name(response)).unwrap()
             }
             ["OBSERVE", socket, destination, source, event] => {
                 let response = MessageSocket::from_path(socket)
@@ -378,6 +396,10 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
         "SUBMIT\t{ingress}\tdestination\tevent\thuman\traw"
     ));
     assert_eq!(source.expect("RESULT "), "ACCEPTED");
+    destination.command(&format!(
+        "DISPATCH\t{ingress}\tdestination\tsource\tevent\tready"
+    ));
+    assert_eq!(destination.expect("RESULT "), "ACCEPTED");
     destination.command("OUTBOUND\tsource\tdestination\tevent\thuman\traw\ttest");
     assert_eq!(destination.expect("OUTBOUND"), "");
     assert_eq!(

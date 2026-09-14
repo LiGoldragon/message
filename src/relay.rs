@@ -51,6 +51,15 @@ pub enum RelayDisposition {
     RecipientObserved,
 }
 
+/// A durable dispatch claim.  The write happens after this claim is persisted,
+/// and completion is recorded separately so callers need not hold any engine
+/// lock while touching an endpoint.
+#[derive(Clone, Debug)]
+pub enum DispatchClaim {
+    NoAttempt(RelayDisposition),
+    Attempt(RelayRecord),
+}
+
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub(crate) enum DeliveryState {
     Pending,
@@ -75,7 +84,7 @@ impl Relay {
         Self { tables }
     }
 
-    pub fn submit(&self, input: RelayInput, port: &impl DeliveryPort) -> Result<RelayDisposition> {
+    pub fn submit(&self, input: RelayInput) -> Result<RelayDisposition> {
         let key = key(&input);
         let record = RelayRecord {
             source_agent_identifier: input.source_agent_identifier,
@@ -84,11 +93,11 @@ impl Relay {
             envelope: input.envelope,
             state: DeliveryState::Pending,
         };
-        let admitted = self.admit(&key, &record)?;
-        let readiness = port.readiness(&record.destination);
-        if !admitted {
+        if !self.admit(&key, &record)? {
             return match self.record(&key)?.state {
-                DeliveryState::Pending => Ok(RelayDisposition::DuplicatePending(readiness)),
+                DeliveryState::Pending => {
+                    Ok(RelayDisposition::DuplicatePending(TargetReadiness::Dirty))
+                }
                 DeliveryState::InFlight | DeliveryState::Unknown => Ok(RelayDisposition::InFlight),
                 DeliveryState::ByteAccepted => Ok(RelayDisposition::ByteAccepted),
                 DeliveryState::RecipientObserved => Ok(RelayDisposition::RecipientObserved),
@@ -97,17 +106,87 @@ impl Relay {
         if !matches!(record.envelope.prompt_variant, PromptVariant::HumanPrompt) {
             return Ok(RelayDisposition::RecordedOnly);
         }
-        if readiness != TargetReadiness::Ready {
-            return Ok(RelayDisposition::Pending(readiness));
-        }
-        self.replace_state(&key, DeliveryState::InFlight)?;
-        let durable = self.record(&key)?;
-        if port.deliver(&record.destination, &durable).is_err() {
-            self.replace_state(&key, DeliveryState::Unknown)?;
+        Ok(RelayDisposition::Pending(TargetReadiness::Dirty))
+    }
+
+    pub fn dispatch(
+        &self,
+        destination: &str,
+        source: &str,
+        event: &str,
+        readiness: TargetReadiness,
+        port: &impl DeliveryPort,
+    ) -> Result<RelayDisposition> {
+        let claim = self.begin_dispatch(destination, source, event, readiness)?;
+        let DispatchClaim::Attempt(record) = claim else {
+            let DispatchClaim::NoAttempt(disposition) = claim else {
+                unreachable!()
+            };
+            return Ok(disposition);
+        };
+        if port.deliver(destination, &record).is_err() {
+            self.finish_dispatch(destination, source, event, false)?;
             return Ok(RelayDisposition::InFlight);
         }
-        self.replace_state(&key, DeliveryState::ByteAccepted)?;
+        self.finish_dispatch(destination, source, event, true)?;
         Ok(RelayDisposition::ByteAccepted)
+    }
+
+    pub fn begin_dispatch(
+        &self,
+        destination: &str,
+        source: &str,
+        event: &str,
+        readiness: TargetReadiness,
+    ) -> Result<DispatchClaim> {
+        let key = key_parts(destination, source, event);
+        let record = self.record(&key)?;
+        if record.destination != destination || record.source_agent_identifier != source {
+            return Err(RelayError::Storage(
+                "dispatch identity differs from admitted record".into(),
+            ));
+        }
+        if !matches!(record.state, DeliveryState::Pending) {
+            return Ok(DispatchClaim::NoAttempt(match record.state {
+                DeliveryState::InFlight | DeliveryState::Unknown => RelayDisposition::InFlight,
+                DeliveryState::ByteAccepted => RelayDisposition::ByteAccepted,
+                DeliveryState::RecipientObserved => RelayDisposition::RecipientObserved,
+                DeliveryState::Pending => unreachable!(),
+            }));
+        }
+        if !matches!(record.envelope.prompt_variant, PromptVariant::HumanPrompt) {
+            return Ok(DispatchClaim::NoAttempt(RelayDisposition::RecordedOnly));
+        }
+        if readiness != TargetReadiness::Ready {
+            return Ok(DispatchClaim::NoAttempt(RelayDisposition::Pending(
+                readiness,
+            )));
+        }
+        self.replace_state(&key, DeliveryState::InFlight)?;
+        Ok(DispatchClaim::Attempt(record))
+    }
+
+    pub fn finish_dispatch(
+        &self,
+        destination: &str,
+        source: &str,
+        event: &str,
+        accepted: bool,
+    ) -> Result<()> {
+        let key = key_parts(destination, source, event);
+        if !matches!(self.record(&key)?.state, DeliveryState::InFlight) {
+            return Err(RelayError::Storage(
+                "dispatch completion requires an in-flight record".into(),
+            ));
+        }
+        self.replace_state(
+            &key,
+            if accepted {
+                DeliveryState::ByteAccepted
+            } else {
+                DeliveryState::Unknown
+            },
+        )
     }
 
     pub fn recipient_observed(

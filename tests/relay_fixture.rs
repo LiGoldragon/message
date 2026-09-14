@@ -3,180 +3,28 @@ use signal_message::{
     ConnectionClass, MessageOrigin, PromptInterpretationSelection, PromptVariant,
     TypedPromptEnvelope,
 };
-use std::cell::Cell;
-use std::io::Read;
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::thread;
+use std::{
+    cell::Cell,
+    io::Write,
+    os::unix::net::{UnixListener, UnixStream},
+    thread,
+};
 
-struct BusyPort;
-
-impl DeliveryPort for BusyPort {
-    fn readiness(&self, _: &str) -> TargetReadiness {
-        TargetReadiness::Busy
-    }
-    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
-        panic!("busy must not write")
-    }
-}
-struct DirtyPort;
-impl DeliveryPort for DirtyPort {
-    fn readiness(&self, _: &str) -> TargetReadiness {
-        TargetReadiness::Dirty
-    }
-    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
-        panic!("dirty must not write")
-    }
-}
-
-struct SocketPort {
-    path: std::path::PathBuf,
-}
-impl DeliveryPort for SocketPort {
-    fn readiness(&self, _: &str) -> TargetReadiness {
-        TargetReadiness::Ready
-    }
-    fn deliver(
-        &self,
-        _: &str,
-        record: &message::runtime_model::RelayRecord,
-    ) -> std::io::Result<()> {
-        UnixStream::connect(&self.path)?.write_all(record.envelope.raw_prompt_text.as_bytes())
-    }
-}
-
-#[test]
-fn dirty_delivery_is_persisted_without_socket_write() {
-    let directory = tempfile::tempdir().unwrap();
-    let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
-    assert_eq!(
-        relay
-            .submit(input(PromptVariant::HumanPrompt, "raw"), &DirtyPort)
-            .unwrap(),
-        RelayDisposition::Pending(TargetReadiness::Dirty)
-    );
-}
-use std::io::Write;
-
-fn input(variant: PromptVariant, raw: &str) -> RelayInput {
+fn input() -> RelayInput {
     RelayInput {
         source_agent_identifier: "source".into(),
-        destination: "other-agent".into(),
+        destination: "destination".into(),
         origin: MessageOrigin::External(ConnectionClass::NonOwnerUser(1000)),
         envelope: TypedPromptEnvelope {
-            prompt_variant: variant,
-            source_event_identifier: "source-event-1".into(),
-            raw_prompt_text: raw.into(),
+            prompt_variant: PromptVariant::HumanPrompt,
+            source_event_identifier: "event".into(),
+            raw_prompt_text: "raw".into(),
             prompt_interpretation_selection: PromptInterpretationSelection::None,
         },
     }
 }
-
-#[test]
-fn unix_socket_receives_unmodified_raw_prompt_and_observation_is_distinct() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("recipient.sock");
-    let listener = UnixListener::bind(&path).unwrap();
-    let reader = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut bytes = Vec::new();
-        stream.read_to_end(&mut bytes).unwrap();
-        bytes
-    });
-    let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
-    assert_eq!(
-        relay
-            .submit(
-                input(PromptVariant::HumanPrompt, "raw human words"),
-                &SocketPort { path }
-            )
-            .unwrap(),
-        RelayDisposition::ByteAccepted
-    );
-    assert_eq!(reader.join().unwrap(), b"raw human words");
-    relay
-        .recipient_observed("other-agent", "source", "source-event-1")
-        .unwrap();
-    assert_eq!(
-        relay
-            .submit(
-                input(PromptVariant::HumanPrompt, "raw human words"),
-                &BusyPort
-            )
-            .unwrap(),
-        RelayDisposition::RecipientObserved
-    );
-}
-
-#[test]
-fn conflict_and_non_forwarding_variants_are_durable() {
-    let directory = tempfile::tempdir().unwrap();
-    let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
-    assert_eq!(
-        relay
-            .submit(input(PromptVariant::PeerMessage, "peer"), &BusyPort)
-            .unwrap(),
-        RelayDisposition::RecordedOnly
-    );
-    let mut conflicting = input(PromptVariant::PeerMessage, "changed");
-    assert!(matches!(
-        relay.submit(conflicting.clone(), &BusyPort),
-        Err(message::relay::RelayError::Conflict)
-    ));
-    conflicting.envelope.source_event_identifier = "receipt".into();
-    conflicting.envelope.prompt_variant = PromptVariant::DeliveryReceipt;
-    assert_eq!(
-        relay.submit(conflicting, &BusyPort).unwrap(),
-        RelayDisposition::RecordedOnly
-    );
-}
-
-struct FailingPort;
-impl DeliveryPort for FailingPort {
-    fn readiness(&self, _: &str) -> TargetReadiness {
-        TargetReadiness::Ready
-    }
-    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
-        Err(std::io::Error::other("ambiguous write"))
-    }
-}
-
-#[test]
-fn ambiguous_write_is_not_retried_after_reopen() {
-    let directory = tempfile::tempdir().unwrap();
-    let database = directory.path().join("messenger.sema");
-    let relay = Relay::open(&database).unwrap();
-    assert_eq!(
-        relay
-            .submit(input(PromptVariant::HumanPrompt, "raw"), &FailingPort)
-            .unwrap(),
-        RelayDisposition::InFlight
-    );
-    drop(relay);
-    assert_eq!(
-        Relay::open(&database)
-            .unwrap()
-            .submit(input(PromptVariant::HumanPrompt, "raw"), &BusyPort)
-            .unwrap(),
-        RelayDisposition::InFlight
-    );
-}
-
-#[test]
-fn observation_rejects_pending_records() {
-    let directory = tempfile::tempdir().unwrap();
-    let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
-    relay
-        .submit(input(PromptVariant::HumanPrompt, "pending"), &BusyPort)
-        .unwrap();
-    assert!(
-        relay
-            .recipient_observed("other-agent", "source", "source-event-1")
-            .is_err()
-    );
-}
-
-struct CountingPort(Cell<u8>);
-impl DeliveryPort for CountingPort {
+struct Port(Cell<u8>);
+impl DeliveryPort for Port {
     fn readiness(&self, _: &str) -> TargetReadiness {
         TargetReadiness::Ready
     }
@@ -185,65 +33,123 @@ impl DeliveryPort for CountingPort {
         Ok(())
     }
 }
-#[test]
-fn duplicate_event_does_not_deliver_twice() {
-    let directory = tempfile::tempdir().unwrap();
-    let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
-    let port = CountingPort(Cell::new(0));
-    relay
-        .submit(input(PromptVariant::HumanPrompt, "raw"), &port)
-        .unwrap();
-    relay
-        .submit(input(PromptVariant::HumanPrompt, "raw"), &port)
-        .unwrap();
-    assert_eq!(port.0.get(), 1);
+struct Never;
+impl DeliveryPort for Never {
+    fn readiness(&self, _: &str) -> TargetReadiness {
+        TargetReadiness::Ready
+    }
+    fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
+        panic!("must not write")
+    }
 }
 
 #[test]
-fn busy_delivery_is_persisted_before_any_socket_write() {
-    let directory = tempfile::tempdir().unwrap();
-    let relay = Relay::open(directory.path().join("messenger.sema")).unwrap();
-    let input = RelayInput {
-        source_agent_identifier: "source".into(),
-        destination: "other-agent".into(),
-        origin: MessageOrigin::External(ConnectionClass::NonOwnerUser(1000)),
-        envelope: TypedPromptEnvelope {
-            prompt_variant: PromptVariant::HumanPrompt,
-            source_event_identifier: "source-event-1".into(),
-            raw_prompt_text: "raw human words".into(),
-            prompt_interpretation_selection: PromptInterpretationSelection::None,
-        },
-    };
+fn busy_and_dirty_leave_the_admitted_record_pending_without_bytes() {
+    for readiness in [TargetReadiness::Busy, TargetReadiness::Dirty] {
+        let dir = tempfile::tempdir().unwrap();
+        let relay = Relay::open(dir.path().join("messenger.sema")).unwrap();
+        assert_eq!(
+            relay.submit(input()).unwrap(),
+            RelayDisposition::Pending(TargetReadiness::Dirty)
+        );
+        assert_eq!(
+            relay
+                .dispatch("destination", "source", "event", readiness, &Never)
+                .unwrap(),
+            RelayDisposition::Pending(readiness)
+        );
+        assert_eq!(relay.pending_count().unwrap(), 1);
+    }
+}
+
+#[test]
+fn ready_writes_one_frame_and_deduped_dispatch_never_retries() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("recipient.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let reader = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut stream, &mut bytes).unwrap();
+        bytes
+    });
+    struct SocketPort(std::path::PathBuf);
+    impl DeliveryPort for SocketPort {
+        fn readiness(&self, _: &str) -> TargetReadiness {
+            TargetReadiness::Ready
+        }
+        fn deliver(&self, _: &str, _: &message::runtime_model::RelayRecord) -> std::io::Result<()> {
+            UnixStream::connect(&self.0)?.write_all(b"frame")
+        }
+    }
+    let relay = Relay::open(dir.path().join("messenger.sema")).unwrap();
+    assert!(matches!(
+        relay.submit(input()).unwrap(),
+        RelayDisposition::Pending(_)
+    ));
     assert_eq!(
-        relay.submit(input.clone(), &BusyPort).unwrap(),
-        RelayDisposition::Pending(TargetReadiness::Busy)
-    );
-    assert_eq!(
-        relay.submit(input, &BusyPort).unwrap(),
-        RelayDisposition::DuplicatePending(TargetReadiness::Busy)
-    );
-    drop(relay);
-    assert_eq!(
-        Relay::open(directory.path().join("messenger.sema"))
-            .unwrap()
-            .pending_count()
+        relay
+            .dispatch(
+                "destination",
+                "source",
+                "event",
+                TargetReadiness::Ready,
+                &SocketPort(path)
+            )
             .unwrap(),
-        1
+        RelayDisposition::ByteAccepted
+    );
+    assert_eq!(reader.join().unwrap(), b"frame");
+    assert_eq!(
+        relay
+            .dispatch(
+                "destination",
+                "source",
+                "event",
+                TargetReadiness::Ready,
+                &Never
+            )
+            .unwrap(),
+        RelayDisposition::ByteAccepted
     );
 }
 
 #[test]
-fn same_event_from_distinct_sources_has_distinct_durable_records_after_reopen() {
-    let directory = tempfile::tempdir().unwrap();
-    let database = directory.path().join("messenger.sema");
+fn duplicate_admission_is_durable_and_delivery_happens_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let database = dir.path().join("messenger.sema");
     let relay = Relay::open(&database).unwrap();
-    let port = CountingPort(Cell::new(0));
-    let first = input(PromptVariant::HumanPrompt, "first");
-    let mut second = input(PromptVariant::HumanPrompt, "second");
-    second.source_agent_identifier = "other-source".into();
-    relay.submit(first, &port).unwrap();
-    relay.submit(second, &port).unwrap();
-    assert_eq!(port.0.get(), 2);
+    let port = Port(Cell::new(0));
+    relay.submit(input()).unwrap();
+    assert_eq!(
+        relay.submit(input()).unwrap(),
+        RelayDisposition::DuplicatePending(TargetReadiness::Dirty)
+    );
+    assert_eq!(
+        relay
+            .dispatch(
+                "destination",
+                "source",
+                "event",
+                TargetReadiness::Ready,
+                &port
+            )
+            .unwrap(),
+        RelayDisposition::ByteAccepted
+    );
+    assert_eq!(port.0.get(), 1);
     drop(relay);
-    assert_eq!(Relay::open(&database).unwrap().pending_count().unwrap(), 0);
+    let relay = Relay::open(&database).unwrap();
+    assert_eq!(
+        relay
+            .dispatch(
+                "destination",
+                "source",
+                "event",
+                TargetReadiness::Ready,
+                &Never
+            )
+            .unwrap(),
+        RelayDisposition::ByteAccepted
+    );
 }

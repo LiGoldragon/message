@@ -77,9 +77,7 @@ impl MessageDaemon {
             );
         }
         let runtime = MessageRuntime {
-            engine: tokio::sync::Mutex::new(MessageEngine::from_configuration(
-                &self.configuration,
-            )?),
+            engine: MessageEngine::from_configuration(&self.configuration)?,
             ordinary_codec: LengthPrefixedCodec::default(),
             meta_codec: MetaMessageFrameCodec::default(),
         };
@@ -91,7 +89,7 @@ impl MessageDaemon {
 }
 
 struct MessageRuntime {
-    engine: tokio::sync::Mutex<MessageEngine>,
+    engine: MessageEngine,
     ordinary_codec: LengthPrefixedCodec,
     meta_codec: MetaMessageFrameCodec,
 }
@@ -113,7 +111,7 @@ impl AsyncMultiConnectionRuntime for MessageRuntime {
                     .await?;
                 let query = Signal::<Query>::from(body.bytes().to_vec()).restore()?;
                 let context = *connection.context();
-                let response = self.engine.lock().await.handle(query, &context).await?;
+                let response = self.engine.handle(query, &context).await?;
                 self.ordinary_codec
                     .write_body_async(
                         connection.stream_mut(),
@@ -130,14 +128,16 @@ impl AsyncMultiConnectionRuntime for MessageRuntime {
                 let query = Signal::<Query>::from(body.bytes().to_vec()).restore()?;
                 if !matches!(
                     query,
-                    Query::SubmitPrompt(_) | Query::ObservePromptReceipt(_)
+                    Query::SubmitPrompt(_)
+                        | Query::DispatchPrompt(_)
+                        | Query::ObservePromptReceipt(_)
                 ) {
                     return Err(MessageDaemonError::Listener(
                         "prompt relay ingress only accepts typed prompt operations".into(),
                     ));
                 }
                 let context = *connection.context();
-                let response = self.engine.lock().await.handle(query, &context).await?;
+                let response = self.engine.handle(query, &context).await?;
                 self.ordinary_codec
                     .write_body_async(
                         connection.stream_mut(),
