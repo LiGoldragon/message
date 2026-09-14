@@ -154,3 +154,16 @@ pub enum StoreWrite {
     RecordSubmission(LedgerDraft),
     Subscribe(ThreadSubscription),
 }
+
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) enum ReceivedPromptState {
+    IdentitySeen,
+    PayloadComplete,
+    RecipientObserved,
+}
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct ReceivedPrompt {
+    pub header: signal_message::PromptDeliveryHeader,
+    pub payload: Vec<u8>,
+    pub state: ReceivedPromptState,
+}

@@ -36,3 +36,5 @@ pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};
 pub use meta::{MetaMessageCommand, MetaMessageCommandEnvironment};
 pub use provenance::{OriginPolicy, SenderResolver};
 pub use tables::MessengerTables;
+
+pub mod prompt_transport;

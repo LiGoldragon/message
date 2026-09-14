@@ -75,7 +75,7 @@ const SEMA_SCHEMA_VERSION_KEY: &str = "schema_version";
 /// re-stamped forward and read as if it were v4 — that would be silent
 /// corruption. v3 is deliberately absent from the additive list below and
 /// fails closed, preserving the file aside for an operator to decide about.
-const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(6);
+const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(7);
 
 /// The prior store versions whose every intervening family layout is additive
 /// up to the current version — a store stamped at one of these re-stamps
@@ -84,7 +84,11 @@ const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(6);
 /// v4 -> v5 adds the independent prompt-relay family; existing families keep
 /// their layout and are preserved before the store is re-stamped.
 // v6 adds only the attempt-count sidecar; existing relay bytes stay at v5.
-const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 2] = [SchemaVersion::new(4), SchemaVersion::new(5)];
+const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 3] = [
+    SchemaVersion::new(4),
+    SchemaVersion::new(5),
+    SchemaVersion::new(6),
+];
 
 /// The store version at which the agent registry's layout was last set.
 const AGENT_REGISTRY_LAYOUT_VERSION: SchemaVersion = SchemaVersion::new(4);
@@ -121,6 +125,8 @@ pub struct MessengerTables {
     delivery_outbox: TableReference<InboxRecord>,
     prompt_relay: TableReference<RelayRecord>,
     prompt_attempts: TableReference<RelayAttemptCount>,
+    received_prompts: TableReference<crate::runtime_model::ReceivedPrompt>,
+    pub(crate) prompt_receiving: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl std::fmt::Debug for MessengerTables {
@@ -193,6 +199,11 @@ impl MessengerTables {
             "prompt-attempts",
             SchemaVersion::new(6),
         ))?;
+        let received_prompts = engine.register_table(Self::family_descriptor(
+            TableName::new("received_prompts"),
+            "received-prompts",
+            SchemaVersion::new(7),
+        ))?;
         Ok(Self {
             engine,
             prompt_dispatch_claim: std::sync::Mutex::new(()),
@@ -204,6 +215,8 @@ impl MessengerTables {
             delivery_outbox,
             prompt_relay,
             prompt_attempts,
+            received_prompts,
+            prompt_receiving: std::sync::Mutex::new(std::collections::HashSet::new()),
         })
     }
 
@@ -217,6 +230,38 @@ impl MessengerTables {
             FamilyName::new(family),
             SchemaHash::for_label(format!("messenger-{family}-v{}", version.value())),
         )
+    }
+
+    pub(crate) fn received_prompt(
+        &self,
+        key: &str,
+    ) -> Result<Option<crate::runtime_model::ReceivedPrompt>> {
+        Ok(self
+            .engine
+            .match_records(QueryPlan::key(self.received_prompts, RecordKey::new(key)))?
+            .records()
+            .first()
+            .cloned())
+    }
+    pub(crate) fn put_received_prompt(
+        &self,
+        key: &str,
+        value: crate::runtime_model::ReceivedPrompt,
+    ) -> Result<()> {
+        if self.received_prompt(key)?.is_some() {
+            self.engine.mutate_keyed(KeyedMutation::new(
+                self.received_prompts,
+                RecordKey::new(key),
+                value,
+            ))?;
+        } else {
+            self.engine.assert_keyed(KeyedAssertion::new(
+                self.received_prompts,
+                RecordKey::new(key),
+                value,
+            ))?;
+        }
+        Ok(())
     }
 
     pub(crate) fn relay_attempts(&self, key: &str) -> Result<Option<RelayAttemptCount>> {

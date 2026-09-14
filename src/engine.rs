@@ -75,6 +75,11 @@ impl MessageEngine {
                 }))
             }
             Query::SubmitPrompt(submission) => self.submit_prompt(submission, connection),
+            Query::Header(_) | Query::Reconcile(_) => {
+                Response::PromptRelayRejected(PromptRelayRejection {
+                    prompt_relay_rejection_reason: PromptRelayRejectionReason::RelayDisabled,
+                })
+            }
             Query::DispatchPrompt(request) => self.dispatch_prompt(request, connection).await,
             Query::ObservePromptReceipt(observation) => {
                 self.observe_prompt(observation, connection)
