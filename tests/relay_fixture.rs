@@ -66,18 +66,16 @@ fn simultaneous_ready_dispatches_claim_exactly_one_attempt() {
         .collect();
     let results: Vec<_> = joins.into_iter().map(|join| join.join().unwrap()).collect();
     assert_eq!(port.0.load(Ordering::SeqCst), 1);
+    assert!(results.iter().all(|result| matches!(
+        result,
+        RelayDisposition::ByteAccepted | RelayDisposition::InFlight
+    )));
     assert_eq!(
-        results
-            .iter()
-            .filter(|result| **result == RelayDisposition::ByteAccepted)
-            .count(),
-        1
-    );
-    assert_eq!(
-        results
-            .iter()
-            .filter(|result| **result == RelayDisposition::InFlight)
-            .count(),
+        relay
+            .attempt_count("destination", "source", "event")
+            .unwrap()
+            .unwrap()
+            .reservations,
         1
     );
 }
@@ -210,4 +208,99 @@ fn duplicate_admission_is_durable_and_delivery_happens_once() {
             .unwrap(),
         RelayDisposition::ByteAccepted
     );
+}
+
+#[test]
+fn zero_byte_retry_and_late_observation_preserve_identity_and_attempt_count() {
+    use message::relay::{DeliveryOutcome, DispatchClaim};
+    let dir = tempfile::tempdir().unwrap();
+    let database = dir.path().join("messenger.sema");
+    let relay = Relay::open(&database).unwrap();
+    relay.submit(input()).unwrap();
+    assert!(matches!(
+        relay
+            .begin_dispatch("destination", "source", "event", TargetReadiness::Ready)
+            .unwrap(),
+        DispatchClaim::Attempt(_)
+    ));
+    relay
+        .finish_dispatch(
+            "destination",
+            "source",
+            "event",
+            DeliveryOutcome::NoBytesWritten,
+        )
+        .unwrap();
+    assert_eq!(relay.pending_count().unwrap(), 1);
+    drop(relay);
+    let relay = Relay::open(&database).unwrap();
+    assert_eq!(
+        relay
+            .attempt_count("destination", "source", "event")
+            .unwrap()
+            .unwrap()
+            .reservations,
+        1
+    );
+    assert!(matches!(
+        relay
+            .begin_dispatch("destination", "source", "event", TargetReadiness::Ready)
+            .unwrap(),
+        DispatchClaim::Attempt(_)
+    ));
+    relay
+        .finish_dispatch("destination", "source", "event", DeliveryOutcome::Ambiguous)
+        .unwrap();
+    assert_eq!(relay.pending_count().unwrap(), 0);
+    assert!(matches!(
+        relay
+            .begin_dispatch("destination", "source", "event", TargetReadiness::Ready)
+            .unwrap(),
+        DispatchClaim::NoAttempt(RelayDisposition::InFlight)
+    ));
+    relay
+        .recipient_observed("destination", "source", "event")
+        .unwrap();
+    assert!(matches!(
+        relay
+            .begin_dispatch("destination", "source", "event", TargetReadiness::Ready)
+            .unwrap(),
+        DispatchClaim::NoAttempt(RelayDisposition::RecipientObserved)
+    ));
+    assert_eq!(
+        relay
+            .attempt_count("destination", "source", "event")
+            .unwrap()
+            .unwrap()
+            .reservations,
+        2
+    );
+}
+
+#[test]
+fn receipt_racing_transport_completion_is_never_overwritten() {
+    use message::relay::{DeliveryOutcome, DispatchClaim};
+    let dir = tempfile::tempdir().unwrap();
+    let relay = Relay::open(dir.path().join("messenger.sema")).unwrap();
+    relay.submit(input()).unwrap();
+    assert!(
+        relay
+            .recipient_observed("destination", "source", "event")
+            .is_err()
+    );
+    relay
+        .begin_dispatch("destination", "source", "event", TargetReadiness::Ready)
+        .unwrap();
+    relay
+        .recipient_observed("destination", "source", "event")
+        .unwrap();
+    relay
+        .finish_dispatch("destination", "source", "event", DeliveryOutcome::Ambiguous)
+        .unwrap();
+    assert!(matches!(
+        relay
+            .begin_dispatch("destination", "source", "event", TargetReadiness::Ready)
+            .unwrap(),
+        DispatchClaim::NoAttempt(RelayDisposition::RecipientObserved)
+    ));
 }

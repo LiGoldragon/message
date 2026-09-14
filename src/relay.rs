@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use crate::{MessengerTables, runtime_model::RelayRecord};
+use crate::{
+    MessengerTables,
+    runtime_model::{RelayAttemptCount, RelayRecord},
+};
 use rkyv::{Archive, Deserialize, Serialize};
 use signal_message::{MessageOrigin, PromptVariant, TypedPromptEnvelope};
 
@@ -26,6 +29,14 @@ pub enum TargetReadiness {
     Ready,
     Busy,
     Dirty,
+}
+
+/// Only explicit transport accounting may establish NoBytesWritten.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeliveryOutcome {
+    ByteAccepted,
+    NoBytesWritten,
+    Ambiguous,
 }
 
 pub trait DeliveryPort {
@@ -125,10 +136,10 @@ impl Relay {
             return Ok(disposition);
         };
         if port.deliver(destination, &record).is_err() {
-            self.finish_dispatch(destination, source, event, false)?;
+            self.finish_dispatch(destination, source, event, DeliveryOutcome::Ambiguous)?;
             return Ok(RelayDisposition::InFlight);
         }
-        self.finish_dispatch(destination, source, event, true)?;
+        self.finish_dispatch(destination, source, event, DeliveryOutcome::ByteAccepted)?;
         Ok(RelayDisposition::ByteAccepted)
     }
 
@@ -167,6 +178,23 @@ impl Relay {
                 readiness,
             )));
         }
+        let mut count = self
+            .tables
+            .relay_attempts(&key)
+            .map_err(storage)?
+            .unwrap_or(RelayAttemptCount {
+                reservations: 0,
+                historical_attempts_known: false,
+            });
+        count.reservations = count
+            .reservations
+            .checked_add(1)
+            .ok_or_else(|| RelayError::Storage("attempt counter exhausted".into()))?;
+        // Persist the reservation before the claim. A crash between the two
+        // writes may count an unused reservation, never an uncounted attempt.
+        self.tables
+            .set_relay_attempts(&key, count)
+            .map_err(storage)?;
         self.replace_state(&key, DeliveryState::InFlight)?;
         Ok(DispatchClaim::Attempt(record))
     }
@@ -176,9 +204,13 @@ impl Relay {
         destination: &str,
         source: &str,
         event: &str,
-        accepted: bool,
+        outcome: DeliveryOutcome,
     ) -> Result<()> {
         let key = key_parts(destination, source, event);
+        let _claim = self.tables.prompt_dispatch_claim.lock().map_err(storage)?;
+        if matches!(self.record(&key)?.state, DeliveryState::RecipientObserved) {
+            return Ok(());
+        }
         if !matches!(self.record(&key)?.state, DeliveryState::InFlight) {
             return Err(RelayError::Storage(
                 "dispatch completion requires an in-flight record".into(),
@@ -186,10 +218,10 @@ impl Relay {
         }
         self.replace_state(
             &key,
-            if accepted {
-                DeliveryState::ByteAccepted
-            } else {
-                DeliveryState::Unknown
+            match outcome {
+                DeliveryOutcome::ByteAccepted => DeliveryState::ByteAccepted,
+                DeliveryOutcome::NoBytesWritten => DeliveryState::Pending,
+                DeliveryOutcome::Ambiguous => DeliveryState::Unknown,
             },
         )
     }
@@ -205,15 +237,27 @@ impl Relay {
             source_agent_identifier,
             source_event_identifier,
         );
+        let _claim = self.tables.prompt_dispatch_claim.lock().map_err(storage)?;
         match self.record(&key)?.state {
-            DeliveryState::ByteAccepted => {
+            DeliveryState::ByteAccepted | DeliveryState::Unknown | DeliveryState::InFlight => {
                 self.replace_state(&key, DeliveryState::RecipientObserved)
             }
             DeliveryState::RecipientObserved => Ok(()),
             _ => Err(RelayError::Storage(
-                "recipient observation requires prior byte acceptance".into(),
+                "recipient observation requires a claimed delivery".into(),
             )),
         }
+    }
+
+    pub fn attempt_count(
+        &self,
+        destination: &str,
+        source: &str,
+        event: &str,
+    ) -> Result<Option<RelayAttemptCount>> {
+        self.tables
+            .relay_attempts(&key_parts(destination, source, event))
+            .map_err(storage)
     }
 
     pub fn pending_count(&self) -> Result<usize> {
@@ -227,6 +271,7 @@ impl Relay {
     }
 
     fn admit(&self, key: &str, record: &RelayRecord) -> Result<bool> {
+        let _claim = self.tables.prompt_dispatch_claim.lock().map_err(storage)?;
         let existing = self.tables.relay_record(key).map_err(storage)?;
         if let Some(existing) = existing {
             if existing.source_agent_identifier != record.source_agent_identifier
@@ -238,6 +283,15 @@ impl Relay {
             }
             return Ok(false);
         }
+        self.tables
+            .set_relay_attempts(
+                key,
+                RelayAttemptCount {
+                    reservations: 0,
+                    historical_attempts_known: true,
+                },
+            )
+            .map_err(storage)?;
         self.tables
             .admit_relay_record(key, record.clone())
             .map_err(storage)?;

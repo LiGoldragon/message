@@ -419,6 +419,17 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
         "SUBMIT\t{ingress}\tdestination\tevent\thuman\traw"
     ));
     assert_eq!(source.expect("RESULT "), "ACCEPTED");
+    // An unavailable path proves no bytes could be delivered. Restore the
+    // same endpoint and retry the same admitted event without resubmitting.
+    let parked = directory.path().join("parked.sock");
+    std::fs::rename(&destination_socket, &parked).unwrap();
+    destination.command(&format!(
+        "DISPATCH\t{ingress}\tdestination\tsource\tevent\tready"
+    ));
+    assert_eq!(destination.expect("RESULT "), "ACCEPTED");
+    destination.command("NO_OUTBOUND");
+    destination.expect("NO_OUTBOUND");
+    std::fs::rename(&parked, &destination_socket).unwrap();
     destination.command(&format!(
         "DISPATCH\t{ingress}\tdestination\tsource\tevent\tready"
     ));
@@ -473,6 +484,14 @@ fn prompt_ingress_uses_kernel_peer_and_observation_key() {
     source.stop();
     destination.stop();
     other.stop();
+    drop(_daemon);
+    let relay = message::relay::Relay::open(configuration.database_path()).unwrap();
+    let count = relay
+        .attempt_count("destination", "source", "event")
+        .unwrap()
+        .unwrap();
+    assert_eq!(count.reservations, 2);
+    assert!(count.historical_attempts_known);
 }
 
 #[test]

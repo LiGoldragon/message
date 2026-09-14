@@ -25,7 +25,7 @@ use crate::{
     delivery::DeliveryRunner,
     error::Error,
     provenance::{OriginPolicy, SenderResolver},
-    relay::{DispatchClaim, Relay, RelayDisposition, RelayInput, TargetReadiness},
+    relay::{DeliveryOutcome, DispatchClaim, Relay, RelayDisposition, RelayInput, TargetReadiness},
     runtime_model::{AgentRegistryCommand, LedgerDraft, StoreQuery, StoreWrite},
     tables::MessengerTables,
 };
@@ -189,19 +189,23 @@ impl MessageEngine {
                 })
             }
             Ok(DispatchClaim::Attempt(record)) => {
-                let accepted = deliver_prompt(&self.tables, &record).await;
+                let outcome = deliver_prompt(&self.tables, &record).await;
                 match relay.finish_dispatch(
                     &request.destination_agent_identifier,
                     &request.source_agent_identifier,
                     &request.source_event_identifier,
-                    accepted,
+                    outcome,
                 ) {
                     Ok(()) => Response::PromptRelayAccepted(PromptRelayAcceptance {
                         source_event_identifier: request.source_event_identifier,
-                        prompt_relay_delivery_disposition: if accepted {
-                            PromptRelayDeliveryDisposition::ByteAccepted
-                        } else {
-                            PromptRelayDeliveryDisposition::InFlight
+                        prompt_relay_delivery_disposition: match outcome {
+                            DeliveryOutcome::ByteAccepted => {
+                                PromptRelayDeliveryDisposition::ByteAccepted
+                            }
+                            DeliveryOutcome::NoBytesWritten => {
+                                PromptRelayDeliveryDisposition::Pending
+                            }
+                            DeliveryOutcome::Ambiguous => PromptRelayDeliveryDisposition::InFlight,
                         },
                     }),
                     Err(_) => Response::PromptRelayRejected(PromptRelayRejection {
@@ -337,7 +341,7 @@ impl MessageEngine {
 async fn deliver_prompt(
     tables: &MessengerTables,
     record: &crate::runtime_model::RelayRecord,
-) -> bool {
+) -> DeliveryOutcome {
     let mut written = 0usize;
     let result = async {
         let entry = tables
@@ -361,18 +365,18 @@ async fn deliver_prompt(
         .map_err(std::io::Error::other)?
         .bytes()
         .to_vec();
-        while written < bytes.len() {
-            let count = stream.write(&bytes[written..]).await?;
-            if count == 0 {
-                return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
-            }
-            written += count;
-        }
-        stream.shutdown().await
+        write_counted(&mut stream, &bytes, &mut written).await
     };
-    timeout(Duration::from_secs(1), result)
+    if timeout(Duration::from_secs(1), result)
         .await
         .is_ok_and(|result| result.is_ok())
+    {
+        DeliveryOutcome::ByteAccepted
+    } else if written == 0 {
+        DeliveryOutcome::NoBytesWritten
+    } else {
+        DeliveryOutcome::Ambiguous
+    }
 }
 fn relay_disposition(value: RelayDisposition) -> PromptRelayDeliveryDisposition {
     match value {
@@ -386,5 +390,76 @@ fn relay_disposition(value: RelayDisposition) -> PromptRelayDeliveryDisposition 
         RelayDisposition::InFlight => PromptRelayDeliveryDisposition::InFlight,
         RelayDisposition::ByteAccepted => PromptRelayDeliveryDisposition::ByteAccepted,
         RelayDisposition::RecipientObserved => PromptRelayDeliveryDisposition::RecipientObserved,
+    }
+}
+
+// AsyncWriteExt::write is cancellation-safe; write_all is not suitable when
+// retry policy depends on the number of bytes accepted before a deadline.
+async fn write_counted<W: tokio::io::AsyncWrite + Unpin>(
+    stream: &mut W,
+    bytes: &[u8],
+    written: &mut usize,
+) -> std::io::Result<()> {
+    while *written < bytes.len() {
+        let count = stream.write(&bytes[*written..]).await?;
+        if count == 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
+        }
+        *written += count;
+    }
+    stream.shutdown().await
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use std::{
+        pin::Pin,
+        task::{Context, Poll},
+    };
+    struct PartialThenZero(bool);
+    impl tokio::io::AsyncWrite for PartialThenZero {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if self.0 {
+                Poll::Ready(Ok(0))
+            } else {
+                self.0 = true;
+                Poll::Ready(Ok(2))
+            }
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    #[tokio::test]
+    async fn zero_after_partial_write_preserves_earlier_count() {
+        let mut written = 0;
+        assert!(
+            write_counted(&mut PartialThenZero(false), b"frame", &mut written)
+                .await
+                .is_err()
+        );
+        assert_eq!(written, 2);
+    }
+    #[tokio::test]
+    async fn cancellation_preserves_bytes_already_accepted_by_transport() {
+        let (mut writer, _unread) = tokio::io::duplex(2);
+        let mut written = 0;
+        assert!(
+            timeout(
+                Duration::from_millis(20),
+                write_counted(&mut writer, b"frame", &mut written)
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(written, 2);
     }
 }

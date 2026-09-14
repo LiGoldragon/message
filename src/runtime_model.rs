@@ -21,6 +21,14 @@ pub struct RelayRecord {
     pub(crate) state: DeliveryState,
 }
 
+/// Reservations recorded since attempt tracking was introduced. Historical
+/// attempts of pre-existing records are explicitly unknown.
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RelayAttemptCount {
+    pub reservations: u64,
+    pub historical_attempts_known: bool,
+}
+
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SenderName(String);
 

@@ -30,7 +30,7 @@ use sema_engine::{
 use crate::Result;
 use crate::runtime_model::{
     InboxRecord, LedgerDraft, LedgerHead, LedgerRecord, NextMessageSlot, OldestMessageSlot,
-    RelayRecord, Slots, ThreadRecord,
+    RelayAttemptCount, RelayRecord, Slots, ThreadRecord,
 };
 use crate::store_preserve::PreMigrationPreserve;
 use signal_message::{
@@ -75,7 +75,7 @@ const SEMA_SCHEMA_VERSION_KEY: &str = "schema_version";
 /// re-stamped forward and read as if it were v4 — that would be silent
 /// corruption. v3 is deliberately absent from the additive list below and
 /// fails closed, preserving the file aside for an operator to decide about.
-const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(5);
+const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(6);
 
 /// The prior store versions whose every intervening family layout is additive
 /// up to the current version — a store stamped at one of these re-stamps
@@ -83,7 +83,8 @@ const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(5);
 ///
 /// v4 -> v5 adds the independent prompt-relay family; existing families keep
 /// their layout and are preserved before the store is re-stamped.
-const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 1] = [SchemaVersion::new(4)];
+// v6 adds only the attempt-count sidecar; existing relay bytes stay at v5.
+const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 2] = [SchemaVersion::new(4), SchemaVersion::new(5)];
 
 /// The store version at which the agent registry's layout was last set.
 const AGENT_REGISTRY_LAYOUT_VERSION: SchemaVersion = SchemaVersion::new(4);
@@ -119,6 +120,7 @@ pub struct MessengerTables {
     thread_index: TableReference<ThreadRecord>,
     delivery_outbox: TableReference<InboxRecord>,
     prompt_relay: TableReference<RelayRecord>,
+    prompt_attempts: TableReference<RelayAttemptCount>,
 }
 
 impl std::fmt::Debug for MessengerTables {
@@ -184,7 +186,12 @@ impl MessengerTables {
         let prompt_relay = engine.register_table(Self::family_descriptor(
             PROMPT_RELAY,
             "prompt-relay",
-            MESSENGER_SCHEMA_VERSION,
+            SchemaVersion::new(5),
+        ))?;
+        let prompt_attempts = engine.register_table(Self::family_descriptor(
+            TableName::new("prompt_attempts"),
+            "prompt-attempts",
+            SchemaVersion::new(6),
         ))?;
         Ok(Self {
             engine,
@@ -196,6 +203,7 @@ impl MessengerTables {
             thread_index,
             delivery_outbox,
             prompt_relay,
+            prompt_attempts,
         })
     }
 
@@ -209,6 +217,32 @@ impl MessengerTables {
             FamilyName::new(family),
             SchemaHash::for_label(format!("messenger-{family}-v{}", version.value())),
         )
+    }
+
+    pub(crate) fn relay_attempts(&self, key: &str) -> Result<Option<RelayAttemptCount>> {
+        Ok(self
+            .engine
+            .match_records(QueryPlan::key(self.prompt_attempts, RecordKey::new(key)))?
+            .records()
+            .first()
+            .cloned())
+    }
+
+    pub(crate) fn set_relay_attempts(&self, key: &str, value: RelayAttemptCount) -> Result<()> {
+        if self.relay_attempts(key)?.is_some() {
+            self.engine.mutate_keyed(KeyedMutation::new(
+                self.prompt_attempts,
+                RecordKey::new(key),
+                value,
+            ))?;
+        } else {
+            self.engine.assert_keyed(KeyedAssertion::new(
+                self.prompt_attempts,
+                RecordKey::new(key),
+                value,
+            ))?;
+        }
+        Ok(())
     }
 
     pub(crate) fn relay_record(&self, key: &str) -> Result<Option<RelayRecord>> {
@@ -966,5 +1000,46 @@ mod tests {
         assert_eq!(*head.next_message_slot.payload(), 7);
         assert_eq!(*head.oldest_message_slot.payload(), 1);
         assert!(tables.relay_records().unwrap().is_empty());
+    }
+    #[test]
+    fn v5_relay_rows_survive_attempt_sidecar_addition_without_invented_history() {
+        use signal_message::{
+            ConnectionClass, MessageOrigin, PromptInterpretationSelection, PromptVariant,
+            TypedPromptEnvelope,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("messenger.sema");
+        let record = RelayRecord {
+            source_agent_identifier: "source".into(),
+            destination: "destination".into(),
+            origin: MessageOrigin::External(ConnectionClass::NonOwnerUser(1000)),
+            envelope: TypedPromptEnvelope {
+                prompt_variant: PromptVariant::HumanPrompt,
+                source_event_identifier: "event".into(),
+                raw_prompt_text: "preserved".into(),
+                prompt_interpretation_selection: PromptInterpretationSelection::None,
+            },
+            state: crate::relay::DeliveryState::Unknown,
+        };
+        {
+            let mut engine = Engine::open(EngineOpen::new(&path, SchemaVersion::new(5))).unwrap();
+            let family = engine
+                .register_table(MessengerTables::family_descriptor(
+                    PROMPT_RELAY,
+                    "prompt-relay",
+                    SchemaVersion::new(5),
+                ))
+                .unwrap();
+            engine
+                .assert_keyed(KeyedAssertion::new(
+                    family,
+                    RecordKey::new("old"),
+                    record.clone(),
+                ))
+                .unwrap();
+        }
+        let tables = MessengerTables::open(&path).unwrap();
+        assert_eq!(tables.relay_record("old").unwrap(), Some(record));
+        assert!(tables.relay_attempts("old").unwrap().is_none());
     }
 }
