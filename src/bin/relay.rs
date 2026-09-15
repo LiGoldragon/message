@@ -58,11 +58,8 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     }
     let declared_target = env::var("RELAY_CLUSTER_TARGET").ok();
     let cluster_target = cluster_target(declared_target.as_deref())?;
-    let mut source = locate(head, tail)?;
-    // The transcript session identifies where the record lives; FLOW_ID is
-    // the declared owning flow, and is what the Context runner records.
-    source.flow_identifier = executor_flow_identifier.clone();
-    let context = context_for(&source)?;
+    let source = locate(head, tail)?;
+    let context = context_for(&source, &executor_flow_identifier)?;
     let header = ClusterMessage::Relay(ClusterRelay {
         flow_identifier: source.flow_identifier.clone(),
         session_identifier: source.session_identifier.clone(),
@@ -398,16 +395,20 @@ struct Source {
 /// The Context runner is the single author of semantic context.  Relay only
 /// validates the runner receipt against the byte-exact source it selected and
 /// places that producer-owned value beside the unchanged body.
-fn context_for(source: &Source) -> Result<Context, String> {
+fn context_for(source: &Source, executor_flow_identifier: &str) -> Result<Context, String> {
     let receipt_path = env::var_os("RELAY_CONTEXT_RECEIPT")
         .map(PathBuf::from)
         .ok_or_else(|| {
             "missing RELAY_CONTEXT_RECEIPT; run clusterrelay-context first".to_owned()
         })?;
-    context_from_receipt(source, &receipt_path)
+    context_from_receipt(source, executor_flow_identifier, &receipt_path)
 }
 
-fn context_from_receipt(source: &Source, receipt_path: &Path) -> Result<Context, String> {
+fn context_from_receipt(
+    source: &Source,
+    executor_flow_identifier: &str,
+    receipt_path: &Path,
+) -> Result<Context, String> {
     let input = fs::read_to_string(&receipt_path)
         .map_err(|error| format!("read Context receipt {}: {error}", receipt_path.display()))?;
     let receipt: ContextReceipt = serde_json::from_str(&input)
@@ -416,7 +417,7 @@ fn context_from_receipt(source: &Source, receipt_path: &Path) -> Result<Context,
         return Err("Context receipt is not a machine-authored clusterrelay receipt".to_owned());
     }
     if receipt.source.source_path != source.path.display().to_string()
-        || receipt.source.flow_identifier != source.flow_identifier
+        || receipt.source.flow_identifier != executor_flow_identifier
         || receipt.source.source_session_identifier != source.session_identifier
         || receipt.source.source_turn_identifier != source.source_turn_identifier
         || receipt.source.source_event_identifier != source.source_event_identifier
@@ -425,7 +426,7 @@ fn context_from_receipt(source: &Source, receipt_path: &Path) -> Result<Context,
     {
         return Err("Context receipt provenance does not match the selected source".to_owned());
     }
-    if receipt.derived.what_living_said != source.body {
+    if receipt.verbatim_source_text != source.body {
         return Err("Context receipt does not preserve the selected source words".to_owned());
     }
     Ok(Context {
@@ -446,6 +447,7 @@ struct ContextReceipt {
     kind: String,
     machine_authored: bool,
     source: ContextReceiptSource,
+    verbatim_source_text: String,
     derived: ContextReceiptDerived,
 }
 
@@ -710,6 +712,7 @@ mod tests {
             serde_json::json!({
                 "kind": "clusterrelay-derived-context",
                 "machine_authored": true,
+                "verbatim_source_text": body,
                 "source": {
                     "source_path": transcript.display().to_string(),
                     "flow_identifier": "cf7879",
@@ -730,7 +733,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let context = context_from_receipt(&source, &receipt).unwrap();
+        let context = context_from_receipt(&source, "cf7879", &receipt).unwrap();
         assert_eq!(context.what_living_said, body);
         assert_eq!(context.source_turn_identifier, "msg-1");
     }
