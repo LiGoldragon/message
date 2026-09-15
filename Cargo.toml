@@ -31,6 +31,14 @@ path = "src/bin/message_validate_output.rs"
 name = "message-write-configuration"
 path = "src/bin/message_write_configuration.rs"
 
+[[bin]]
+name = "message-inspect-v3-store"
+path = "src/bin/message_inspect_v3_store.rs"
+
+[[bin]]
+name = "message-migrate-v3-store"
+path = "src/bin/message_migrate_v3_store.rs"
+
 [dependencies]
 datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6dccc76b75918a91d3370a9d4fe88aa7dd567876" }
 protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }

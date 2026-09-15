@@ -182,6 +182,9 @@
           message-previous-store-schema-fails-closed =
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
+          message-v3-store-migration-preserves-source-and-archives-records =
+            context.cargoTestFile "store_migration"
+              "v3_copy_moves_to_a_fresh_store_with_an_opaque_archive_and_exact_backup";
         }
       );
 

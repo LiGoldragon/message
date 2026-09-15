@@ -19,7 +19,9 @@ matter operationally.
 3. **The durable store.** `MESSENGER_SCHEMA_VERSION` moves 3 → 4 and the
    additive-migration list is **empty**. Every durable record embeds
    producer-owned contract types whose archived layout changed, so a store
-   written by 0.11.1 cannot be re-stamped and read — it **fails closed**.
+   written by 0.11.1 cannot be re-stamped and read — the daemon **fails
+   closed**. An offline preservation tool is available for a copied v3 file;
+   it does not make those archived rows active under the new contract.
 
 ### Deploying
 
@@ -28,14 +30,16 @@ this repository. Whoever advances that pin must, in order:
 
 1. Stop the `message-daemon` user unit. A running 0.11.1 daemon holds the v3
    store open.
-2. Move the existing store aside. Its path is the `database_path` in the
-   daemon's binary configuration — by default `messenger.sema` in the
-   component's state directory. The daemon will not read it; a v3 file makes
-   startup fail with a schema-version mismatch rather than silently
-   misinterpreting rows. There is no in-place migration and none is intended:
-   the record layout changed underneath, so re-stamping would corrupt.
-   Message history in that file is not carried forward. Keep the file if it
-   matters; nothing will read it.
+2. Copy the stopped v3 store, then run
+   `message-inspect-v3-store --source <copied-v3-store>` to confirm its
+   schema and row counts without printing payloads. Run
+   `message-migrate-v3-store --source <copied-v3-store> --destination <new-v5-store>`.
+   The migration refuses any schema other than v3, an unknown durable table,
+   a pre-existing destination, or a pre-existing backup. It leaves the source
+   untouched, writes an exact `<new-v5-store>.v3-backup`, and writes raw v3
+   records to `legacy_v3_archive` in the fresh v5 store. Those records remain
+   historical evidence: the daemon does not deserialize them and the legacy
+   `delivery_outbox` is never treated as FlowDeliver work.
 3. Rewrite the binary configuration with the new
    `message-write-configuration`, whose one inline Datom argument is now
    shaped
