@@ -40,6 +40,19 @@ this repository. Whoever advances that pin must, in order:
    records to `legacy_v3_archive` in the fresh v5 store. Those records remain
    historical evidence: the daemon does not deserialize them and the legacy
    `delivery_outbox` is never treated as FlowDeliver work.
+
+   **Pending-delivery blocker.** The archival migration is not a delivery
+   migration. A copied deployed v3 store contains a nonempty
+   `delivery_outbox`; the exact deployed 0.11.1 source revision (`38345dae`)
+   rejects that row while decoding `InboxRecord.slots` with rkyv's
+   `InvalidSubtreePointer`. Schema v3 does not record the producer archived
+   layout revision, so the row cannot be mapped to a recipient and ledger slot
+   without identifying the writer's compatible producer revision. Do not
+   advance a daemon to the archival output while that condition holds: the
+   pending delivery would be inactive. Preserve the original and its exact
+   backup, and require a decoder that proves the pending row's target, slots,
+   and referenced ledger record before a rollout. The copied-store probe
+   prints only the decode outcome and counts, never message bodies.
 3. Rewrite the binary configuration with the new
    `message-write-configuration`, whose one inline Datom argument is now
    shaped
