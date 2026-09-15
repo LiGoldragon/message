@@ -173,6 +173,12 @@
           message-startup-request-writes-a-loadable-configuration =
             context.cargoTestFile "startup_configuration"
               "writing_the_startup_request_produces_a_configuration_the_daemon_loads";
+          message-flow-delivery-parks-until-the-flow-is-idle =
+            context.cargoTestFile "flow_delivery"
+              "a_delivery_to_a_known_flow_parks_and_is_acknowledged_queued";
+          message-flow-delivery-lands-on-idle-with-a-compact-receipt =
+            context.cargoTestFile "flow_delivery"
+              "an_idle_announce_lands_the_parked_delivery_with_a_compact_receipt";
           message-previous-store-schema-fails-closed =
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";

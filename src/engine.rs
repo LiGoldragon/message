@@ -5,9 +5,10 @@
 //! messenger action and one strict `signal-message::Response`.
 
 use signal_message::{
-    AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason, InboxListingReply,
-    MessageOperationKind, MessageRequestUnimplementedReply, MessageUnimplementedReason, Query,
-    Response, SubmissionRejectionReason, ThreadIndexEntries, ThreadRejectionReason,
+    AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason,
+    FlowDeliveryRejectionReason, FlowDeliveryRequest, InboxListingReply, MessageOperationKind,
+    MessageRequestUnimplementedReply, MessageUnimplementedReason, Query, Response,
+    SubmissionRejectionReason, TargetFlowName, ThreadIndexEntries, ThreadRejectionReason,
 };
 use triad_runtime::ConnectionContext;
 
@@ -15,6 +16,8 @@ use crate::{
     config::Configuration,
     delivery::DeliveryRunner,
     error::Error,
+    flow_delivery::FlowDeliveryOutbox,
+    flow_registry::FlowMarkerIndex,
     provenance::{OriginPolicy, SenderResolver},
     runtime_model::{AgentRegistryCommand, LedgerDraft, StoreQuery, StoreWrite},
     tables::MessengerTables,
@@ -24,6 +27,9 @@ use crate::{
 pub struct MessageEngine {
     tables: MessengerTables,
     origin_policy: OriginPolicy,
+    /// SEAM: the Flow component (item 31) will own flow-name resolution;
+    /// interim reads `.flow-id` markers.
+    flow_registry: FlowMarkerIndex,
 }
 
 impl MessageEngine {
@@ -31,7 +37,15 @@ impl MessageEngine {
         Self {
             tables,
             origin_policy,
+            flow_registry: FlowMarkerIndex::conventional(),
         }
+    }
+
+    /// Replace the interim flow registry — the seam's one injection point,
+    /// used by tests today and by the Flow component's client tomorrow.
+    pub fn with_flow_registry(mut self, flow_registry: FlowMarkerIndex) -> Self {
+        self.flow_registry = flow_registry;
+        self
     }
 
     pub fn from_configuration(configuration: &Configuration) -> Result<Self, Error> {
@@ -79,7 +93,57 @@ impl MessageEngine {
                 self.apply_store_write(StoreWrite::Subscribe(subscription))
             }
             Query::QueryThreads(query) => self.read_store_query(StoreQuery::Threads(query)),
+            Query::FlowDeliver(request) => {
+                let origin = self.origin_policy.origin_for_connection(connection);
+                self.park_flow_delivery(request, origin)
+            }
         })
+    }
+
+    /// Park one flow delivery, or refuse it typed.
+    fn park_flow_delivery(
+        &self,
+        request: FlowDeliveryRequest,
+        origin: signal_message::MessageOrigin,
+    ) -> Response {
+        if self
+            .flow_registry
+            .resolve(&request.target_flow_name)
+            .is_none()
+        {
+            return Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::UnknownFlow);
+        }
+        match FlowDeliveryOutbox::new(&self.tables).park(&request, origin) {
+            Ok((acknowledgment, _)) => Response::DeliveryQueued(acknowledgment),
+            Err(_) => Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::StoreRejected),
+        }
+    }
+
+    /// Every envelope currently parked for one flow — the park's observation
+    /// surface, which the drain and its proof both read.
+    pub fn parked_flow_deliveries(
+        &self,
+        target_flow_name: &TargetFlowName,
+    ) -> Result<Vec<signal_message::TypedPromptEnvelope>, Error> {
+        FlowDeliveryOutbox::new(&self.tables).parked(target_flow_name)
+    }
+
+    /// A flow announces that its turn went idle: every delivery parked for it
+    /// lands, one `DeliveryLanded` receipt each.
+    ///
+    /// SEAM: Flow will publish turn-idleness by subscription; interim: an
+    /// explicit idle-announce op / manual prime. The PTY leg that would type
+    /// the text at a live harness session is deliberately absent — landing
+    /// here means the parked delivery left the store and its receipt exists.
+    pub fn announce_flow_idle(
+        &mut self,
+        target_flow_name: &TargetFlowName,
+    ) -> Result<Vec<Response>, Error> {
+        Ok(FlowDeliveryOutbox::new(&self.tables)
+            .drain(target_flow_name)?
+            .into_iter()
+            .map(Response::DeliveryLanded)
+            .collect())
     }
 
     fn apply_registry_command(&self, command: AgentRegistryCommand) -> Response {

@@ -36,7 +36,7 @@ datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6d
 protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "11aca640423f5f3f4cee81a1f38176e9aed27f98", features = ["datom"] }
 signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "5b932140b8c73b894cdd43a2bc4227315b3c83ea", features = ["datom"] }
+signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "81f659e5ceb498edee84c1a3ac336d188916714f", features = ["datom"] }
 signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
 rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 redb           = "4.1"
@@ -48,6 +48,12 @@ triad-runtime  = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev
 
 [dev-dependencies]
 redb = "4.1"
+# INTERIM: `meta-signal-message` still pins the pre-flow-delivery
+# `signal-message` rev, so its `Configure` payload is that crate's
+# `MessageDaemonConfiguration`, not this crate's. The process-boundary test
+# needs to spell both. Dropped when `meta-signal-message` is bumped to the
+# flow-delivery contract.
+meta-pinned-signal-message = { package = "signal-message", git = "https://github.com/LiGoldragon/signal-message.git", rev = "5b932140b8c73b894cdd43a2bc4227315b3c83ea", features = ["datom"] }
 rustix = { version = "1", features = ["process"] }
 tempfile = "3"
 

@@ -23,8 +23,8 @@
 
 use sema_engine::{
     Engine, EngineOpen, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan, RecordKey,
-    SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference, VersionedStoreName,
-    VersioningPolicy,
+    Retraction, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
+    VersionedStoreName, VersioningPolicy,
 };
 
 use crate::Result;
@@ -233,6 +233,14 @@ impl MessengerTables {
             RecordKey::new(key),
             record,
         ))?;
+        Ok(())
+    }
+
+    /// Drop one relay row entirely — the flow-delivery drain's dequeue: a
+    /// landed delivery leaves the park rather than lingering in a state.
+    pub(crate) fn retract_relay_record(&self, key: &str) -> Result<()> {
+        self.engine
+            .retract::<RelayRecord>(Retraction::new(self.prompt_relay, RecordKey::new(key)))?;
         Ok(())
     }
 
