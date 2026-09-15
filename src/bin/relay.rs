@@ -15,10 +15,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use datom_codec::Datomizable;
 use protos::{Protosizable, Textualizable};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use signal_message::{ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget, Context};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -125,11 +127,12 @@ impl CodexAppServer {
         socket
             .set_read_timeout(Some(std::time::Duration::from_secs(10)))
             .map_err(|error| error.to_string())?;
+        let websocket_key = websocket_key()?;
         socket
-            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+            .write_all(format!("GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {websocket_key}\r\nSec-WebSocket-Version: 13\r\n\r\n").as_bytes())
             .map_err(|error| error.to_string())?;
         let response = read_http_headers(&mut socket)?;
-        validate_websocket_upgrade(&response)?;
+        validate_websocket_upgrade(&response, &websocket_key)?;
         let mut rpc = WebSocketRpc { socket, next_id: 0 };
         rpc.call(
             "initialize",
@@ -300,17 +303,26 @@ fn read_http_headers(socket: &mut UnixStream) -> Result<String, String> {
     }
 }
 
-/// The request uses the RFC 6455 example nonce.  Its accept value is fixed;
-/// checking it binds the upgrade response to the websocket handshake rather
-/// than trusting an arbitrary HTTP 101 from the configured Unix socket.
-fn validate_websocket_upgrade(response: &str) -> Result<(), String> {
+fn websocket_key() -> Result<String, String> {
+    let mut nonce = [0_u8; 16];
+    fs::File::open("/dev/urandom")
+        .and_then(|mut source| source.read_exact(&mut nonce))
+        .map_err(|error| format!("read websocket nonce: {error}"))?;
+    Ok(STANDARD.encode(nonce))
+}
+
+/// Bind the upgrade response to this connection's random RFC 6455 nonce.
+fn validate_websocket_upgrade(response: &str, websocket_key: &str) -> Result<(), String> {
     if !response.starts_with("HTTP/1.1 101") {
         return Err("Codex app-server websocket upgrade refused".into());
     }
+    let mut digest = Sha1::new();
+    digest.update(websocket_key.as_bytes());
+    digest.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    let expected = STANDARD.encode(digest.finalize());
     let accepted = response.lines().any(|line| {
         line.split_once(':').is_some_and(|(name, value)| {
-            name.eq_ignore_ascii_case("sec-websocket-accept")
-                && value.trim() == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+            name.eq_ignore_ascii_case("sec-websocket-accept") && value.trim() == expected
         })
     });
     accepted
@@ -656,10 +668,17 @@ mod tests {
     #[test]
     fn websocket_upgrade_requires_the_expected_accept_value() {
         assert!(validate_websocket_upgrade(
-            "HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+            "HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",
+            "dGhlIHNhbXBsZSBub25jZQ==",
         )
         .is_ok());
-        assert!(validate_websocket_upgrade("HTTP/1.1 101 Switching Protocols\r\n\r\n").is_err());
+        assert!(
+            validate_websocket_upgrade(
+                "HTTP/1.1 101 Switching Protocols\r\n\r\n",
+                "dGhlIHNhbXBsZSBub25jZQ==",
+            )
+            .is_err()
+        );
     }
 
     #[test]
