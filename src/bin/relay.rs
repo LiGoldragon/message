@@ -59,7 +59,11 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     let declared_target = env::var("RELAY_CLUSTER_TARGET").ok();
     let cluster_target = cluster_target(declared_target.as_deref())?;
     let source = locate(head, tail)?;
-    let context = context_for(&source, &executor_flow_identifier)?;
+    let context = context_for(
+        &source,
+        &executor_flow_identifier,
+        &executor_session_identifier,
+    )?;
     let header = ClusterMessage::Relay(ClusterRelay {
         flow_identifier: source.flow_identifier.clone(),
         session_identifier: source.session_identifier.clone(),
@@ -395,18 +399,28 @@ struct Source {
 /// The Context runner is the single author of semantic context.  Relay only
 /// validates the runner receipt against the byte-exact source it selected and
 /// places that producer-owned value beside the unchanged body.
-fn context_for(source: &Source, executor_flow_identifier: &str) -> Result<Context, String> {
+fn context_for(
+    source: &Source,
+    executor_flow_identifier: &str,
+    executor_session_identifier: &str,
+) -> Result<Context, String> {
     let receipt_path = env::var_os("RELAY_CONTEXT_RECEIPT")
         .map(PathBuf::from)
         .ok_or_else(|| {
             "missing RELAY_CONTEXT_RECEIPT; run clusterrelay-context first".to_owned()
         })?;
-    context_from_receipt(source, executor_flow_identifier, &receipt_path)
+    context_from_receipt(
+        source,
+        executor_flow_identifier,
+        executor_session_identifier,
+        &receipt_path,
+    )
 }
 
 fn context_from_receipt(
     source: &Source,
     executor_flow_identifier: &str,
+    executor_session_identifier: &str,
     receipt_path: &Path,
 ) -> Result<Context, String> {
     let input = fs::read_to_string(&receipt_path)
@@ -417,12 +431,14 @@ fn context_from_receipt(
         return Err("Context receipt is not a machine-authored clusterrelay receipt".to_owned());
     }
     if receipt.source.source_path != source.path.display().to_string()
-        || receipt.source.flow_identifier != executor_flow_identifier
+        || receipt.source.source_flow_identifier != source.flow_identifier
         || receipt.source.source_session_identifier != source.session_identifier
         || receipt.source.source_turn_identifier != source.source_turn_identifier
         || receipt.source.source_event_identifier != source.source_event_identifier
         || receipt.source.source_line != source.source_line
         || receipt.source.prompt_sha256 != source.sha256
+        || receipt.source.executor_flow_identifier != executor_flow_identifier
+        || receipt.source.executor_session_identifier != executor_session_identifier
     {
         return Err("Context receipt provenance does not match the selected source".to_owned());
     }
@@ -430,7 +446,7 @@ fn context_from_receipt(
         return Err("Context receipt does not preserve the selected source words".to_owned());
     }
     Ok(Context {
-        flow_identifier: receipt.source.flow_identifier,
+        flow_identifier: receipt.source.source_flow_identifier,
         source_turn_identifier: receipt.source.source_turn_identifier,
         transcript_path: receipt.source.source_path,
         prompt_sha256: receipt.source.prompt_sha256,
@@ -454,11 +470,13 @@ struct ContextReceipt {
 #[derive(Deserialize)]
 struct ContextReceiptSource {
     source_path: String,
-    flow_identifier: String,
+    source_flow_identifier: String,
     source_turn_identifier: String,
     source_event_identifier: String,
     source_session_identifier: String,
     source_line: usize,
+    executor_flow_identifier: String,
+    executor_session_identifier: String,
     prompt_sha256: String,
 }
 
@@ -715,11 +733,13 @@ mod tests {
                 "verbatim_source_text": body,
                 "source": {
                     "source_path": transcript.display().to_string(),
-                    "flow_identifier": "cf7879",
+                    "source_flow_identifier": "cf7879",
                     "source_turn_identifier": "msg-1",
                     "source_event_identifier": "msg-1",
                     "source_session_identifier": "cf7879-session",
                     "source_line": 1,
+                    "executor_flow_identifier": "cf7879",
+                    "executor_session_identifier": "executor-1",
                     "prompt_sha256": source.sha256,
                 },
                 "derived": {
@@ -733,7 +753,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let context = context_from_receipt(&source, "cf7879", &receipt).unwrap();
+        let context = context_from_receipt(&source, "cf7879", "executor-1", &receipt).unwrap();
         assert_eq!(context.what_living_said, body);
         assert_eq!(context.source_turn_identifier, "msg-1");
     }
