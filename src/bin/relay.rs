@@ -58,7 +58,10 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     }
     let declared_target = env::var("RELAY_CLUSTER_TARGET").ok();
     let cluster_target = cluster_target(declared_target.as_deref())?;
-    let source = locate(head, tail)?;
+    let mut source = locate(head, tail)?;
+    // The transcript session identifies where the record lives; FLOW_ID is
+    // the declared owning flow, and is what the Context runner records.
+    source.flow_identifier = executor_flow_identifier.clone();
     let context = context_for(&source)?;
     let header = ClusterMessage::Relay(ClusterRelay {
         flow_identifier: source.flow_identifier.clone(),
@@ -528,8 +531,8 @@ fn records(path: &Path, head: &str, tail: &str) -> Result<Vec<Source>, String> {
             timestamp,
             line_index + 1,
             &body,
-        );
-        let source_event_identifier = source_event_identifier(&value, timestamp);
+        )?;
+        let source_event_identifier = source_event_identifier(&value, timestamp)?;
         found.push(Source {
             path: path.to_path_buf(),
             sha256: format!("{:x}", Sha256::digest(body.as_bytes())),
@@ -551,33 +554,37 @@ fn source_turn_identifier(
     timestamp: &str,
     line: usize,
     body: &str,
-) -> String {
+) -> Result<String, String> {
     if value.get("type").and_then(Value::as_str) == Some("queue-operation") {
-        return format!(
+        return Ok(format!(
             "queue:{session_identifier}:{timestamp}:{line}:{:x}",
             Sha256::digest(body.as_bytes())
-        );
+        ));
     }
     value
         .get("uuid")
         .or_else(|| value.get("promptId"))
         .or_else(|| value.get("id"))
         .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            "matched ordinary user record has no native source turn identifier".to_owned()
+        })
 }
 
-fn source_event_identifier(value: &Value, timestamp: &str) -> String {
+fn source_event_identifier(value: &Value, timestamp: &str) -> Result<String, String> {
     if value.get("type").and_then(Value::as_str) == Some("queue-operation") {
-        return format!("queue-enqueue:{timestamp}");
+        return Ok(format!("queue-enqueue:{timestamp}"));
     }
     value
         .get("uuid")
         .or_else(|| value.get("promptId"))
         .or_else(|| value.get("id"))
         .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            "matched ordinary user record has no native source event identifier".to_owned()
+        })
 }
 
 fn source_session_identifier(value: &Value) -> Result<String, String> {
