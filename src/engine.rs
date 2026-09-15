@@ -6,9 +6,10 @@
 
 use signal_message::{
     AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason,
-    FlowDeliveryRejectionReason, FlowDeliveryRequest, InboxListingReply, MessageOperationKind,
-    MessageRequestUnimplementedReply, MessageUnimplementedReason, Query, Response,
-    SubmissionRejectionReason, TargetFlowName, ThreadIndexEntries, ThreadRejectionReason,
+    FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment, FlowIdleAnnouncement,
+    InboxListingReply, MessageOperationKind, MessageRequestUnimplementedReply,
+    MessageUnimplementedReason, Query, Response, SubmissionRejectionReason, TargetFlowName,
+    ThreadIndexEntries, ThreadRejectionReason,
 };
 use triad_runtime::ConnectionContext;
 
@@ -97,6 +98,7 @@ impl MessageEngine {
                 let origin = self.origin_policy.origin_for_connection(connection);
                 self.park_flow_delivery(request, origin)
             }
+            Query::FlowAnnounceIdle(announcement) => self.announce_idle(announcement),
         })
     }
 
@@ -115,6 +117,19 @@ impl MessageEngine {
         }
         match FlowDeliveryOutbox::new(&self.tables).park(&request, origin) {
             Ok((acknowledgment, _)) => Response::DeliveryQueued(acknowledgment),
+            Err(_) => Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::StoreRejected),
+        }
+    }
+
+    /// A Flow-owned adapter has witnessed the named flow becoming idle.  This
+    /// Nexus neither infers idleness nor updates its registry; it only drains
+    /// the durable park addressed by the typed announcement.
+    fn announce_idle(&self, announcement: FlowIdleAnnouncement) -> Response {
+        match FlowDeliveryOutbox::new(&self.tables).drain(&announcement.target_flow_name) {
+            Ok(landed_receipts) => Response::FlowIdleAcknowledged(FlowIdleAcknowledgment {
+                target_flow_name: announcement.target_flow_name,
+                landed_receipts,
+            }),
             Err(_) => Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::StoreRejected),
         }
     }

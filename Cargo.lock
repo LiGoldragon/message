@@ -418,7 +418,7 @@ dependencies = [
  "sha2",
  "signal",
  "signal-harness",
- "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=f78948e5ea27efbe0f27e04989fc7b617cae51d4)",
+ "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=a9708f3384af)",
  "tempfile",
  "thiserror",
  "time",
@@ -751,7 +751,7 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "3.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?rev=f78948e5ea27efbe0f27e04989fc7b617cae51d4#f78948e5ea27efbe0f27e04989fc7b617cae51d4"
+source = "git+https://github.com/LiGoldragon/signal-message.git?rev=a9708f3384af#a9708f3384af18129cb1c983ffed850c4d631e46"
 dependencies = [
  "datom-codec",
  "ethos-zero",

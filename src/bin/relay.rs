@@ -40,6 +40,12 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     let executor_flow_identifier = required("FLOW_ID")?;
     let executor_session_identifier = required("RELAY_SESSION_ID")?;
     let members = members(&required("RELAY_CLUSTER_MEMBERS")?)?;
+    if !members.iter().any(|member| {
+        member.flow_identifier == executor_flow_identifier
+            && member.session_identifier == executor_session_identifier
+    }) {
+        return Err("FLOW_ID and RELAY_SESSION_ID are not one declared cluster member".into());
+    }
     let codex_target = env::var("RELAY_CODEX_THREAD_ID").ok();
     if let Some(target) = &codex_target
         && !members
@@ -340,6 +346,9 @@ struct Source {
     timestamp_nanos: i64,
     flow_identifier: String,
     session_identifier: String,
+    source_turn_identifier: String,
+    source_event_identifier: String,
+    source_line: usize,
 }
 
 /// The Context runner is the single author of semantic context.  Relay only
@@ -364,6 +373,10 @@ fn context_from_receipt(source: &Source, receipt_path: &Path) -> Result<Context,
     }
     if receipt.source.source_path != source.path.display().to_string()
         || receipt.source.flow_identifier != source.flow_identifier
+        || receipt.source.source_session_identifier != source.session_identifier
+        || receipt.source.source_turn_identifier != source.source_turn_identifier
+        || receipt.source.source_event_identifier != source.source_event_identifier
+        || receipt.source.source_line != source.source_line
         || receipt.source.prompt_sha256 != source.sha256
     {
         return Err("Context receipt provenance does not match the selected source".to_owned());
@@ -397,6 +410,9 @@ struct ContextReceiptSource {
     source_path: String,
     flow_identifier: String,
     source_turn_identifier: String,
+    source_event_identifier: String,
+    source_session_identifier: String,
+    source_line: usize,
     prompt_sha256: String,
 }
 
@@ -434,7 +450,7 @@ fn records(path: &Path, head: &str, tail: &str) -> Result<Vec<Source>, String> {
     let input =
         fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
     let mut found = Vec::new();
-    for line in input.lines() {
+    for (line_index, line) in input.lines().enumerate() {
         let value: Value = match serde_json::from_str(line) {
             Ok(value) => value,
             Err(_) => continue,
@@ -465,6 +481,14 @@ fn records(path: &Path, head: &str, tail: &str) -> Result<Vec<Source>, String> {
                 "matched source session {session_identifier:?} has no flow identifier"
             ));
         }
+        let source_turn_identifier = source_turn_identifier(
+            &value,
+            &session_identifier,
+            timestamp,
+            line_index + 1,
+            &body,
+        );
+        let source_event_identifier = source_event_identifier(&value, timestamp);
         found.push(Source {
             path: path.to_path_buf(),
             sha256: format!("{:x}", Sha256::digest(body.as_bytes())),
@@ -472,9 +496,47 @@ fn records(path: &Path, head: &str, tail: &str) -> Result<Vec<Source>, String> {
             timestamp_nanos,
             flow_identifier,
             session_identifier,
+            source_turn_identifier,
+            source_event_identifier,
+            source_line: line_index + 1,
         });
     }
     Ok(found)
+}
+
+fn source_turn_identifier(
+    value: &Value,
+    session_identifier: &str,
+    timestamp: &str,
+    line: usize,
+    body: &str,
+) -> String {
+    if value.get("type").and_then(Value::as_str) == Some("queue-operation") {
+        return format!(
+            "queue:{session_identifier}:{timestamp}:{line}:{:x}",
+            Sha256::digest(body.as_bytes())
+        );
+    }
+    value
+        .get("uuid")
+        .or_else(|| value.get("promptId"))
+        .or_else(|| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn source_event_identifier(value: &Value, timestamp: &str) -> String {
+    if value.get("type").and_then(Value::as_str) == Some("queue-operation") {
+        return format!("queue-enqueue:{timestamp}");
+    }
+    value
+        .get("uuid")
+        .or_else(|| value.get("promptId"))
+        .or_else(|| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn source_session_identifier(value: &Value) -> Result<String, String> {
@@ -491,19 +553,31 @@ fn user_body(value: &Value) -> Option<String> {
     if value.get("type")?.as_str()? == "queue-operation"
         && value.get("operation")?.as_str()? == "enqueue"
     {
-        return value.get("content")?.as_str().map(str::to_owned);
+        let body = value.get("content")?.as_str()?;
+        return (!is_relay_or_peer_text(body)).then(|| body.to_owned());
     }
     let payload = value.get("payload")?;
     if value.get("type")?.as_str()? != "response_item"
         || payload.get("type")?.as_str()? != "message"
         || payload.get("role")?.as_str()? != "user"
+        || value.get("promptSource").and_then(Value::as_str) == Some("system")
     {
         return None;
     }
     payload.get("content")?.as_array()?.iter().find_map(|part| {
-        matches!(part.get("type")?.as_str()?, "input_text" | "text")
-            .then(|| part.get("text")?.as_str().map(str::to_owned))?
+        matches!(part.get("type")?.as_str()?, "input_text" | "text").then(|| {
+            part.get("text")?
+                .as_str()
+                .filter(|text| !is_relay_or_peer_text(text))
+                .map(str::to_owned)
+        })?
     })
+}
+
+fn is_relay_or_peer_text(text: &str) -> bool {
+    text.contains("<cross-session-message")
+        || text.starts_with("Another Claude session sent a message:")
+        || text.starts_with("[PEER ")
 }
 
 fn first_six(body: &str) -> String {
@@ -560,6 +634,9 @@ mod tests {
             timestamp_nanos: 1,
             flow_identifier: "cf7879".to_owned(),
             session_identifier: "cf7879-session".to_owned(),
+            source_turn_identifier: "msg-1".to_owned(),
+            source_event_identifier: "msg-1".to_owned(),
+            source_line: 1,
         };
         let receipt = directory.path().join("context.json");
         fs::write(
@@ -571,6 +648,9 @@ mod tests {
                     "source_path": transcript.display().to_string(),
                     "flow_identifier": "cf7879",
                     "source_turn_identifier": "msg-1",
+                    "source_event_identifier": "msg-1",
+                    "source_session_identifier": "cf7879-session",
+                    "source_line": 1,
                     "prompt_sha256": source.sha256,
                 },
                 "derived": {

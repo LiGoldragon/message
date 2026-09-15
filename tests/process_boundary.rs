@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use message::{
-    Configuration, MessageDaemon, MetaMessageClient, MetaMessageEndpoint, client::MessageSocket,
+use message::{Configuration, MessageDaemon, client::MessageSocket};
+use signal_message::{
+    FlowDeliveryRequest, FlowIdleAnnouncement, MessageDaemonConfiguration, OwnerIdentity,
+    PromptInterpretationSelection, PromptVariant, Query, Response, TypedPromptEnvelope,
 };
-use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
-use signal_message::{MessageDaemonConfiguration, OwnerIdentity, Query, Response};
 
 fn contract(directory: &std::path::Path) -> MessageDaemonConfiguration {
     MessageDaemonConfiguration {
@@ -71,13 +71,61 @@ fn daemon_executes_both_producer_owned_contracts() {
         Response::InboxListing(listing) => assert!(listing.messages.is_empty()),
         other => panic!("unexpected ordinary reply: {other:?}"),
     }
+}
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let reply = runtime
-        .block_on(
-            MetaMessageClient::new(MetaMessageEndpoint::new(configuration.meta_socket_path()))
-                .submit(MetaQuery::Configure(contract.clone())),
-        )
+#[test]
+fn isolated_nexus_socket_parks_then_drains_on_a_typed_flow_idle_witness() {
+    let directory = tempfile::tempdir().unwrap();
+    let flow = format!("socket-fixture-{}", std::process::id());
+    let lanes = std::env::home_dir().unwrap().join("primary/flows");
+    std::fs::create_dir_all(&lanes).unwrap();
+    let marker = lanes.join(format!(".{flow}.flow-id"));
+    std::fs::write(&marker, "fixture flow marker\n").unwrap();
+
+    let contract = contract(directory.path());
+    let configuration = Configuration::new(
+        contract,
+        directory.path().join("fresh-messenger.sema"),
+        "owner",
+    )
+    .unwrap();
+    let configuration_path = directory.path().join("message.configuration");
+    configuration
+        .write_binary_file(&configuration_path)
         .unwrap();
-    assert!(matches!(reply, MetaResponse::OperationUnimplemented(_)));
+    std::thread::spawn(move || {
+        MessageDaemon::from_configuration_path(&configuration_path)
+            .unwrap()
+            .run()
+            .unwrap();
+    });
+    wait_for(configuration.socket_path());
+    let client = MessageSocket::from_path(configuration.socket_path()).client();
+    let queued = client
+        .submit(Query::FlowDeliver(FlowDeliveryRequest {
+            typed_prompt_envelope: TypedPromptEnvelope {
+                prompt_variant: PromptVariant::HumanPrompt,
+                source_event_identifier: "cf7879:source:5350d56d".to_owned(),
+                raw_prompt_text: "fixture exact bytes: señal ✓".to_owned(),
+                prompt_interpretation_selection: PromptInterpretationSelection::None,
+            },
+            target_flow_name: flow.clone(),
+        }))
+        .unwrap();
+    assert!(matches!(queued, Response::DeliveryQueued(_)));
+
+    let landed = client
+        .submit(Query::FlowAnnounceIdle(FlowIdleAnnouncement {
+            target_flow_name: flow,
+        }))
+        .unwrap();
+    std::fs::remove_file(marker).unwrap();
+    match landed {
+        Response::FlowIdleAcknowledged(acknowledgment) => {
+            assert_eq!(acknowledgment.landed_receipts.len(), 1);
+            assert_eq!(acknowledgment.landed_receipts[0].byte_count, 31);
+            assert!(acknowledgment.landed_receipts[0].landed_at > 0);
+        }
+        other => panic!("unexpected idle reply: {other:?}"),
+    }
 }
