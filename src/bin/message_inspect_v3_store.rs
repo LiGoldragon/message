@@ -1,9 +1,10 @@
 //! Offline, payload-free inspection for a 0.11.x messenger store.
 //!
-//! The tool opens a supplied copy of `messenger.sema` read-only and reports
-//! only its schema stamp and table row counts. It never reads or prints a row
-//! value, so it can decide whether an empty-store transition is safe without
-//! exposing message content.
+//! The tool opens a supplied copy of `messenger.sema` and reports only its
+//! schema stamp and table row counts. It never reads or prints a row value, so
+//! it can decide whether an empty-store transition is safe without exposing
+//! message content. Redb may update metadata while opening a file; never pass
+//! the active store or an archival original.
 
 use std::path::Path;
 
