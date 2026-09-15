@@ -355,8 +355,7 @@ dependencies = [
  "sema-engine",
  "signal",
  "signal-harness",
- "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=5b932140b8c73b894cdd43a2bc4227315b3c83ea)",
- "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=81f659e5ceb498edee84c1a3ac336d188916714f)",
+ "signal-message",
  "tempfile",
  "thiserror",
  "tokio",
@@ -366,14 +365,14 @@ dependencies = [
 [[package]]
 name = "meta-signal-message"
 version = "0.6.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=11aca640423f5f3f4cee81a1f38176e9aed27f98#11aca640423f5f3f4cee81a1f38176e9aed27f98"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=f98fd1055d3a3ed47cf3c05445a7dff42e55acf8#f98fd1055d3a3ed47cf3c05445a7dff42e55acf8"
 dependencies = [
  "datom-codec",
  "ethos-zero",
  "protos",
  "rkyv",
  "signal",
- "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=5b932140b8c73b894cdd43a2bc4227315b3c83ea)",
+ "signal-message",
 ]
 
 [[package]]
@@ -635,18 +634,6 @@ dependencies = [
  "rkyv",
  "signal",
  "signal-persona",
-]
-
-[[package]]
-name = "signal-message"
-version = "3.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?rev=5b932140b8c73b894cdd43a2bc4227315b3c83ea#5b932140b8c73b894cdd43a2bc4227315b3c83ea"
-dependencies = [
- "datom-codec",
- "ethos-zero",
- "protos",
- "rkyv",
- "signal",
 ]
 
 [[package]]

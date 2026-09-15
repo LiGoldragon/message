@@ -6,25 +6,6 @@ use message::{
 use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
 use signal_message::{MessageDaemonConfiguration, OwnerIdentity, Query, Response};
 
-/// The same coordinate spelled in the `signal-message` rev that
-/// `meta-signal-message` still pins, for the privileged `Configure` payload.
-/// INTERIM: one spelling again once `meta-signal-message` is bumped.
-fn meta_pinned_contract(
-    contract: &MessageDaemonConfiguration,
-) -> meta_pinned_signal_message::MessageDaemonConfiguration {
-    meta_pinned_signal_message::MessageDaemonConfiguration {
-        message_socket_path: contract.message_socket_path.clone(),
-        message_socket_mode: contract.message_socket_mode,
-        supervision_socket_path: contract.supervision_socket_path.clone(),
-        supervision_socket_mode: contract.supervision_socket_mode,
-        router_socket_path: contract.router_socket_path.clone(),
-        component_ingresses: Vec::new(),
-        owner_identity: meta_pinned_signal_message::OwnerIdentity::UnixUser(i64::from(
-            rustix::process::getuid().as_raw(),
-        )),
-    }
-}
-
 fn contract(directory: &std::path::Path) -> MessageDaemonConfiguration {
     MessageDaemonConfiguration {
         message_socket_path: directory
@@ -95,7 +76,7 @@ fn daemon_executes_both_producer_owned_contracts() {
     let reply = runtime
         .block_on(
             MetaMessageClient::new(MetaMessageEndpoint::new(configuration.meta_socket_path()))
-                .submit(MetaQuery::Configure(meta_pinned_contract(&contract))),
+                .submit(MetaQuery::Configure(contract.clone())),
         )
         .unwrap();
     assert!(matches!(reply, MetaResponse::OperationUnimplemented(_)));
