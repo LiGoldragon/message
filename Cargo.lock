@@ -413,6 +413,7 @@ dependencies = [
  "rustix",
  "sema",
  "sema-engine",
+ "serde",
  "serde_json",
  "sha2",
  "signal",
