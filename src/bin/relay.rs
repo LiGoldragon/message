@@ -129,9 +129,7 @@ impl CodexAppServer {
             .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
             .map_err(|error| error.to_string())?;
         let response = read_http_headers(&mut socket)?;
-        if !response.starts_with("HTTP/1.1 101") {
-            return Err("Codex app-server websocket upgrade refused".into());
-        }
+        validate_websocket_upgrade(&response)?;
         let mut rpc = WebSocketRpc { socket, next_id: 0 };
         rpc.call(
             "initialize",
@@ -302,6 +300,24 @@ fn read_http_headers(socket: &mut UnixStream) -> Result<String, String> {
     }
 }
 
+/// The request uses the RFC 6455 example nonce.  Its accept value is fixed;
+/// checking it binds the upgrade response to the websocket handshake rather
+/// than trusting an arbitrary HTTP 101 from the configured Unix socket.
+fn validate_websocket_upgrade(response: &str) -> Result<(), String> {
+    if !response.starts_with("HTTP/1.1 101") {
+        return Err("Codex app-server websocket upgrade refused".into());
+    }
+    let accepted = response.lines().any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.eq_ignore_ascii_case("sec-websocket-accept")
+                && value.trim() == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        })
+    });
+    accepted
+        .then_some(())
+        .ok_or_else(|| "Codex app-server websocket upgrade has invalid Sec-WebSocket-Accept".into())
+}
+
 fn required(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("missing {name}; flow launch must declare it"))
 }
@@ -319,7 +335,7 @@ fn cluster_target(value: Option<&str>) -> Result<ClusterTarget, String> {
 /// members.  A future Flow query replaces this one adapter without changing
 /// the producer-owned `ClusterMessage` shape.
 fn members(declaration: &str) -> Result<Vec<ClusterMember>, String> {
-    declaration
+    let members = declaration
         .split(',')
         .filter(|member| !member.is_empty())
         .map(|member| match member.split_once('@') {
@@ -335,7 +351,20 @@ fn members(declaration: &str) -> Result<Vec<ClusterMember>, String> {
                 "invalid cluster member {member:?}; expected flow@session"
             )),
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if members.is_empty() {
+        return Err("RELAY_CLUSTER_MEMBERS must declare at least one member".into());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    if members.iter().any(|member| {
+        !seen.insert((
+            member.flow_identifier.as_str(),
+            member.session_identifier.as_str(),
+        ))
+    }) {
+        return Err("RELAY_CLUSTER_MEMBERS contains a duplicate flow@session member".into());
+    }
+    Ok(members)
 }
 
 #[derive(Debug)]
@@ -620,6 +649,17 @@ mod tests {
     fn members_are_setup_data_not_public_prompt_arguments() {
         assert_eq!(members("cf7879@root,57a7aa@secondary").unwrap().len(), 2);
         assert!(members("not-a-member").is_err());
+        assert!(members("").is_err());
+        assert!(members("cf7879@root,cf7879@root").is_err());
+    }
+
+    #[test]
+    fn websocket_upgrade_requires_the_expected_accept_value() {
+        assert!(validate_websocket_upgrade(
+            "HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+        )
+        .is_ok());
+        assert!(validate_websocket_upgrade("HTTP/1.1 101 Switching Protocols\r\n\r\n").is_err());
     }
 
     #[test]
