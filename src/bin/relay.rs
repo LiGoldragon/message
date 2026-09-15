@@ -17,9 +17,10 @@ use std::{
 
 use datom_codec::Datomizable;
 use protos::{Protosizable, Textualizable};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use signal_message::{ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget};
+use signal_message::{ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget, Context};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 fn main() {
@@ -50,6 +51,7 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     let declared_target = env::var("RELAY_CLUSTER_TARGET").ok();
     let cluster_target = cluster_target(declared_target.as_deref())?;
     let source = locate(head, tail)?;
+    let context = context_for(&source)?;
     let header = ClusterMessage::Relay(ClusterRelay {
         flow_identifier: source.flow_identifier.clone(),
         session_identifier: source.session_identifier.clone(),
@@ -57,6 +59,7 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
         prompt_first_six_words: head.clone(),
         prompt_last_six_words: tail.clone(),
         prompt_sha256: source.sha256,
+        context,
         timestamp_nanos: source.timestamp_nanos,
         cluster_target,
         cluster_members: members,
@@ -339,6 +342,73 @@ struct Source {
     session_identifier: String,
 }
 
+/// The Context runner is the single author of semantic context.  Relay only
+/// validates the runner receipt against the byte-exact source it selected and
+/// places that producer-owned value beside the unchanged body.
+fn context_for(source: &Source) -> Result<Context, String> {
+    let receipt_path = env::var_os("RELAY_CONTEXT_RECEIPT")
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "missing RELAY_CONTEXT_RECEIPT; run clusterrelay-context first".to_owned()
+        })?;
+    context_from_receipt(source, &receipt_path)
+}
+
+fn context_from_receipt(source: &Source, receipt_path: &Path) -> Result<Context, String> {
+    let input = fs::read_to_string(&receipt_path)
+        .map_err(|error| format!("read Context receipt {}: {error}", receipt_path.display()))?;
+    let receipt: ContextReceipt = serde_json::from_str(&input)
+        .map_err(|error| format!("parse Context receipt {}: {error}", receipt_path.display()))?;
+    if receipt.kind != "clusterrelay-derived-context" || !receipt.machine_authored {
+        return Err("Context receipt is not a machine-authored clusterrelay receipt".to_owned());
+    }
+    if receipt.source.source_path != source.path.display().to_string()
+        || receipt.source.flow_identifier != source.flow_identifier
+        || receipt.source.prompt_sha256 != source.sha256
+    {
+        return Err("Context receipt provenance does not match the selected source".to_owned());
+    }
+    if receipt.derived.what_living_said != source.body {
+        return Err("Context receipt does not preserve the selected source words".to_owned());
+    }
+    Ok(Context {
+        flow_identifier: receipt.source.flow_identifier,
+        source_turn_identifier: receipt.source.source_turn_identifier,
+        transcript_path: receipt.source.source_path,
+        prompt_sha256: receipt.source.prompt_sha256,
+        what_living_said: receipt.derived.what_living_said,
+        context_about: receipt.derived.context_about,
+        context_answered: receipt.derived.context_answered,
+        context_corrected: receipt.derived.context_corrected,
+        context_uncertainties: receipt.derived.context_uncertainties,
+    })
+}
+
+#[derive(Deserialize)]
+struct ContextReceipt {
+    kind: String,
+    machine_authored: bool,
+    source: ContextReceiptSource,
+    derived: ContextReceiptDerived,
+}
+
+#[derive(Deserialize)]
+struct ContextReceiptSource {
+    source_path: String,
+    flow_identifier: String,
+    source_turn_identifier: String,
+    prompt_sha256: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ContextReceiptDerived {
+    what_living_said: String,
+    context_about: String,
+    context_answered: String,
+    context_corrected: String,
+    context_uncertainties: Vec<String>,
+}
+
 fn locate(head: &str, tail: &str) -> Result<Source, String> {
     let paths = match env::var_os("RELAY_TRANSCRIPT") {
         Some(path) => vec![PathBuf::from(path)],
@@ -476,5 +546,46 @@ mod tests {
     fn members_are_setup_data_not_public_prompt_arguments() {
         assert_eq!(members("cf7879@root,57a7aa@secondary").unwrap().len(), 2);
         assert!(members("not-a-member").is_err());
+    }
+
+    #[test]
+    fn context_receipt_is_copied_only_when_its_source_provenance_matches() {
+        let directory = tempfile::tempdir().unwrap();
+        let transcript = directory.path().join("source.jsonl");
+        let body = "the exact living words";
+        let source = Source {
+            path: transcript.clone(),
+            body: body.to_owned(),
+            sha256: format!("{:x}", Sha256::digest(body.as_bytes())),
+            timestamp_nanos: 1,
+            flow_identifier: "cf7879".to_owned(),
+            session_identifier: "cf7879-session".to_owned(),
+        };
+        let receipt = directory.path().join("context.json");
+        fs::write(
+            &receipt,
+            serde_json::json!({
+                "kind": "clusterrelay-derived-context",
+                "machine_authored": true,
+                "source": {
+                    "source_path": transcript.display().to_string(),
+                    "flow_identifier": "cf7879",
+                    "source_turn_identifier": "msg-1",
+                    "prompt_sha256": source.sha256,
+                },
+                "derived": {
+                    "what_living_said": body,
+                    "context_about": "relay",
+                    "context_answered": "",
+                    "context_corrected": "",
+                    "context_uncertainties": ["none"],
+                },
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let context = context_from_receipt(&source, &receipt).unwrap();
+        assert_eq!(context.what_living_said, body);
+        assert_eq!(context.source_turn_identifier, "msg-1");
     }
 }
