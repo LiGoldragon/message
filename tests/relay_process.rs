@@ -8,7 +8,7 @@ use std::{
     os::unix::net::{UnixListener, UnixStream},
     path::Path,
     process::Command,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const BODY: &str = "one two three four five six seven eight nine ten eleven twelve";
@@ -122,9 +122,18 @@ fn fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body() {
     let socket_path = directory.path().join("codex.sock");
     transcript(&transcript_path, 1);
     let listener = UnixListener::bind(&socket_path).unwrap();
-    listener.set_nonblocking(false).unwrap();
+    listener.set_nonblocking(true).unwrap();
     let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept fake Codex socket: {error}"),
+            }
+        };
         stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
         let request = headers(&mut stream);
         let key = request.lines().find_map(|line| line.strip_prefix("Sec-WebSocket-Key: ")).unwrap();
