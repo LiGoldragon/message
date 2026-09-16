@@ -201,6 +201,9 @@
           message-relay-flow-route-fanout-fixture =
             context.cargoTestFile "relay_process"
               "configured_busy_nexus_route_parks_the_typed_cluster_relay_before_delivery";
+          message-relay-unknown-route-refusal =
+            context.cargoTestFile "relay_process"
+              "unknown_route_readiness_refuses_without_connecting_an_endpoint";
           message-relay-configured-claude-peer-file-fixture =
             context.cargoTestFile "relay_process"
               "configured_claude_peer_file_is_bounded_and_requires_matching_pty_receipt";
