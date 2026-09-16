@@ -205,7 +205,7 @@
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--bin relay consolidated_codex_rollout_relay_record_is_excluded_as_one_record -- --exact";
+              cargoTestExtraArgs = "--bin relay tests::consolidated_codex_rollout_relay_record_is_excluded_as_one_record -- --exact";
             }
           );
           message-relay-ambiguous-and-mismatched-context-refuse =
