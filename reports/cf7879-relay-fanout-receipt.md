@@ -9,4 +9,4 @@ the same header-plus-body packet through `FlowDeliver`; its source event key
 uses the selected transcript source, separate from the executor.
 
 Local focused process tests: 3 passed (Claude peer-file receipt, busy Nexus
-park/drain, existing Codex fanout). Remote focused Nix result: pending.
+park/drain, existing Codex fanout). Remote focused Nix first run: Nexus passed; Claude fixture needed a portable shell-only fake and is being rerun.
