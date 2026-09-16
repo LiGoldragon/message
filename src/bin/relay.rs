@@ -122,6 +122,19 @@ struct PreparedRelay {
 }
 
 impl PreparedRelay {
+    #[cfg(test)]
+    fn clone_for_test(&self) -> Self {
+        Self {
+            header: self.header.clone(),
+            body: self.body.clone(),
+            source_flow_identifier: self.source_flow_identifier.clone(),
+            source_session_identifier: self.source_session_identifier.clone(),
+            source_event_identifier: self.source_event_identifier.clone(),
+            executor_flow_identifier: self.executor_flow_identifier.clone(),
+            executor_session_identifier: self.executor_session_identifier.clone(),
+        }
+    }
+
     fn render(&self) -> String {
         format!("{}\n\n{}", self.header, self.body)
     }
@@ -448,17 +461,21 @@ impl Drop for PeerFile {
     }
 }
 
+fn parked_source_event_identifier(relay: &PreparedRelay) -> String {
+    format!(
+        "{}:{}:{}",
+        relay.source_flow_identifier,
+        relay.source_session_identifier,
+        relay.source_event_identifier
+    )
+}
+
 struct NexusFlowDeliver {
     socket_path: PathBuf,
 }
 impl NexusFlowDeliver {
     fn park(&self, target_flow_name: &str, relay: &PreparedRelay) -> Result<RouteReceipt, String> {
-        let source_event_identifier = format!(
-            "{}:{}:{}",
-            relay.source_flow_identifier,
-            relay.source_session_identifier,
-            relay.source_event_identifier
-        );
+        let source_event_identifier = parked_source_event_identifier(relay);
         let response = MessageSocket::from_path(&self.socket_path)
             .client()
             .submit_with_timeout(
@@ -1420,5 +1437,34 @@ mod tests {
         let context = context_from_receipt(&source, "cf7879", "executor-1", &receipt).unwrap();
         assert_eq!(context.what_living_said, body);
         assert_eq!(context.source_turn_identifier, "msg-1");
+    }
+    #[test]
+    fn parked_event_identity_uses_selected_source_not_relay_executor() {
+        let first = PreparedRelay {
+            header: "Relay.{}".to_owned(),
+            body: "same body".to_owned(),
+            source_flow_identifier: "source".to_owned(),
+            source_session_identifier: "source-session".to_owned(),
+            source_event_identifier: "turn-a".to_owned(),
+            executor_flow_identifier: "executor-a".to_owned(),
+            executor_session_identifier: "executor-a-session".to_owned(),
+        };
+        let reexecuted = PreparedRelay {
+            executor_flow_identifier: "executor-b".to_owned(),
+            executor_session_identifier: "executor-b-session".to_owned(),
+            ..first.clone_for_test()
+        };
+        let other_turn = PreparedRelay {
+            source_event_identifier: "turn-b".to_owned(),
+            ..first.clone_for_test()
+        };
+        assert_eq!(
+            parked_source_event_identifier(&first),
+            parked_source_event_identifier(&reexecuted)
+        );
+        assert_ne!(
+            parked_source_event_identifier(&first),
+            parked_source_event_identifier(&other_turn)
+        );
     }
 }
