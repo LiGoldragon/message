@@ -19,10 +19,12 @@ fn transcript(path: &Path, copies: usize) {
 fn relay(path: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_relay"));
     command
+        .env_clear()
         .env("FLOW_ID", "cf7879")
         .env("RELAY_SESSION_ID", "root")
         .env("RELAY_CLUSTER_MEMBERS", "cf7879@root")
         .env("RELAY_TRANSCRIPT", path)
+        .env("HOME", path.parent().unwrap())
         .arg("one two three four five six")
         .arg("seven eight nine ten eleven twelve");
     command
