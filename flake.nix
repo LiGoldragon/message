@@ -164,6 +164,9 @@
           message-daemon-executes-both-producer-contracts =
             context.cargoTestFile "process_boundary"
               "daemon_executes_both_producer_owned_contracts";
+          message-daemon-isolates-flow-marker-home =
+            context.cargoTestFile "process_boundary"
+              "isolated_nexus_socket_parks_then_drains_on_a_typed_flow_idle_witness";
           message-pty-delivery-speaks-producer-datom =
             context.cargoTestFile "pty_end_to_end"
               "pty_leg_sends_the_producer_inbox_entry_as_datom";
