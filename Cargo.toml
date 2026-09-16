@@ -38,9 +38,9 @@ path = "src/bin/relay.rs"
 [dependencies]
 datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6dccc76b75918a91d3370a9d4fe88aa7dd567876" }
 protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "f98fd1055d3a3ed47cf3c05445a7dff42e55acf8", features = ["datom"] }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "87a54b0a1cbc9aa02f9ff62e46c6ffca52f9ec25", features = ["datom"] }
 signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "a9708f3384af", features = ["datom"] }
+signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "a9708f3384af18129cb1c983ffed850c4d631e46", features = ["datom"] }
 signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
 rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 redb           = "4.1"

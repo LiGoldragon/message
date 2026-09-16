@@ -20,6 +20,21 @@ The completed follow-up reran the same focused remote Nix derivation with
 exit status 0 on `ssh-ng://nix-ssh@prometheus.goldragon.criome`; captured
 errors: none.
 
+## Producer convergence
+
+The former dual `signal-message` graph came from this direct consumer pin and
+meta-signal-message `f98fd105`, which pinned `81f659e`. Published producer
+proposal `87a54b0a1cbc9aa02f9ff62e46c6ffca52f9ec25` pins the same
+Relay-compatible `a9708f3384af18129cb1c983ffed850c4d631e46` contract as
+Message. Its local Datom contract test passed 4/4 and its focused Prometheus
+Nix `test-contract-datom` gate exited 0.
+
+Message now pins that producer revision and the full `a9708…` revision
+directly. `cargo tree -p message --prefix none` reports one signal-message
+source; the second occurrence is Cargo's `(*)` shared dependency marker.
+The local relay suite passed 12/12 and the focused Prometheus
+`message-relay-prompt-relay-provenance-loop-exclusion` gate exited 0.
+
 Captured local tests:
 
 - `cargo test --bin relay`: 12 passed, 0 failed.
