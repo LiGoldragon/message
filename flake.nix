@@ -179,6 +179,12 @@
           message-flow-delivery-lands-on-idle-with-a-compact-receipt =
             context.cargoTestFile "flow_delivery"
               "an_idle_announce_lands_the_parked_delivery_with_a_compact_receipt";
+          message-flow-delivery-repeated-idle-is-idempotent =
+            context.cargoTestFile "flow_delivery"
+              "repeated_idle_queries_are_acknowledged_without_relanding";
+          message-relay-busy-delivery-is-durable-before-socket-write =
+            context.cargoTestFile "relay_fixture"
+              "busy_delivery_is_persisted_before_any_socket_write";
           message-previous-store-schema-fails-closed =
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
