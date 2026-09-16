@@ -21,8 +21,8 @@ fn relay(path: &Path) -> Command {
     command
         .env_clear()
         .env("FLOW_ID", "cf7879")
-        .env("RELAY_SESSION_ID", "root")
-        .env("RELAY_CLUSTER_MEMBERS", "cf7879@root")
+        .env("RELAY_SESSION_ID", "cf7879-session")
+        .env("RELAY_CLUSTER_MEMBERS", "cf7879@cf7879-session")
         .env("RELAY_TRANSCRIPT", path)
         .env("HOME", path.parent().unwrap())
         .arg("one two three four five six")

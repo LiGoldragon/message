@@ -58,7 +58,7 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     }
     let declared_target = env::var("RELAY_CLUSTER_TARGET").ok();
     let cluster_target = cluster_target(declared_target.as_deref())?;
-    let source = locate(head, tail)?;
+    let source = locate(head, tail, &members)?;
     let context = context_for(
         &source,
         &executor_flow_identifier,
@@ -497,7 +497,7 @@ struct ContextReceiptDerived {
     context_uncertainties: Vec<String>,
 }
 
-fn locate(head: &str, tail: &str) -> Result<Source, String> {
+fn locate(head: &str, tail: &str, members: &[ClusterMember]) -> Result<Source, String> {
     let paths = match env::var_os("RELAY_TRANSCRIPT") {
         Some(path) => vec![PathBuf::from(path)],
         None => return Err(
@@ -507,7 +507,7 @@ fn locate(head: &str, tail: &str) -> Result<Source, String> {
     };
     let mut matches = Vec::new();
     for path in paths {
-        matches.extend(records(&path, head, tail)?);
+        matches.extend(records(&path, head, tail, members)?);
     }
     match matches.len() {
         1 => Ok(matches.remove(0)),
@@ -518,7 +518,12 @@ fn locate(head: &str, tail: &str) -> Result<Source, String> {
     }
 }
 
-fn records(path: &Path, head: &str, tail: &str) -> Result<Vec<Source>, String> {
+fn records(
+    path: &Path,
+    head: &str,
+    tail: &str,
+    members: &[ClusterMember],
+) -> Result<Vec<Source>, String> {
     let input =
         fs::read_to_string(path).map_err(|error| format!("read {}: {error}", path.display()))?;
     let mut found = Vec::new();
@@ -543,16 +548,11 @@ fn records(path: &Path, head: &str, tail: &str) -> Result<Vec<Source>, String> {
             .try_into()
             .map_err(|_| "source timestamp exceeds TimestampNanos".to_owned())?;
         let session_identifier = source_session_identifier(&value)?;
-        let flow_identifier = session_identifier
-            .chars()
-            .take_while(|character| *character != '-')
-            .take(6)
-            .collect::<String>();
-        if flow_identifier.len() != 6 {
-            return Err(format!(
-                "matched source session {session_identifier:?} has no flow identifier"
-            ));
-        }
+        let flow_identifier = members
+            .iter()
+            .find(|member| member.session_identifier == session_identifier)
+            .map(|member| member.flow_identifier.clone())
+            .ok_or_else(|| format!("matched source session {session_identifier:?} is not declared"))?;
         let source_turn_identifier = source_turn_identifier(
             &value,
             &session_identifier,
@@ -653,11 +653,10 @@ fn text_content(content: &Value) -> Option<String> {
             .collect(),
         _ => return None,
     };
-    let body = parts
-        .into_iter()
-        .filter(|part| !is_relay_or_peer_text(part))
-        .collect::<Vec<_>>()
-        .join("");
+    if parts.iter().any(|part| is_relay_or_peer_text(part)) {
+        return None;
+    }
+    let body = parts.join("");
     (!body.is_empty()).then_some(body)
 }
 
@@ -692,6 +691,10 @@ mod tests {
             &path,
             "one two three four five six",
             "seven eight nine ten eleven twelve",
+            &[ClusterMember {
+                flow_identifier: "840e42".to_owned(),
+                session_identifier: "840e42bb-b2cd-42eb-a9ec-7659a5b13ded".to_owned(),
+            }],
         )
         .unwrap();
         assert_eq!(found.len(), 1);
