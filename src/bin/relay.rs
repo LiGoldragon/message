@@ -64,6 +64,8 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
         &executor_flow_identifier,
         &executor_session_identifier,
     )?;
+    let source_flow_identifier = source.flow_identifier.clone();
+    let source_session_identifier = source.session_identifier.clone();
     let header = ClusterMessage::Relay(ClusterRelay {
         flow_identifier: source.flow_identifier.clone(),
         session_identifier: source.session_identifier.clone(),
@@ -74,7 +76,7 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
         context,
         timestamp_nanos: source.timestamp_nanos,
         cluster_target,
-        cluster_members: members,
+        cluster_members: members.clone(),
     });
     let prepared = PreparedRelay {
         header: header.datomize(vec![]).protosize().textualize(),
@@ -82,6 +84,17 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
         executor_flow_identifier,
         executor_session_identifier,
     };
+    if let Some(route_fixture) = env::var_os("RELAY_FLOW_ROUTE_FIXTURE") {
+        let routes = FlowRouteFixture::read(Path::new(&route_fixture))?;
+        let receipt = fanout(
+            &members,
+            &source_flow_identifier,
+            &source_session_identifier,
+            &prepared,
+            &routes,
+        );
+        return Ok(serde_json::to_string(&receipt).map_err(|error| error.to_string())? + "\n");
+    }
     if let Some(thread_id) = codex_target {
         let receipt = CodexAppServer::from_environment()?.deliver(&thread_id, &prepared)?;
         return Ok(serde_json::to_string(&receipt).map_err(|error| error.to_string())? + "\n");
@@ -99,6 +112,132 @@ struct PreparedRelay {
 impl PreparedRelay {
     fn render(&self) -> String {
         format!("{}\n\n{}", self.header, self.body)
+    }
+}
+
+/// A Flow-owned route lookup response used by this bounded fixture only.
+///
+/// This binary neither stores nor discovers routes. The fixture is an explicit
+/// stand-in for the Flow route query that must eventually supply a live route.
+#[derive(Debug, Deserialize)]
+struct FlowRouteFixture {
+    routes: Vec<FlowRoute>,
+}
+
+impl FlowRouteFixture {
+    fn read(path: &Path) -> Result<Self, String> {
+        let input = fs::read_to_string(path)
+            .map_err(|error| format!("read Flow route fixture {}: {error}", path.display()))?;
+        serde_json::from_str(&input)
+            .map_err(|error| format!("parse Flow route fixture {}: {error}", path.display()))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct FlowRoute {
+    flow_identifier: String,
+    session_identifier: String,
+    harness: RouteHarness,
+    endpoint: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RouteHarness {
+    Codex,
+    Claude,
+    Nexus,
+}
+
+#[derive(Serialize)]
+struct FanoutReceipt {
+    kind: &'static str,
+    outcomes: Vec<FanoutOutcome>,
+}
+
+#[derive(Serialize)]
+struct FanoutOutcome {
+    flow_identifier: String,
+    session_identifier: String,
+    outcome: FanoutDisposition,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum FanoutDisposition {
+    Accepted { receipt: DeliveryReceipt },
+    Unavailable { reason: String },
+    BusyParkRequired { reason: String },
+}
+
+/// Delivers only to Flow-routed cluster members other than the exact selected
+/// source. Each target gets an independent outcome, so a failed target cannot
+/// erase another target's accepted receipt.
+fn fanout(
+    members: &[ClusterMember],
+    source_flow_identifier: &str,
+    source_session_identifier: &str,
+    relay: &PreparedRelay,
+    fixture: &FlowRouteFixture,
+) -> FanoutReceipt {
+    let outcomes = members
+        .iter()
+        .filter(|member| {
+            member.flow_identifier != source_flow_identifier
+                || member.session_identifier != source_session_identifier
+        })
+        .map(|member| FanoutOutcome {
+            flow_identifier: member.flow_identifier.clone(),
+            session_identifier: member.session_identifier.clone(),
+            outcome: fanout_member(member, relay, fixture),
+        })
+        .collect();
+    FanoutReceipt {
+        kind: "cluster-relay-fanout-fixture",
+        outcomes,
+    }
+}
+
+fn fanout_member(
+    member: &ClusterMember,
+    relay: &PreparedRelay,
+    fixture: &FlowRouteFixture,
+) -> FanoutDisposition {
+    let routes = fixture
+        .routes
+        .iter()
+        .filter(|route| {
+            route.flow_identifier == member.flow_identifier
+                && route.session_identifier == member.session_identifier
+        })
+        .collect::<Vec<_>>();
+    let [route] = routes.as_slice() else {
+        return FanoutDisposition::Unavailable {
+            reason: "Flow route lookup did not return one route for this declared member"
+                .to_owned(),
+        };
+    };
+    match route.harness {
+        RouteHarness::Codex => match &route.endpoint {
+            Some(endpoint) => match (CodexAppServer {
+                socket_path: endpoint.clone(),
+            })
+            .deliver(&member.session_identifier, relay)
+            {
+                Ok(receipt) => FanoutDisposition::Accepted { receipt },
+                Err(error) => FanoutDisposition::Unavailable { reason: error },
+            },
+            None => FanoutDisposition::Unavailable {
+                reason: "Flow Codex route has no socket endpoint".to_owned(),
+            },
+        },
+        RouteHarness::Claude => FanoutDisposition::Unavailable {
+            reason: "no Flow-owned Claude prompt-relay invocation is installed".to_owned(),
+        },
+        RouteHarness::Nexus => FanoutDisposition::BusyParkRequired {
+            reason: "no configured FlowDeliver transport is available to park this route"
+                .to_owned(),
+        },
     }
 }
 
@@ -550,7 +689,9 @@ fn records(
             .iter()
             .find(|member| member.session_identifier == session_identifier)
             .map(|member| member.flow_identifier.clone())
-            .ok_or_else(|| format!("matched source session {session_identifier:?} is not declared"))?;
+            .ok_or_else(|| {
+                format!("matched source session {session_identifier:?} is not declared")
+            })?;
         let source_turn_identifier = source_turn_identifier(
             &value,
             &session_identifier,
@@ -624,6 +765,9 @@ fn source_session_identifier(value: &Value) -> Result<String, String> {
 }
 
 fn user_body(value: &Value) -> Option<String> {
+    if is_cluster_relay_record(value) {
+        return None;
+    }
     if value.get("type")?.as_str()? == "queue-operation"
         && value.get("operation")?.as_str()? == "enqueue"
     {
@@ -638,7 +782,7 @@ fn user_body(value: &Value) -> Option<String> {
         && payload.get("type")?.as_str()? == "message"
         && payload.get("role")?.as_str()? == "user"
         && value.get("promptSource").and_then(Value::as_str) != Some("system"))
-        .then(|| text_content(payload.get("content")?))?
+    .then(|| text_content(payload.get("content")?))?
 }
 
 fn text_content(content: &Value) -> Option<String> {
@@ -646,7 +790,12 @@ fn text_content(content: &Value) -> Option<String> {
         Value::String(text) => vec![text.as_str()],
         Value::Array(parts) => parts
             .iter()
-            .filter(|part| matches!(part.get("type").and_then(Value::as_str), Some("input_text" | "text")))
+            .filter(|part| {
+                matches!(
+                    part.get("type").and_then(Value::as_str),
+                    Some("input_text" | "text")
+                )
+            })
             .filter_map(|part| part.get("text").and_then(Value::as_str))
             .collect(),
         _ => return None,
@@ -656,6 +805,39 @@ fn text_content(content: &Value) -> Option<String> {
     }
     let body = parts.join("");
     (!body.is_empty()).then_some(body)
+}
+
+/// Relay emits a two-part Codex user record: a producer-owned Datom header
+/// whose exact text starts `"Relay.{`, then the verbatim human body. Reject
+/// the whole record so the body cannot be selected and relayed again. This is
+/// deliberately narrower than rejecting ordinary human discussion of Relay.
+fn is_cluster_relay_record(value: &Value) -> bool {
+    let content = match value.get("type").and_then(Value::as_str) {
+        Some("user") => value
+            .get("message")
+            .and_then(|message| message.get("content")),
+        Some("response_item")
+            if value
+                .get("payload")
+                .and_then(|payload| payload.get("type"))
+                .and_then(Value::as_str)
+                == Some("message") =>
+        {
+            value
+                .get("payload")
+                .and_then(|payload| payload.get("content"))
+        }
+        _ => None,
+    };
+    let Some(parts) = content.and_then(Value::as_array) else {
+        return false;
+    };
+    parts.len() >= 2
+        && parts[0].get("type").and_then(Value::as_str) == Some("text")
+        && parts[0]
+            .get("text")
+            .and_then(Value::as_str)
+            .is_some_and(|header| header.starts_with("Relay.{"))
 }
 
 fn is_relay_or_peer_text(text: &str) -> bool {
@@ -731,6 +913,34 @@ mod tests {
             }
         });
         assert_eq!(user_body(&value), Some("first second".to_owned()));
+    }
+
+    #[test]
+    fn incoming_two_part_relay_record_is_excluded_as_one_record() {
+        let relay = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Relay.{ source session path }" },
+                    { "type": "text", "text": "one two three four five six seven" }
+                ]
+            }
+        });
+        assert_eq!(user_body(&relay), None);
+    }
+
+    #[test]
+    fn ordinary_human_discussion_of_relay_is_not_excluded() {
+        let user = serde_json::json!({
+            "type": "user",
+            "message": { "content": "Relay is the topic of this ordinary human message" }
+        });
+        assert_eq!(
+            user_body(&user),
+            Some("Relay is the topic of this ordinary human message".to_owned())
+        );
     }
 
     #[test]

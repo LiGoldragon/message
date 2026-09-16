@@ -22,7 +22,11 @@ fn transcript(path: &Path, copies: usize) {
         "message": { "content": BODY },
     })
     .to_string();
-    fs::write(path, std::iter::repeat_n(format!("{record}\n"), copies).collect::<String>()).unwrap();
+    fs::write(
+        path,
+        std::iter::repeat_n(format!("{record}\n"), copies).collect::<String>(),
+    )
+    .unwrap();
 }
 
 fn relay(path: &Path) -> Command {
@@ -74,11 +78,60 @@ fn client_frame(stream: &mut UnixStream) -> serde_json::Value {
 }
 
 fn reply(stream: &mut UnixStream, id: u64, result: serde_json::Value) {
-    let body = serde_json::to_vec(&serde_json::json!({"jsonrpc":"2.0","id":id,"result":result})).unwrap();
+    let body =
+        serde_json::to_vec(&serde_json::json!({"jsonrpc":"2.0","id":id,"result":result})).unwrap();
     assert!(body.len() < 126);
     stream.write_all(&[0x81, body.len() as u8]).unwrap();
     stream.write_all(&body).unwrap();
     stream.flush().unwrap();
+}
+
+fn fake_codex_server(listener: UnixListener) -> std::thread::JoinHandle<serde_json::Value> {
+    listener.set_nonblocking(true).unwrap();
+    std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept fake Codex socket: {error}"),
+            }
+        };
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let request = headers(&mut stream);
+        let key = request
+            .lines()
+            .find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
+            .unwrap();
+        let accept = STANDARD.encode(Sha1::digest(
+            format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes(),
+        ));
+        write!(stream, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n").unwrap();
+        stream.flush().unwrap();
+        let initialize = client_frame(&mut stream);
+        assert_eq!(initialize["method"], "initialize");
+        reply(&mut stream, 1, serde_json::json!({}));
+        let initialized = client_frame(&mut stream);
+        assert_eq!(initialized["method"], "initialized");
+        let resume = client_frame(&mut stream);
+        assert_eq!(resume["method"], "thread/resume");
+        reply(&mut stream, 2, serde_json::json!({}));
+        let turn = client_frame(&mut stream);
+        assert_eq!(turn["method"], "turn/start");
+        reply(
+            &mut stream,
+            3,
+            serde_json::json!({"turn":{"id":"fixture-turn","status":"inProgress"}}),
+        );
+        turn
+    })
 }
 
 #[test]
@@ -90,7 +143,7 @@ fn ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delive
     let output = relay(&path).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("ClusterRelay"), "{stdout}");
+    assert!(stdout.starts_with("Relay.{"), "{stdout}");
     assert!(stdout.ends_with(BODY));
     assert!(stdout.contains("unreviewed: Context receipt unavailable"));
 }
@@ -102,7 +155,11 @@ fn ambiguous_or_mismatched_context_source_is_refused_before_delivery() {
     transcript(&path, 2);
     let ambiguous = relay(&path).output().unwrap();
     assert!(!ambiguous.status.success());
-    assert!(String::from_utf8(ambiguous.stderr).unwrap().contains("selectors are ambiguous"));
+    assert!(
+        String::from_utf8(ambiguous.stderr)
+            .unwrap()
+            .contains("selectors are ambiguous")
+    );
 
     transcript(&path, 1);
     let receipt = directory.path().join("wrong-context.json");
@@ -112,7 +169,11 @@ fn ambiguous_or_mismatched_context_source_is_refused_before_delivery() {
         .output()
         .unwrap();
     assert!(!mismatch.status.success());
-    assert!(String::from_utf8(mismatch.stderr).unwrap().contains("Context receipt"));
+    assert!(
+        String::from_utf8(mismatch.stderr)
+            .unwrap()
+            .contains("Context receipt")
+    );
 }
 
 #[test]
@@ -128,16 +189,26 @@ fn fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body() {
         let (mut stream, _) = loop {
             match listener.accept() {
                 Ok(connection) => break connection,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
                     std::thread::sleep(Duration::from_millis(10));
                 }
                 Err(error) => panic!("accept fake Codex socket: {error}"),
             }
         };
-        stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
         let request = headers(&mut stream);
-        let key = request.lines().find_map(|line| line.strip_prefix("Sec-WebSocket-Key: ")).unwrap();
-        let accept = STANDARD.encode(Sha1::digest(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes()));
+        let key = request
+            .lines()
+            .find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
+            .unwrap();
+        let accept = STANDARD.encode(Sha1::digest(
+            format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes(),
+        ));
         write!(stream, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n").unwrap();
         stream.flush().unwrap();
         let initialize = client_frame(&mut stream);
@@ -150,7 +221,11 @@ fn fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body() {
         reply(&mut stream, 2, serde_json::json!({}));
         let turn = client_frame(&mut stream);
         assert_eq!(turn["method"], "turn/start");
-        reply(&mut stream, 3, serde_json::json!({"turn":{"id":"fixture-turn","status":"inProgress"}}));
+        reply(
+            &mut stream,
+            3,
+            serde_json::json!({"turn":{"id":"fixture-turn","status":"inProgress"}}),
+        );
         turn
     });
     let output = relay(&transcript_path)
@@ -158,13 +233,87 @@ fn fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body() {
         .env("RELAY_CODEX_SOCKET", &socket_path)
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let turn = server.join().unwrap();
     assert_eq!(turn["params"]["threadId"], "cf7879-session");
     let header = turn["params"]["input"][0]["text"].as_str().unwrap();
-    assert!(header.contains("unreviewed: Context receipt unavailable"), "{header}");
+    assert!(
+        header.contains("unreviewed: Context receipt unavailable"),
+        "{header}"
+    );
     assert_eq!(turn["params"]["input"][1]["text"], BODY);
     let receipt = String::from_utf8(output.stdout).unwrap();
     assert!(receipt.contains("codex-turn-start-acknowledged"));
     assert!(receipt.contains("inProgress"));
+}
+
+#[test]
+fn flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_unavailable_outcome()
+{
+    let directory = tempfile::tempdir().unwrap();
+    let transcript_path = directory.path().join("claude.jsonl");
+    let first_socket = directory.path().join("codex-first.sock");
+    let second_socket = directory.path().join("codex-second.sock");
+    transcript(&transcript_path, 1);
+    let first = fake_codex_server(UnixListener::bind(&first_socket).unwrap());
+    let second = fake_codex_server(UnixListener::bind(&second_socket).unwrap());
+    let routes = directory.path().join("flow-routes.json");
+    fs::write(
+        &routes,
+        serde_json::json!({"routes":[
+            {"flow_identifier":"source","session_identifier":"cf7879-session","harness":"codex","endpoint":directory.path().join("must-not-connect.sock")},
+            {"flow_identifier":"codex-first","session_identifier":"codex-first-session","harness":"codex","endpoint":first_socket},
+            {"flow_identifier":"codex-second","session_identifier":"codex-second-session","harness":"codex","endpoint":second_socket},
+            {"flow_identifier":"claude-unavailable","session_identifier":"claude-session","harness":"claude"}
+        ]}).to_string(),
+    ).unwrap();
+    let output = relay(&transcript_path)
+        .env("FLOW_ID", "source")
+        .env("RELAY_CLUSTER_MEMBERS", "source@cf7879-session,codex-first@codex-first-session,codex-second@codex-second-session,claude-unavailable@claude-session")
+        .env("RELAY_FLOW_ROUTE_FIXTURE", routes)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["kind"], "cluster-relay-fanout-fixture");
+    let outcomes = receipt["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), 3, "source route must be excluded");
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| outcome["flow_identifier"] != "source")
+    );
+    assert_eq!(outcomes[0]["outcome"]["kind"], "accepted");
+    assert_eq!(outcomes[1]["outcome"]["kind"], "accepted");
+    assert_eq!(outcomes[2]["outcome"]["kind"], "unavailable");
+    assert!(
+        outcomes[2]["outcome"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("Claude prompt-relay")
+    );
+    let turns = [first.join().unwrap(), second.join().unwrap()];
+    for (turn, thread) in turns
+        .iter()
+        .zip(["codex-first-session", "codex-second-session"])
+    {
+        assert_eq!(turn["params"]["threadId"], thread);
+        assert_eq!(turn["params"]["input"][1]["text"], BODY);
+        assert!(
+            turn["params"]["input"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("Relay.{"),
+            "{}",
+            turn["params"]["input"][0]["text"]
+        );
+    }
 }

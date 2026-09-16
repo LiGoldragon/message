@@ -198,6 +198,9 @@
           message-relay-codex-socket-fixture =
             context.cargoTestFile "relay_process"
               "fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body";
+          message-relay-flow-route-fanout-fixture =
+            context.cargoTestFile "relay_process"
+              "flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_unavailable_outcome";
           message-relay-ambiguous-and-mismatched-context-refuse =
             context.cargoTestFile "relay_process"
               "ambiguous_or_mismatched_context_source_is_refused_before_delivery";
