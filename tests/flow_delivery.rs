@@ -59,6 +59,17 @@ impl Fixture {
             .unwrap()
     }
 
+    fn announce_idle_query(&mut self, target_flow_name: &str) -> Response {
+        runtime()
+            .block_on(self.engine.handle(
+                Query::FlowAnnounceIdle(signal_message::FlowIdleAnnouncement {
+                    target_flow_name: target_flow_name.to_owned(),
+                }),
+                &connection(),
+            ))
+            .unwrap()
+    }
+
     fn parked(&self, target_flow_name: &str) -> Vec<TypedPromptEnvelope> {
         self.engine
             .parked_flow_deliveries(&target_flow_name.to_owned())
@@ -136,6 +147,29 @@ fn an_idle_announce_lands_the_parked_delivery_with_a_compact_receipt() {
     }
     assert!(fixture.parked(KNOWN_FLOW).is_empty());
     assert!(fixture.announce_idle(KNOWN_FLOW).is_empty());
+}
+
+#[test]
+fn repeated_idle_queries_are_acknowledged_without_relanding() {
+    let mut fixture = Fixture::open();
+    fixture.deliver(KNOWN_FLOW, RAW_TEXT);
+
+    let first = fixture.announce_idle_query(KNOWN_FLOW);
+    let second = fixture.announce_idle_query(KNOWN_FLOW);
+
+    match first {
+        Response::FlowIdleAcknowledged(acknowledgment) => {
+            assert_eq!(acknowledgment.landed_receipts.len(), 1);
+        }
+        other => panic!("unexpected first idle reply: {other:?}"),
+    }
+    match second {
+        Response::FlowIdleAcknowledged(acknowledgment) => {
+            assert!(acknowledgment.landed_receipts.is_empty());
+        }
+        other => panic!("unexpected repeated idle reply: {other:?}"),
+    }
+    assert!(fixture.parked(KNOWN_FLOW).is_empty());
 }
 
 #[test]
