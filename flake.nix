@@ -37,7 +37,7 @@
           sourceFilter = path: type:
             type == "directory"
             || (craneLib.filterCargoSources path type)
-            || nixpkgs.lib.hasPrefix "${./tests/fixtures}/" (toString path);
+            || nixpkgs.lib.hasInfix "/tests/fixtures/" (toString path);
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
             filter = sourceFilter;
