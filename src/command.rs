@@ -34,6 +34,14 @@ impl CommandLine {
     }
 
     pub fn run(&self, mut output: impl Write) -> Result<()> {
+        if let [command, rendered] = self.arguments.as_slice()
+            && command == "cluster"
+        {
+            let verified = crate::cluster::canonical(rendered)
+                .map_err(|detail| Error::InvalidCommandArgument { detail })?;
+            writeln!(output, "{verified}")?;
+            return Ok(());
+        }
         let socket = MessageSocket::from_environment().ok_or(Error::SignalMessageSocketMissing)?;
         let reply = socket.client().submit(self.decode_query()?)?;
         writeln!(output, "{}", crate::text::write(&reply))?;

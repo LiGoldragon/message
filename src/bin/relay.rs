@@ -997,6 +997,7 @@ fn source_turn_identifier(
         .get("uuid")
         .or_else(|| value.get("promptId"))
         .or_else(|| value.get("id"))
+        .or_else(|| value.get("payload").and_then(|payload| payload.get("id")))
         .and_then(Value::as_str)
         .map(str::to_owned)
         .ok_or_else(|| {
@@ -1012,6 +1013,7 @@ fn source_event_identifier(value: &Value, timestamp: &str) -> Result<String, Str
         .get("uuid")
         .or_else(|| value.get("promptId"))
         .or_else(|| value.get("id"))
+        .or_else(|| value.get("payload").and_then(|payload| payload.get("id")))
         .and_then(Value::as_str)
         .map(str::to_owned)
         .ok_or_else(|| {
@@ -1023,6 +1025,7 @@ fn source_session_identifier(value: &Value) -> Result<String, String> {
     value
         .get("sessionId")
         .or_else(|| value.get("session_id"))
+        .or_else(|| value.get("session_meta").and_then(|meta| meta.get("id")))
         .and_then(Value::as_str)
         .filter(|identifier| !identifier.is_empty())
         .map(str::to_owned)

@@ -162,6 +162,18 @@ fn ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delive
 }
 
 #[test]
+fn codex_rollout_uses_native_session_meta_and_payload_identifier() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("codex.jsonl");
+    fs::write(&path, include_str!("fixtures/codex-session-meta-response.jsonl")).unwrap();
+    let output = relay(&path).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let rendered = String::from_utf8(output.stdout).unwrap();
+    assert!(rendered.starts_with("Relay.{"));
+    assert!(rendered.ends_with(BODY));
+}
+
+#[test]
 fn prompt_relay_provenance_record_is_refused_without_socket_write_and_neighbor_is_selectable() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("claude.jsonl");

@@ -35,7 +35,9 @@
           ];
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
           sourceFilter = path: type:
-            type == "directory" || (craneLib.filterCargoSources path type);
+            type == "directory"
+            || (craneLib.filterCargoSources path type)
+            || nixpkgs.lib.hasPrefix "${./tests/fixtures}/" (toString path);
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
             filter = sourceFilter;
@@ -198,6 +200,8 @@
           message-relay-ordinary-claude-process-fixture =
             context.cargoTestFile "relay_process"
               "ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delivery";
+          message-cluster-datom-cli = context.cargoTestFile "cluster_cli"
+            "verifies_a_producer_cluster_relay_and_preserves_verbatim_words";
           message-relay-codex-socket-fixture =
             context.cargoTestFile "relay_process"
               "fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body";

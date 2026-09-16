@@ -6,6 +6,7 @@
 //! listener runtime that executes those contracts.
 
 pub mod client;
+pub mod cluster;
 pub mod command;
 pub mod config;
 pub mod daemon;
