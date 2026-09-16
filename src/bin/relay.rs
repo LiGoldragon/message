@@ -371,14 +371,12 @@ fn members(declaration: &str) -> Result<Vec<ClusterMember>, String> {
     if members.is_empty() {
         return Err("RELAY_CLUSTER_MEMBERS must declare at least one member".into());
     }
-    let mut seen = std::collections::BTreeSet::new();
-    if members.iter().any(|member| {
-        !seen.insert((
-            member.flow_identifier.as_str(),
-            member.session_identifier.as_str(),
-        ))
-    }) {
-        return Err("RELAY_CLUSTER_MEMBERS contains a duplicate flow@session member".into());
+    let mut sessions = std::collections::BTreeSet::new();
+    if members
+        .iter()
+        .any(|member| !sessions.insert(member.session_identifier.as_str()))
+    {
+        return Err("RELAY_CLUSTER_MEMBERS binds one session to more than one member".into());
     }
     Ok(members)
 }
@@ -741,6 +739,7 @@ mod tests {
         assert!(members("not-a-member").is_err());
         assert!(members("").is_err());
         assert!(members("cf7879@root,cf7879@root").is_err());
+        assert!(members("cf7879@root,other@root").is_err());
     }
 
     #[test]
