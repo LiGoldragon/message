@@ -192,6 +192,12 @@
               cargoTestExtraArgs = "--bin relay";
             }
           );
+          message-relay-ordinary-claude-process-fixture =
+            context.cargoTestFile "relay_process"
+              "ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delivery";
+          message-relay-ambiguous-and-mismatched-context-refuse =
+            context.cargoTestFile "relay_process"
+              "ambiguous_or_mismatched_context_source_is_refused_before_delivery";
           message-previous-store-schema-fails-closed =
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
