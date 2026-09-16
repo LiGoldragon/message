@@ -29,3 +29,22 @@ fn cluster_send_uses_one_flow_configured_prompt_relay_and_reports_its_acknowledg
     assert_eq!(serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["kind"], "claude-bytes-written-to-pty");
     assert_eq!(fs::read_to_string(capture).unwrap(), header);
 }
+
+#[test]
+fn cluster_send_requires_a_codex_turn_acknowledgment_from_the_flow_bridge() {
+    let directory = tempfile::tempdir().unwrap();
+    let transcript = directory.path().join("source.jsonl");
+    fs::write(&transcript, serde_json::json!({ "type":"user", "uuid":"source", "sessionId":"cf7879-session", "timestamp":"2026-09-16T00:00:00Z", "message":{"content":BODY} }).to_string()).unwrap();
+    let rendered = String::from_utf8(relay(&transcript).output().unwrap().stdout).unwrap();
+    let header = rendered.strip_suffix(BODY).unwrap().strip_suffix("\n\n").unwrap();
+    let body = directory.path().join("body.txt"); fs::write(&body, BODY).unwrap();
+    let adapter = directory.path().join("prompt-relay");
+    fs::write(&adapter, "#!/bin/sh\nprintf '%s\\n' '{\"kind\":\"codex-turn-bytes-written\",\"turn_id\":\"turn-1\"}'\n").unwrap();
+    fs::set_permissions(&adapter, fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = directory.path().join("app-server.sock");
+    let routes = directory.path().join("routes.json");
+    fs::write(&routes, serde_json::json!({"routes":[{"flow_identifier":"codex","session_identifier":"thread-full-id","harness":"codex","readiness":"idle","endpoint":adapter,"socket_path":socket}]}).to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_message")).args(["cluster", header, "--body-file", body.to_str().unwrap(), "--route-config", routes.to_str().unwrap(), "--to", "codex@thread-full-id"]).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["turn_id"], "turn-1");
+}

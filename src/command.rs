@@ -67,23 +67,35 @@ impl CommandLine {
 #[derive(Deserialize)]
 struct FlowRoutes { routes: Vec<FlowRoute> }
 #[derive(Deserialize)]
-struct FlowRoute { flow_identifier: String, session_identifier: String, harness: String, readiness: String, endpoint: PathBuf }
+struct FlowRoute { flow_identifier: String, session_identifier: String, harness: String, readiness: String, endpoint: PathBuf, socket_path: Option<PathBuf> }
 impl FlowRoutes {
     fn read(path: &Path) -> Result<Self> { serde_json::from_str(&fs::read_to_string(path)?).map_err(|error| Error::InvalidCommandArgument { detail: format!("parse Flow route config {}: {error}", path.display()) }) }
     fn exact(&self, flow: &str, session: &str) -> Result<&FlowRoute> {
         let matches = self.routes.iter().filter(|route| route.flow_identifier == flow && route.session_identifier == session).collect::<Vec<_>>();
         let [route] = matches.as_slice() else { return Err(Error::InvalidCommandArgument { detail: "Flow route config must contain exactly one selected target".into() }); };
-        if route.harness != "claude" || route.readiness != "idle" { return Err(Error::InvalidCommandArgument { detail: "selected Flow route is not an idle configured Claude prompt-relay bridge".into() }); }
+        if route.readiness != "idle" || !matches!(route.harness.as_str(), "claude" | "codex") { return Err(Error::InvalidCommandArgument { detail: "selected Flow route is not an idle configured Claude or Codex prompt-relay bridge".into() }); }
         Ok(route)
     }
 }
 impl FlowRoute {
     fn deliver(&self, header: &Path, body: &Path, session: &str) -> Result<Value> {
-        let output = Command::new(&self.endpoint).args(["claude", "--source"]).arg(body).args(["--source-format", "peer-file", "--datom-file"]).arg(header).args(["--session-short", session]).output()
+        let mut command = Command::new(&self.endpoint);
+        command.arg(&self.harness).arg("--source").arg(body).args(["--source-format", "peer-file", "--datom-file"]).arg(header);
+        match self.harness.as_str() {
+            "claude" => { command.args(["--session-short", session]); }
+            "codex" => { let socket = self.socket_path.as_ref().ok_or_else(|| Error::InvalidCommandArgument { detail: "configured Codex route has no Flow-supplied socket_path".into() })?; command.args(["--thread-id", session, "--socket"]).arg(socket); }
+            _ => return Err(Error::InvalidCommandArgument { detail: "unsupported Flow bridge harness".into() }),
+        }
+        let output = command.output()
             .map_err(|error| Error::InvalidCommandArgument { detail: format!("start configured prompt-relay {}: {error}", self.endpoint.display()) })?;
-        if !output.status.success() { return Err(Error::InvalidCommandArgument { detail: format!("configured prompt-relay refused: {}", String::from_utf8_lossy(&output.stderr)) }); }
+        if !output.status.success() { let error = if output.stderr.is_empty() { String::from_utf8_lossy(&output.stdout) } else { String::from_utf8_lossy(&output.stderr) }; return Err(Error::InvalidCommandArgument { detail: format!("configured prompt-relay refused: {error}") }); }
         let receipt: Value = serde_json::from_slice(&output.stdout).map_err(|error| Error::InvalidCommandArgument { detail: format!("parse prompt-relay receipt: {error}") })?;
-        if receipt.get("kind").and_then(Value::as_str) != Some("claude-bytes-written-to-pty") || receipt.get("session_id").and_then(Value::as_str) != Some(session) { return Err(Error::InvalidCommandArgument { detail: "configured prompt-relay did not acknowledge the selected PTY write".into() }); }
+        let accepted = match self.harness.as_str() {
+            "claude" => receipt.get("kind").and_then(Value::as_str) == Some("claude-bytes-written-to-pty") && receipt.get("session_id").and_then(Value::as_str) == Some(session),
+            "codex" => receipt.get("kind").and_then(Value::as_str) == Some("codex-turn-bytes-written") && receipt.get("turn_id").and_then(Value::as_str).is_some_and(|id| !id.is_empty()),
+            _ => false,
+        };
+        if !accepted { return Err(Error::InvalidCommandArgument { detail: "configured prompt-relay did not acknowledge the selected route write".into() }); }
         Ok(receipt)
     }
 }
@@ -92,7 +104,7 @@ impl TemporaryHeader {
     fn write(header: &str) -> Result<Self> {
         let path = std::env::temp_dir().join(format!("message-cluster-header-{}", std::process::id()));
         let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)?;
-        file.write_all(header.as_bytes())?;
+        if let Err(error) = file.write_all(header.as_bytes()) { let _ = fs::remove_file(&path); return Err(error.into()); }
         Ok(Self { path })
     }
 }
