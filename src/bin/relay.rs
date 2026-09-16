@@ -404,17 +404,25 @@ fn context_for(
     executor_flow_identifier: &str,
     executor_session_identifier: &str,
 ) -> Result<Context, String> {
-    let receipt_path = env::var_os("RELAY_CONTEXT_RECEIPT")
-        .map(PathBuf::from)
-        .ok_or_else(|| {
-            "missing RELAY_CONTEXT_RECEIPT; run clusterrelay-context first".to_owned()
-        })?;
-    context_from_receipt(
-        source,
-        executor_flow_identifier,
-        executor_session_identifier,
-        &receipt_path,
-    )
+    match env::var_os("RELAY_CONTEXT_RECEIPT") {
+        Some(receipt_path) => context_from_receipt(
+            source,
+            executor_flow_identifier,
+            executor_session_identifier,
+            Path::new(&receipt_path),
+        ),
+        None => Ok(Context {
+            flow_identifier: source.flow_identifier.clone(),
+            source_turn_identifier: source.source_turn_identifier.clone(),
+            transcript_path: source.path.display().to_string(),
+            prompt_sha256: source.sha256.clone(),
+            what_living_said: source.body.clone(),
+            context_about: "unreviewed: Context receipt unavailable".to_owned(),
+            context_answered: "unavailable".to_owned(),
+            context_corrected: "unavailable".to_owned(),
+            context_uncertainties: vec!["unreviewed: Context receipt unavailable".to_owned()],
+        }),
+    }
 }
 
 fn context_from_receipt(
@@ -624,22 +632,33 @@ fn user_body(value: &Value) -> Option<String> {
         let body = value.get("content")?.as_str()?;
         return (!is_relay_or_peer_text(body)).then(|| body.to_owned());
     }
-    let payload = value.get("payload")?;
-    if value.get("type")?.as_str()? != "response_item"
-        || payload.get("type")?.as_str()? != "message"
-        || payload.get("role")?.as_str()? != "user"
-        || value.get("promptSource").and_then(Value::as_str) == Some("system")
-    {
-        return None;
+    if value.get("type")?.as_str()? == "user" {
+        return text_content(value.get("message")?.get("content")?);
     }
-    payload.get("content")?.as_array()?.iter().find_map(|part| {
-        matches!(part.get("type")?.as_str()?, "input_text" | "text").then(|| {
-            part.get("text")?
-                .as_str()
-                .filter(|text| !is_relay_or_peer_text(text))
-                .map(str::to_owned)
-        })?
-    })
+    let payload = value.get("payload")?;
+    (value.get("type")?.as_str()? == "response_item"
+        && payload.get("type")?.as_str()? == "message"
+        && payload.get("role")?.as_str()? == "user"
+        && value.get("promptSource").and_then(Value::as_str) != Some("system"))
+        .then(|| text_content(payload.get("content")?))?
+}
+
+fn text_content(content: &Value) -> Option<String> {
+    let parts = match content {
+        Value::String(text) => vec![text.as_str()],
+        Value::Array(parts) => parts
+            .iter()
+            .filter(|part| matches!(part.get("type").and_then(Value::as_str), Some("input_text" | "text")))
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect(),
+        _ => return None,
+    };
+    let body = parts
+        .into_iter()
+        .filter(|part| !is_relay_or_peer_text(part))
+        .collect::<Vec<_>>()
+        .join("");
+    (!body.is_empty()).then_some(body)
 }
 
 fn is_relay_or_peer_text(text: &str) -> bool {
@@ -682,6 +701,35 @@ mod tests {
             found[0].sha256,
             format!("{:x}", Sha256::digest(body.as_bytes()))
         );
+    }
+
+    #[test]
+    fn ordinary_claude_user_record_is_selected_without_a_queue_operation() {
+        let value = serde_json::json!({
+            "type": "user",
+            "message": { "content": "one two three four five six seven" }
+        });
+        assert_eq!(
+            user_body(&value),
+            Some("one two three four five six seven".to_owned())
+        );
+    }
+
+    #[test]
+    fn all_codex_text_parts_are_preserved_in_their_original_order() {
+        let value = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": "first " },
+                    { "type": "image", "url": "ignored" },
+                    { "type": "text", "text": "second" }
+                ]
+            }
+        });
+        assert_eq!(user_body(&value), Some("first second".to_owned()));
     }
 
     #[test]
