@@ -861,7 +861,7 @@ fn is_emitted_relay_header(header: &str) -> bool {
 }
 
 fn is_relay_or_peer_text(text: &str) -> bool {
-    text.contains("<cross-session-message")
+    (text.starts_with("<cross-session-message") && text.contains("</cross-session-message>"))
         || text.starts_with("Another Claude session sent a message:")
         || text.starts_with("[PEER ")
 }
@@ -977,6 +977,19 @@ mod tests {
             user_body(&user),
             Some("Relay is the topic of this ordinary human message".to_owned())
         );
+    }
+
+    #[test]
+    fn cross_session_markup_requires_a_closed_envelope_at_the_start() {
+        assert!(is_relay_or_peer_text(
+            "<cross-session-message source=\"peer\">machine text</cross-session-message>"
+        ));
+        assert!(!is_relay_or_peer_text(
+            "A human quoted <cross-session-message> while discussing the protocol"
+        ));
+        assert!(!is_relay_or_peer_text(
+            "<cross-session-message incomplete human quote"
+        ));
     }
 
     #[test]

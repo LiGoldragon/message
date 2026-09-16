@@ -208,6 +208,13 @@
               cargoTestExtraArgs = "--bin relay tests::consolidated_codex_rollout_relay_record_is_excluded_as_one_record -- --exact";
             }
           );
+          message-relay-cross-session-envelope-exclusion = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--bin relay tests::cross_session_markup_requires_a_closed_envelope_at_the_start -- --exact";
+            }
+          );
           message-relay-ambiguous-and-mismatched-context-refuse =
             context.cargoTestFile "relay_process"
               "ambiguous_or_mismatched_context_source_is_refused_before_delivery";
