@@ -807,10 +807,11 @@ fn text_content(content: &Value) -> Option<String> {
     (!body.is_empty()).then_some(body)
 }
 
-/// Relay emits a two-part Codex user record: a producer-owned Datom header
-/// whose exact text starts `"Relay.{`, then the verbatim human body. Reject
-/// the whole record so the body cannot be selected and relayed again. This is
-/// deliberately narrower than rejecting ordinary human discussion of Relay.
+/// Relay emits a Datom header followed by the verbatim body. Codex rollout
+/// serialization can preserve those as two `input_text` parts or consolidate
+/// them into one part separated by a blank line. Reject the whole record so
+/// the body cannot be selected and relayed again. The header test matches the
+/// emitted Datom form, not ordinary human discussion of the word “Relay”.
 fn is_cluster_relay_record(value: &Value) -> bool {
     let content = match value.get("type").and_then(Value::as_str) {
         Some("user") => value
@@ -832,12 +833,31 @@ fn is_cluster_relay_record(value: &Value) -> bool {
     let Some(parts) = content.and_then(Value::as_array) else {
         return false;
     };
-    parts.len() >= 2
-        && parts[0].get("type").and_then(Value::as_str) == Some("text")
-        && parts[0]
-            .get("text")
-            .and_then(Value::as_str)
-            .is_some_and(|header| header.starts_with("Relay.{"))
+    let text_parts = parts
+        .iter()
+        .filter(|part| {
+            matches!(
+                part.get("type").and_then(Value::as_str),
+                Some("input_text" | "text")
+            )
+        })
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    match text_parts.as_slice() {
+        [header, body, ..] => !body.is_empty() && is_emitted_relay_header(header),
+        [combined] => combined
+            .split_once("\n\n")
+            .is_some_and(|(header, body)| !body.is_empty() && is_emitted_relay_header(header)),
+        _ => false,
+    }
+}
+
+fn is_emitted_relay_header(header: &str) -> bool {
+    header.starts_with("Relay.{")
+        && header.ends_with('}')
+        && [" Primary [", " Secondary [", " Core ["]
+            .iter()
+            .any(|target| header.contains(target))
 }
 
 fn is_relay_or_peer_text(text: &str) -> bool {
@@ -923,9 +943,25 @@ mod tests {
                 "type": "message",
                 "role": "user",
                 "content": [
-                    { "type": "text", "text": "Relay.{ source session path }" },
-                    { "type": "text", "text": "one two three four five six seven" }
+                    { "type": "input_text", "text": "Relay.{ source session path 1 Primary [ { source session } ] }" },
+                    { "type": "input_text", "text": "one two three four five six seven" }
                 ]
+            }
+        });
+        assert_eq!(user_body(&relay), None);
+    }
+
+    #[test]
+    fn consolidated_codex_rollout_relay_record_is_excluded_as_one_record() {
+        let relay = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{
+                    "type": "input_text",
+                    "text": "Relay.{ source session transcript 1 Primary [ { source session } ] }\n\none two three four five six seven"
+                }]
             }
         });
         assert_eq!(user_body(&relay), None);
