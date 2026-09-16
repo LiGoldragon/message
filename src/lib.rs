@@ -12,6 +12,7 @@ pub mod daemon;
 pub mod delivery;
 pub mod engine;
 pub mod error;
+pub mod extraction;
 pub mod flow_delivery;
 pub mod flow_registry;
 pub mod meta;
@@ -34,6 +35,10 @@ pub use daemon::{MessageDaemon, MessageDaemonError};
 pub use delivery::{DeliveryDisposition, DeliveryRunner, ParkPolicy, ParkReason};
 pub use engine::MessageEngine;
 pub use error::{Error, Result};
+pub use extraction::{
+    EligibleRecord, ExtractedPrompt, ExtractionError, JsonlTranscript, PromptExtraction,
+    PromptExtractor, SourceReference, TranscriptSource,
+};
 pub use flow_delivery::{FlowDeliveryOutbox, ParkOutcome, ParkedDeliveryKey};
 pub use flow_registry::{FlowMarkerIndex, ResolvedFlow};
 pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};

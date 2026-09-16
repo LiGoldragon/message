@@ -40,3 +40,31 @@ impl CommandLine {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use signal_message::{
+        FlowDeliveryRequest, PromptInterpretationSelection, PromptVariant, TypedPromptEnvelope,
+    };
+
+    /// The CLI owns no friendlier vocabulary than `Query` itself: a
+    /// `FlowDeliver` value passed inline decodes exactly like any other
+    /// `Query` variant, with no new arg parsing for this operation.
+    #[test]
+    fn a_flow_deliver_datom_value_decodes_as_the_flow_deliver_query() {
+        let command_line = CommandLine::from_arguments([
+            r#"FlowDeliver.{ { HumanPrompt «source-event-1» «land this on the target flow» None } 57a7aa }"#,
+        ]);
+        let expected = Query::FlowDeliver(FlowDeliveryRequest {
+            typed_prompt_envelope: TypedPromptEnvelope {
+                prompt_variant: PromptVariant::HumanPrompt,
+                source_event_identifier: "source-event-1".to_owned(),
+                raw_prompt_text: "land this on the target flow".to_owned(),
+                prompt_interpretation_selection: PromptInterpretationSelection::None,
+            },
+            target_flow_name: "57a7aa".to_owned(),
+        });
+        assert_eq!(command_line.decode_query().unwrap(), expected);
+    }
+}

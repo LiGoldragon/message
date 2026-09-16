@@ -31,6 +31,10 @@ path = "src/bin/message_validate_output.rs"
 name = "message-write-configuration"
 path = "src/bin/message_write_configuration.rs"
 
+[[bin]]
+name = "message-extract-prompt"
+path = "src/bin/message_extract_prompt.rs"
+
 [dependencies]
 datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6dccc76b75918a91d3370a9d4fe88aa7dd567876" }
 protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
@@ -42,6 +46,9 @@ rkyv           = { version = "0.8", default-features = false, features = ["std",
 redb           = "4.1"
 sema           = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
 sema-engine    = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "516f01fe0b03157efc6cc3d38b588f0ca123ac94" }
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+sha2           = "0.10"
 thiserror      = "2"
 tokio          = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync"] }
 triad-runtime  = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "2abec17849fe270755bb04a13d052e1edbb2a7ab" }
