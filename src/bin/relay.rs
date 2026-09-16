@@ -907,9 +907,29 @@ fn locate(head: &str, tail: &str, members: &[ClusterMember]) -> Result<Source, S
                 .into(),
         ),
     };
+    let requested_event = env::var("RELAY_SOURCE_EVENT_ID").ok();
     let mut matches = Vec::new();
     for path in paths {
         matches.extend(records(&path, head, tail, members)?);
+    }
+    select_source(matches, requested_event.as_deref())
+}
+
+fn select_source(
+    mut matches: Vec<Source>,
+    requested_event: Option<&str>,
+) -> Result<Source, String> {
+    if let Some(requested_event) = requested_event {
+        matches.retain(|source| source.source_event_identifier == requested_event);
+        return match matches.len() {
+            1 => Ok(matches.remove(0)),
+            0 => Err(format!(
+                "no user record matches RELAY_SOURCE_EVENT_ID {requested_event:?}"
+            )),
+            count => Err(format!(
+                "{count} user records match RELAY_SOURCE_EVENT_ID {requested_event:?}; source events are not unique"
+            )),
+        };
     }
     match matches.len() {
         1 => Ok(matches.remove(0)),
@@ -1107,10 +1127,10 @@ fn is_cluster_relay_record(value: &Value) -> bool {
         return true;
     }
     match text_parts.as_slice() {
-        [header, body, ..] => !body.is_empty() && is_emitted_relay_header(header),
+        [header, body, ..] => !body.is_empty() && is_emitted_cluster_header(header),
         [combined] => combined
             .split_once("\n\n")
-            .is_some_and(|(header, body)| !body.is_empty() && is_emitted_relay_header(header)),
+            .is_some_and(|(header, body)| !body.is_empty() && is_emitted_cluster_header(header)),
         _ => false,
     }
 }
@@ -1134,12 +1154,16 @@ fn content_text_parts(content: Option<&Value>) -> Option<Vec<&str>> {
     }
 }
 
-fn is_emitted_relay_header(header: &str) -> bool {
-    header.starts_with("Relay.{")
-        && header.ends_with('}')
-        && [" Primary [", " Secondary [", " Core ["]
-            .iter()
-            .any(|target| header.contains(target))
+fn is_emitted_cluster_header(header: &str) -> bool {
+    // Decode exact producer text when possible. Keep the established Relay
+    // shape check for already-recorded rollout frames whose historical header
+    // is intentionally less complete than the current producer contract.
+    message::text::read::<ClusterMessage>(header).is_ok()
+        || (header.starts_with("Relay.{")
+            && header.ends_with('}')
+            && [" Primary [", " Secondary [", " Core ["]
+                .iter()
+                .any(|target| header.contains(target)))
 }
 
 fn is_relay_or_peer_text(text: &str) -> bool {
@@ -1239,6 +1263,45 @@ mod tests {
     }
 
     #[test]
+    fn explicit_source_event_selects_one_identical_body_and_rejects_unknown_event() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("source.jsonl");
+        let body = "one two three four five six seven eight nine ten eleven twelve";
+        fs::write(&path, format!(
+            "{{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"sessionId\":\"efa15708-dc5d-42ce-af62-8ffb84c9815e\",\"timestamp\":\"2026-09-16T00:00:00Z\",\"content\":\"{body}\"}}\n{{\"type\":\"user\",\"uuid\":\"eb26a23f-ce6b-4117-bed1-6790bb373b74\",\"sessionId\":\"efa15708-dc5d-42ce-af62-8ffb84c9815e\",\"timestamp\":\"2026-09-16T00:00:01Z\",\"message\":{{\"content\":\"{body}\"}}}}\n"
+        )).unwrap();
+        let matches = records(
+            &path,
+            "one two three four five six",
+            "seven eight nine ten eleven twelve",
+            &[ClusterMember {
+                flow_identifier: "efa157".to_owned(),
+                session_identifier: "efa15708-dc5d-42ce-af62-8ffb84c9815e".to_owned(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 2);
+        let selected =
+            select_source(matches, Some("eb26a23f-ce6b-4117-bed1-6790bb373b74")).unwrap();
+        assert_eq!(
+            selected.source_event_identifier,
+            "eb26a23f-ce6b-4117-bed1-6790bb373b74"
+        );
+        let unknown = records(
+            &path,
+            "one two three four five six",
+            "seven eight nine ten eleven twelve",
+            &[ClusterMember {
+                flow_identifier: "efa157".to_owned(),
+                session_identifier: "efa15708-dc5d-42ce-af62-8ffb84c9815e".to_owned(),
+            }],
+        )
+        .unwrap();
+        let error = select_source(unknown, Some("missing-event")).unwrap_err();
+        assert!(error.contains("RELAY_SOURCE_EVENT_ID"));
+    }
+
+    #[test]
     fn ordinary_claude_user_record_is_selected_without_a_queue_operation() {
         let value = serde_json::json!({
             "type": "user",
@@ -1297,6 +1360,24 @@ mod tests {
             }
         });
         assert_eq!(user_body(&relay), None);
+    }
+
+    #[test]
+    fn codec_produced_peer_record_is_excluded_as_one_record() {
+        let header = include_str!("../../tests/fixtures/cf7879-peer-cluster-header.datom");
+        let body = include_str!("../../tests/fixtures/cf7879-peer-cluster-body.md");
+        let peer = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": header },
+                    { "type": "input_text", "text": body }
+                ]
+            }
+        });
+        assert_eq!(user_body(&peer), None);
     }
 
     #[test]

@@ -165,9 +165,17 @@ fn ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delive
 fn codex_rollout_uses_native_session_meta_and_payload_identifier() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("codex.jsonl");
-    fs::write(&path, include_str!("fixtures/codex-session-meta-response.jsonl")).unwrap();
+    fs::write(
+        &path,
+        include_str!("fixtures/codex-session-meta-response.jsonl"),
+    )
+    .unwrap();
     let output = relay(&path).output().unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let rendered = String::from_utf8(output.stdout).unwrap();
     assert!(rendered.starts_with("Relay.{"));
     assert!(rendered.ends_with(BODY));
@@ -410,17 +418,26 @@ fn unknown_route_readiness_refuses_without_connecting_an_endpoint() {
     )
     .unwrap();
     let output = relay(&transcript_path)
-        .env("RELAY_CLUSTER_MEMBERS", "cf7879@cf7879-session,peer@peer-session")
+        .env(
+            "RELAY_CLUSTER_MEMBERS",
+            "cf7879@cf7879-session,peer@peer-session",
+        )
         .env("RELAY_FLOW_ROUTES", routes)
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(receipt["outcomes"][0]["outcome"]["kind"], "unavailable");
-    assert!(receipt["outcomes"][0]["outcome"]["reason"]
-        .as_str()
-        .unwrap()
-        .contains("no fresh readiness witness"));
+    assert!(
+        receipt["outcomes"][0]["outcome"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("no fresh readiness witness")
+    );
 }
 
 #[test]
