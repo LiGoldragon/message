@@ -185,6 +185,13 @@
           message-relay-busy-delivery-is-durable-before-socket-write =
             context.cargoTestFile "relay_fixture"
               "busy_delivery_is_persisted_before_any_socket_write";
+          message-relay-ordinary-claude-parser = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--bin relay";
+            }
+          );
           message-previous-store-schema-fails-closed =
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
