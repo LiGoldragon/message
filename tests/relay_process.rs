@@ -383,6 +383,35 @@ fn flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_un
 }
 
 #[test]
+fn unknown_route_readiness_refuses_without_connecting_an_endpoint() {
+    let directory = tempfile::tempdir().unwrap();
+    let transcript_path = directory.path().join("claude.jsonl");
+    transcript(&transcript_path, 1);
+    let routes = directory.path().join("flow-routes.json");
+    fs::write(
+        &routes,
+        serde_json::json!({"routes":[
+            {"flow_identifier":"source","session_identifier":"cf7879-session","harness":"codex","readiness":"unknown","endpoint":directory.path().join("source.sock")},
+            {"flow_identifier":"peer","session_identifier":"peer-session","harness":"codex","readiness":"unknown","endpoint":directory.path().join("must-not-connect.sock")}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let output = relay(&transcript_path)
+        .env("RELAY_CLUSTER_MEMBERS", "cf7879@cf7879-session,peer@peer-session")
+        .env("RELAY_FLOW_ROUTES", routes)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["outcomes"][0]["outcome"]["kind"], "unavailable");
+    assert!(receipt["outcomes"][0]["outcome"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("no fresh readiness witness"));
+}
+
+#[test]
 fn configured_claude_peer_file_is_bounded_and_requires_matching_pty_receipt() {
     use std::os::unix::fs::PermissionsExt;
     let directory = tempfile::tempdir().unwrap();

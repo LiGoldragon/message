@@ -178,6 +178,7 @@ enum RouteHarness {
 enum RouteReadiness {
     Idle,
     Busy,
+    Unknown,
 }
 
 #[derive(Serialize)]
@@ -292,7 +293,7 @@ fn fanout_member(
         }
         .park(&member.flow_identifier, relay),
         RouteHarness::Codex | RouteHarness::Claude | RouteHarness::Nexus => {
-            Err("configured route harness/readiness combination is unsafe".to_owned())
+            Err("configured Flow route has no fresh readiness witness".to_owned())
         }
     };
     match outcome {
