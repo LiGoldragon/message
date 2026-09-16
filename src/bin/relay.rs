@@ -11,18 +11,24 @@
 use std::{
     env, fs,
     io::{Read, Write},
-    os::unix::net::UnixStream,
+    os::unix::{fs::OpenOptionsExt, net::UnixStream},
     path::{Path, PathBuf},
+    process::{Child, Command, ExitStatus, Stdio},
+    time::{Duration, Instant},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use datom_codec::Datomizable;
+use message::client::MessageSocket;
 use protos::{Protosizable, Textualizable};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
-use signal_message::{ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget, Context};
+use signal_message::{
+    ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget, Context, FlowDeliveryRequest,
+    PromptInterpretationSelection, PromptVariant, Query, Response, TypedPromptEnvelope,
+};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 fn main() {
@@ -81,15 +87,18 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
     let prepared = PreparedRelay {
         header: header.datomize(vec![]).protosize().textualize(),
         body: source.body,
+        source_flow_identifier,
+        source_session_identifier,
+        source_event_identifier: source.source_event_identifier,
         executor_flow_identifier,
         executor_session_identifier,
     };
-    if let Some(route_fixture) = env::var_os("RELAY_FLOW_ROUTE_FIXTURE") {
-        let routes = FlowRouteFixture::read(Path::new(&route_fixture))?;
+    if let Some(route_file) = env::var_os("RELAY_FLOW_ROUTES") {
+        let routes = FlowRouteConfiguration::read(Path::new(&route_file))?;
         let receipt = fanout(
             &members,
-            &source_flow_identifier,
-            &source_session_identifier,
+            &prepared.source_flow_identifier,
+            &prepared.source_session_identifier,
             &prepared,
             &routes,
         );
@@ -105,6 +114,9 @@ fn run(arguments: Vec<String>) -> Result<String, String> {
 struct PreparedRelay {
     header: String,
     body: String,
+    source_flow_identifier: String,
+    source_session_identifier: String,
+    source_event_identifier: String,
     executor_flow_identifier: String,
     executor_session_identifier: String,
 }
@@ -115,21 +127,19 @@ impl PreparedRelay {
     }
 }
 
-/// A Flow-owned route lookup response used by this bounded fixture only.
-///
-/// This binary neither stores nor discovers routes. The fixture is an explicit
-/// stand-in for the Flow route query that must eventually supply a live route.
+/// A trusted Flow-owned route response. This binary validates and consumes the
+/// supplied routes but never discovers sessions or stores a second registry.
 #[derive(Debug, Deserialize)]
-struct FlowRouteFixture {
+struct FlowRouteConfiguration {
     routes: Vec<FlowRoute>,
 }
 
-impl FlowRouteFixture {
+impl FlowRouteConfiguration {
     fn read(path: &Path) -> Result<Self, String> {
         let input = fs::read_to_string(path)
-            .map_err(|error| format!("read Flow route fixture {}: {error}", path.display()))?;
+            .map_err(|error| format!("read configured Flow routes {}: {error}", path.display()))?;
         serde_json::from_str(&input)
-            .map_err(|error| format!("parse Flow route fixture {}: {error}", path.display()))
+            .map_err(|error| format!("parse configured Flow routes {}: {error}", path.display()))
     }
 }
 
@@ -138,7 +148,8 @@ struct FlowRoute {
     flow_identifier: String,
     session_identifier: String,
     harness: RouteHarness,
-    endpoint: Option<PathBuf>,
+    readiness: RouteReadiness,
+    endpoint: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +158,13 @@ enum RouteHarness {
     Codex,
     Claude,
     Nexus,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum RouteReadiness {
+    Idle,
+    Busy,
 }
 
 #[derive(Serialize)]
@@ -165,20 +183,42 @@ struct FanoutOutcome {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum FanoutDisposition {
-    Accepted { receipt: DeliveryReceipt },
+    Accepted { receipt: RouteReceipt },
     Unavailable { reason: String },
-    BusyParkRequired { reason: String },
 }
 
-/// Delivers only to Flow-routed cluster members other than the exact selected
-/// source. Each target gets an independent outcome, so a failed target cannot
-/// erase another target's accepted receipt.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum RouteReceipt {
+    CodexTurnStartAcknowledged {
+        thread_id: String,
+        turn_id: Option<String>,
+        status: Option<String>,
+        executor_flow_identifier: String,
+        executor_session_identifier: String,
+    },
+    ClaudePtyWriteAcknowledged {
+        session_identifier: String,
+        executor_flow_identifier: String,
+        executor_session_identifier: String,
+    },
+    NexusFlowDeliveryParked {
+        target_flow_name: String,
+        source_event_identifier: String,
+        executor_flow_identifier: String,
+        executor_session_identifier: String,
+    },
+}
+
+/// Delivers only to trusted Flow-routed cluster members other than the exact
+/// selected source. A busy Claude target is represented by an explicit Nexus
+/// route; a failed PTY invocation is never reclassified as busy.
 fn fanout(
     members: &[ClusterMember],
     source_flow_identifier: &str,
     source_session_identifier: &str,
     relay: &PreparedRelay,
-    fixture: &FlowRouteFixture,
+    routes: &FlowRouteConfiguration,
 ) -> FanoutReceipt {
     let outcomes = members
         .iter()
@@ -189,11 +229,11 @@ fn fanout(
         .map(|member| FanoutOutcome {
             flow_identifier: member.flow_identifier.clone(),
             session_identifier: member.session_identifier.clone(),
-            outcome: fanout_member(member, relay, fixture),
+            outcome: fanout_member(member, relay, routes),
         })
         .collect();
     FanoutReceipt {
-        kind: "cluster-relay-fanout-fixture",
+        kind: "cluster-relay-fanout",
         outcomes,
     }
 }
@@ -201,9 +241,9 @@ fn fanout(
 fn fanout_member(
     member: &ClusterMember,
     relay: &PreparedRelay,
-    fixture: &FlowRouteFixture,
+    configured: &FlowRouteConfiguration,
 ) -> FanoutDisposition {
-    let routes = fixture
+    let routes = configured
         .routes
         .iter()
         .filter(|route| {
@@ -213,31 +253,238 @@ fn fanout_member(
         .collect::<Vec<_>>();
     let [route] = routes.as_slice() else {
         return FanoutDisposition::Unavailable {
-            reason: "Flow route lookup did not return one route for this declared member"
-                .to_owned(),
+            reason:
+                "configured Flow route lookup did not return one route for this declared member"
+                    .to_owned(),
         };
     };
-    match route.harness {
-        RouteHarness::Codex => match &route.endpoint {
-            Some(endpoint) => match (CodexAppServer {
-                socket_path: endpoint.clone(),
-            })
-            .deliver(&member.session_identifier, relay)
+    let outcome = match route.harness {
+        RouteHarness::Codex if route.readiness == RouteReadiness::Idle => CodexAppServer {
+            socket_path: route.endpoint.clone(),
+        }
+        .deliver(&member.session_identifier, relay)
+        .map(|receipt| RouteReceipt::CodexTurnStartAcknowledged {
+            thread_id: receipt.thread_id,
+            turn_id: receipt.turn_id,
+            status: receipt.status,
+            executor_flow_identifier: receipt.executor_flow_identifier,
+            executor_session_identifier: receipt.executor_session_identifier,
+        }),
+        RouteHarness::Claude if route.readiness == RouteReadiness::Idle => ClaudePromptRelay {
+            executable: route.endpoint.clone(),
+        }
+        .deliver(&member.session_identifier, relay),
+        RouteHarness::Nexus if route.readiness == RouteReadiness::Busy => NexusFlowDeliver {
+            socket_path: route.endpoint.clone(),
+        }
+        .park(&member.flow_identifier, relay),
+        RouteHarness::Codex | RouteHarness::Claude | RouteHarness::Nexus => {
+            Err("configured route harness/readiness combination is unsafe".to_owned())
+        }
+    };
+    match outcome {
+        Ok(receipt) => FanoutDisposition::Accepted { receipt },
+        Err(reason) => FanoutDisposition::Unavailable { reason },
+    }
+}
+
+struct ClaudePromptRelay {
+    executable: PathBuf,
+}
+
+const ADAPTER_TIMEOUT: Duration = Duration::from_secs(10);
+const ADAPTER_OUTPUT_LIMIT: u64 = 64 * 1024;
+
+impl ClaudePromptRelay {
+    fn deliver(
+        &self,
+        session_identifier: &str,
+        relay: &PreparedRelay,
+    ) -> Result<RouteReceipt, String> {
+        // `prompt-relay` owns the following peer-file provenance envelope. The
+        // input itself retains the typed ClusterRelay header and verbatim body.
+        let peer_file = PeerFile::write("peer", relay.render().as_bytes())?;
+        let stdout = PeerFile::empty("stdout")?;
+        let stderr = PeerFile::empty("stderr")?;
+        let stdout_handle = fs::OpenOptions::new()
+            .write(true)
+            .open(stdout.path())
+            .map_err(|error| format!("open bounded Claude receipt: {error}"))?;
+        let stderr_handle = fs::OpenOptions::new()
+            .write(true)
+            .open(stderr.path())
+            .map_err(|error| format!("open bounded Claude error receipt: {error}"))?;
+        let mut child = Command::new(&self.executable)
+            .arg("claude")
+            .arg("--source")
+            .arg(peer_file.path())
+            .arg("--source-format")
+            .arg("peer-file")
+            .arg("--session-short")
+            .arg(session_identifier)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(stdout_handle))
+            .stderr(Stdio::from(stderr_handle))
+            .spawn()
+            .map_err(|error| {
+                format!(
+                    "start configured Claude prompt-relay {}: {error}",
+                    self.executable.display()
+                )
+            })?;
+        let status = wait_for_child(&mut child, ADAPTER_TIMEOUT, &[&stdout, &stderr])?;
+        let captured_stderr = bounded_file(&stderr, "Claude prompt-relay stderr")?;
+        if !status.success() {
+            return Err(format!(
+                "configured Claude prompt-relay refused: {}",
+                String::from_utf8_lossy(&captured_stderr)
+            ));
+        }
+        let captured_stdout = bounded_file(&stdout, "Claude prompt-relay receipt")?;
+        let receipt: Value = serde_json::from_slice(&captured_stdout)
+            .map_err(|error| format!("parse Claude prompt-relay receipt: {error}"))?;
+        if receipt.get("kind").and_then(Value::as_str) != Some("claude-bytes-written-to-pty")
+            || receipt.get("session_id").and_then(Value::as_str) != Some(session_identifier)
+        {
+            return Err(
+                "configured Claude prompt-relay did not provide the matching PTY-write receipt"
+                    .to_owned(),
+            );
+        }
+        Ok(RouteReceipt::ClaudePtyWriteAcknowledged {
+            session_identifier: session_identifier.to_owned(),
+            executor_flow_identifier: relay.executor_flow_identifier.clone(),
+            executor_session_identifier: relay.executor_session_identifier.clone(),
+        })
+    }
+}
+
+fn wait_for_child(
+    child: &mut Child,
+    timeout: Duration,
+    output_files: &[&PeerFile],
+) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        for file in output_files {
+            let size = fs::metadata(file.path())
+                .map_err(|error| format!("stat configured Claude output: {error}"))?
+                .len();
+            if size > ADAPTER_OUTPUT_LIMIT {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "configured Claude prompt-relay output exceeds {} bytes",
+                    ADAPTER_OUTPUT_LIMIT
+                ));
+            }
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("poll configured Claude prompt-relay: {error}"))?
+        {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("configured Claude prompt-relay exceeded its 10-second bound".to_owned());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn bounded_file(file: &PeerFile, label: &str) -> Result<Vec<u8>, String> {
+    let size = fs::metadata(file.path())
+        .map_err(|error| format!("stat {label}: {error}"))?
+        .len();
+    if size > ADAPTER_OUTPUT_LIMIT {
+        return Err(format!("{label} exceeds {} bytes", ADAPTER_OUTPUT_LIMIT));
+    }
+    fs::read(file.path()).map_err(|error| format!("read {label}: {error}"))
+}
+
+struct PeerFile {
+    path: PathBuf,
+}
+impl PeerFile {
+    fn write(kind: &str, bytes: &[u8]) -> Result<Self, String> {
+        let file = Self::empty(kind)?;
+        let mut handle = fs::OpenOptions::new()
+            .write(true)
+            .open(file.path())
+            .map_err(|error| format!("open peer relay file: {error}"))?;
+        handle
+            .write_all(bytes)
+            .map_err(|error| format!("write peer relay file: {error}"))?;
+        Ok(file)
+    }
+    fn empty(kind: &str) -> Result<Self, String> {
+        for nonce in 0..128_u32 {
+            let path = env::temp_dir().join(format!(
+                "message-relay-{kind}-{}-{nonce}",
+                std::process::id()
+            ));
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&path)
             {
-                Ok(receipt) => FanoutDisposition::Accepted { receipt },
-                Err(error) => FanoutDisposition::Unavailable { reason: error },
-            },
-            None => FanoutDisposition::Unavailable {
-                reason: "Flow Codex route has no socket endpoint".to_owned(),
-            },
-        },
-        RouteHarness::Claude => FanoutDisposition::Unavailable {
-            reason: "no Flow-owned Claude prompt-relay invocation is installed".to_owned(),
-        },
-        RouteHarness::Nexus => FanoutDisposition::BusyParkRequired {
-            reason: "no configured FlowDeliver transport is available to park this route"
-                .to_owned(),
-        },
+                Ok(_) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(format!("create bounded relay {kind} file: {error}")),
+            }
+        }
+        Err(format!("create bounded relay {kind} file"))
+    }
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+impl Drop for PeerFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+struct NexusFlowDeliver {
+    socket_path: PathBuf,
+}
+impl NexusFlowDeliver {
+    fn park(&self, target_flow_name: &str, relay: &PreparedRelay) -> Result<RouteReceipt, String> {
+        let source_event_identifier = format!(
+            "{}:{}:{}",
+            relay.source_flow_identifier,
+            relay.source_session_identifier,
+            relay.source_event_identifier
+        );
+        let response = MessageSocket::from_path(&self.socket_path)
+            .client()
+            .submit_with_timeout(
+                Query::FlowDeliver(FlowDeliveryRequest {
+                    typed_prompt_envelope: TypedPromptEnvelope {
+                        prompt_variant: PromptVariant::HumanPrompt,
+                        source_event_identifier: source_event_identifier.clone(),
+                        // The typed ClusterRelay header (including Context) remains beside
+                        // the untouched source body for the delayed Message leg.
+                        raw_prompt_text: relay.render(),
+                        prompt_interpretation_selection: PromptInterpretationSelection::None,
+                    },
+                    target_flow_name: target_flow_name.to_owned(),
+                }),
+                ADAPTER_TIMEOUT,
+            )
+            .map_err(|error| format!("submit configured FlowDeliver: {error}"))?;
+        if !matches!(response, Response::DeliveryQueued(_)) {
+            return Err("configured FlowDeliver did not park the relay".to_owned());
+        }
+        Ok(RouteReceipt::NexusFlowDeliveryParked {
+            target_flow_name: target_flow_name.to_owned(),
+            source_event_identifier,
+            executor_flow_identifier: relay.executor_flow_identifier.clone(),
+            executor_session_identifier: relay.executor_session_identifier.clone(),
+        })
     }
 }
 

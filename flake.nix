@@ -200,7 +200,10 @@
               "fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body";
           message-relay-flow-route-fanout-fixture =
             context.cargoTestFile "relay_process"
-              "flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_unavailable_outcome";
+              "configured_busy_nexus_route_parks_the_typed_cluster_relay_before_delivery";
+          message-relay-configured-claude-peer-file-fixture =
+            context.cargoTestFile "relay_process"
+              "configured_claude_peer_file_is_bounded_and_requires_matching_pty_receipt";
           message-relay-codex-rollout-loop-exclusion = context.craneLib.cargoTest (
             context.commonArgs
             // {

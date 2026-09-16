@@ -1,5 +1,10 @@
 //! Isolated process fixture for source selection before any delivery adapter.
 
+use message::{Configuration, client::MessageSocket};
+use signal_message::{
+    FlowIdleAnnouncement, MessageDaemonConfiguration, OwnerIdentity, Query, Response,
+};
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use sha1::{Digest, Sha1};
 use std::{
@@ -324,16 +329,16 @@ fn flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_un
     fs::write(
         &routes,
         serde_json::json!({"routes":[
-            {"flow_identifier":"source","session_identifier":"cf7879-session","harness":"codex","endpoint":directory.path().join("must-not-connect.sock")},
-            {"flow_identifier":"codex-first","session_identifier":"codex-first-session","harness":"codex","endpoint":first_socket},
-            {"flow_identifier":"codex-second","session_identifier":"codex-second-session","harness":"codex","endpoint":second_socket},
-            {"flow_identifier":"claude-unavailable","session_identifier":"claude-session","harness":"claude"}
+            {"flow_identifier":"source","session_identifier":"cf7879-session","harness":"codex","readiness":"idle","endpoint":directory.path().join("must-not-connect.sock")},
+            {"flow_identifier":"codex-first","session_identifier":"codex-first-session","harness":"codex","readiness":"idle","endpoint":first_socket},
+            {"flow_identifier":"codex-second","session_identifier":"codex-second-session","harness":"codex","readiness":"idle","endpoint":second_socket},
+            {"flow_identifier":"claude-unavailable","session_identifier":"claude-session","harness":"claude","readiness":"idle","endpoint":directory.path().join("missing-prompt-relay")}
         ]}).to_string(),
     ).unwrap();
     let output = relay(&transcript_path)
         .env("FLOW_ID", "source")
         .env("RELAY_CLUSTER_MEMBERS", "source@cf7879-session,codex-first@codex-first-session,codex-second@codex-second-session,claude-unavailable@claude-session")
-        .env("RELAY_FLOW_ROUTE_FIXTURE", routes)
+        .env("RELAY_FLOW_ROUTES", routes)
         .output()
         .unwrap();
     assert!(
@@ -342,7 +347,7 @@ fn flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_un
         String::from_utf8_lossy(&output.stderr)
     );
     let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(receipt["kind"], "cluster-relay-fanout-fixture");
+    assert_eq!(receipt["kind"], "cluster-relay-fanout");
     let outcomes = receipt["outcomes"].as_array().unwrap();
     assert_eq!(outcomes.len(), 3, "source route must be excluded");
     assert!(
@@ -357,7 +362,7 @@ fn flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_un
         outcomes[2]["outcome"]["reason"]
             .as_str()
             .unwrap()
-            .contains("Claude prompt-relay")
+            .contains("start configured Claude prompt-relay")
     );
     let turns = [first.join().unwrap(), second.join().unwrap()];
     for (turn, thread) in turns
@@ -375,4 +380,161 @@ fn flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_un
             turn["params"]["input"][0]["text"]
         );
     }
+}
+
+#[test]
+fn configured_claude_peer_file_is_bounded_and_requires_matching_pty_receipt() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let transcript_path = directory.path().join("claude.jsonl");
+    transcript(&transcript_path, 1);
+    let capture = directory.path().join("peer-input");
+    let relay_cli = directory.path().join("fake-prompt-relay");
+    fs::write(
+        &relay_cli,
+        r#"#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--source" ]; then cp "$2" "$CLAUDE_CAPTURE"; fi
+  if [ "$1" = "--session-short" ]; then session="$2"; fi
+  shift
+done
+printf '{"kind":"claude-bytes-written-to-pty","session_id":"%s"}\n' "$session"
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&relay_cli, fs::Permissions::from_mode(0o700)).unwrap();
+    let routes = directory.path().join("flow-routes.json");
+    fs::write(&routes, serde_json::json!({"routes":[
+        {"flow_identifier":"claude","session_identifier":"claude-live","harness":"claude","readiness":"idle","endpoint":relay_cli}
+    ]}).to_string()).unwrap();
+    let output = relay(&transcript_path)
+        .env("FLOW_ID", "source")
+        .env(
+            "RELAY_CLUSTER_MEMBERS",
+            "source@cf7879-session,claude@claude-live",
+        )
+        .env("RELAY_FLOW_ROUTES", routes)
+        .env("CLAUDE_CAPTURE", &capture)
+        .env("PATH", "/run/current-system/sw/bin:/bin")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        receipt["outcomes"][0]["outcome"]["receipt"]["kind"], "claude-pty-write-acknowledged",
+        "{receipt:?}"
+    );
+    let peer_file = fs::read_to_string(capture).unwrap();
+    assert!(peer_file.starts_with("Relay.{"), "{peer_file}");
+    assert!(peer_file.ends_with(BODY), "{peer_file}");
+}
+
+#[test]
+fn configured_busy_nexus_route_parks_the_typed_cluster_relay_before_delivery() {
+    let directory = tempfile::tempdir().unwrap();
+    let transcript_path = directory.path().join("claude.jsonl");
+    transcript(&transcript_path, 1);
+    let home = directory.path().join("home");
+    let target_flow = "busy-nexus";
+    let marker_dir = home.join("primary/flows");
+    fs::create_dir_all(&marker_dir).unwrap();
+    fs::write(
+        marker_dir.join(format!(".{target_flow}.flow-id")),
+        "fixture target\n",
+    )
+    .unwrap();
+    let contract = MessageDaemonConfiguration {
+        message_socket_path: directory
+            .path()
+            .join("message.sock")
+            .to_string_lossy()
+            .into_owned(),
+        message_socket_mode: 0o600,
+        supervision_socket_path: directory
+            .path()
+            .join("meta.sock")
+            .to_string_lossy()
+            .into_owned(),
+        supervision_socket_mode: 0o600,
+        router_socket_path: directory
+            .path()
+            .join("router.sock")
+            .to_string_lossy()
+            .into_owned(),
+        component_ingresses: Vec::new(),
+        owner_identity: OwnerIdentity::UnixUser(i64::from(rustix::process::getuid().as_raw())),
+    };
+    let configuration =
+        Configuration::new(contract, directory.path().join("messenger.sema"), "fixture").unwrap();
+    let configuration_path = directory.path().join("message.configuration");
+    configuration
+        .write_binary_file(&configuration_path)
+        .unwrap();
+    let mut daemon = Command::new(env!("CARGO_BIN_EXE_message-daemon"))
+        .env_clear()
+        .env("HOME", &home)
+        .arg(&configuration_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !configuration.socket_path().exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        configuration.socket_path().exists(),
+        "temporary Message Nexus did not bind"
+    );
+    let routes = directory.path().join("flow-routes.json");
+    fs::write(&routes, serde_json::json!({"routes":[
+        {"flow_identifier":target_flow,"session_identifier":"busy-session","harness":"nexus","readiness":"busy","endpoint":configuration.socket_path()}
+    ]}).to_string()).unwrap();
+    let output = relay(&transcript_path)
+        .env("FLOW_ID", "source")
+        .env(
+            "RELAY_CLUSTER_MEMBERS",
+            "source@cf7879-session,busy-nexus@busy-session",
+        )
+        .env("RELAY_FLOW_ROUTES", routes)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        receipt["outcomes"][0]["outcome"]["receipt"]["kind"], "nexus-flow-delivery-parked",
+        "{receipt:?}"
+    );
+    assert!(
+        receipt["outcomes"][0]["outcome"]["receipt"]["source_event_identifier"]
+            .as_str()
+            .unwrap()
+            .starts_with("source:cf7879-session:claude-turn-1")
+    );
+    let landed = MessageSocket::from_path(configuration.socket_path())
+        .client()
+        .submit(Query::FlowAnnounceIdle(FlowIdleAnnouncement {
+            target_flow_name: target_flow.to_owned(),
+        }))
+        .unwrap();
+    match landed {
+        Response::FlowIdleAcknowledged(acknowledgment) => {
+            assert_eq!(acknowledgment.landed_receipts.len(), 1);
+            // The stored raw packet is header + blank line + original body, not body alone.
+            assert!(
+                acknowledgment.landed_receipts[0].byte_count > i64::try_from(BODY.len()).unwrap()
+            );
+        }
+        other => panic!("unexpected Flow idle reply: {other:?}"),
+    }
+    let _ = daemon.kill();
+    let _ = daemon.wait();
 }

@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
 
@@ -50,7 +51,15 @@ impl MessageClient {
     /// One connection carries one request and one reply. The body is the bare
     /// rkyv archive of the contract root; the length prefix is the framing.
     pub fn submit(&self, query: Query) -> Result<Response> {
+        self.submit_with_timeout(query, Duration::from_secs(30))
+    }
+
+    /// Bounds connect, write, and reply waits for a single request/reply socket.
+    /// The existing `submit` API retains a conservative default bound.
+    pub fn submit_with_timeout(&self, query: Query, timeout: Duration) -> Result<Response> {
         let mut stream = UnixStream::connect(self.socket.path())?;
+        stream.set_read_timeout(Some(timeout))?;
+        stream.set_write_timeout(Some(timeout))?;
         let request = FrameBody::new(query.signalize()?.bytes().to_vec());
         self.codec.write_body(&mut stream, &request)?;
         stream.flush()?;
