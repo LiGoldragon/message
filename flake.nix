@@ -195,6 +195,9 @@
           message-relay-ordinary-claude-process-fixture =
             context.cargoTestFile "relay_process"
               "ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delivery";
+          message-relay-codex-socket-fixture =
+            context.cargoTestFile "relay_process"
+              "fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body";
           message-relay-ambiguous-and-mismatched-context-refuse =
             context.cargoTestFile "relay_process"
               "ambiguous_or_mismatched_context_source_is_refused_before_delivery";
