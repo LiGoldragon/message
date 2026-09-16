@@ -30,6 +30,14 @@ fn transcript(path: &Path, copies: usize) {
 }
 
 fn relay(path: &Path) -> Command {
+    relay_selection(
+        path,
+        "one two three four five six",
+        "seven eight nine ten eleven twelve",
+    )
+}
+
+fn relay_selection(path: &Path, head: &str, tail: &str) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_relay"));
     command
         .env_clear()
@@ -38,8 +46,8 @@ fn relay(path: &Path) -> Command {
         .env("RELAY_CLUSTER_MEMBERS", "cf7879@cf7879-session")
         .env("RELAY_TRANSCRIPT", path)
         .env("HOME", path.parent().unwrap())
-        .arg("one two three four five six")
-        .arg("seven eight nine ten eleven twelve");
+        .arg(head)
+        .arg(tail);
     command
 }
 
@@ -146,6 +154,54 @@ fn ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delive
     assert!(stdout.starts_with("Relay.{"), "{stdout}");
     assert!(stdout.ends_with(BODY));
     assert!(stdout.contains("unreviewed: Context receipt unavailable"));
+}
+
+#[test]
+fn prompt_relay_provenance_record_is_refused_without_socket_write_and_neighbor_is_selectable() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("claude.jsonl");
+    let socket_path = directory.path().join("must-not-connect.sock");
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let relayed = serde_json::json!({
+        "type": "user",
+        "uuid": "611f76ba-f42f-45ba-aefa-4f27369071fc",
+        "sessionId": "cf7879-session",
+        "timestamp": "2026-09-16T08:14:34.780Z",
+        "message": { "content": "{\"provenance\":{\"source_path\":\"/sanitized/source.jsonl\",\"source_format\":\"codex\",\"source_message_id\":\"msg_01a0a722-4c6b-7da2-ac40-c694a71d565a\",\"source_timestamp\":\"2026-09-15T22:13:57.995Z\",\"sha256_utf8\":\"29ac8517808b35a12a66c760ef7d5eeeaf9aaad6e93b9ae167ea48af9f35b5b6\"}}\n\nrelayed source words must never become a new relay" }
+    });
+    let ordinary = serde_json::json!({
+        "type": "user",
+        "uuid": "claude-turn-2",
+        "sessionId": "cf7879-session",
+        "timestamp": "2026-09-16T08:15:34.780Z",
+        "message": { "content": BODY }
+    });
+    fs::write(&path, format!("{relayed}\n{ordinary}\n")).unwrap();
+
+    let refused = relay_selection(
+        &path,
+        "relayed source words must never become",
+        "must never become a new relay",
+    )
+    .env("RELAY_CODEX_THREAD_ID", "cf7879-session")
+    .env("RELAY_CODEX_SOCKET", &socket_path)
+    .output()
+    .unwrap();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr)
+            .contains("no user record has the supplied first and last six words"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+    );
+
+    let selected = relay(&path).output().unwrap();
+    assert!(selected.status.success());
+    assert!(String::from_utf8(selected.stdout).unwrap().ends_with(BODY));
 }
 
 #[test]

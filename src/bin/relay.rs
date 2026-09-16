@@ -830,25 +830,37 @@ fn is_cluster_relay_record(value: &Value) -> bool {
         }
         _ => None,
     };
-    let Some(parts) = content.and_then(Value::as_array) else {
+    let Some(text_parts) = content_text_parts(content) else {
         return false;
     };
-    let text_parts = parts
-        .iter()
-        .filter(|part| {
-            matches!(
-                part.get("type").and_then(Value::as_str),
-                Some("input_text" | "text")
-            )
-        })
-        .filter_map(|part| part.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>();
+    if text_parts.iter().any(|part| is_relay_or_peer_text(part)) {
+        return true;
+    }
     match text_parts.as_slice() {
         [header, body, ..] => !body.is_empty() && is_emitted_relay_header(header),
         [combined] => combined
             .split_once("\n\n")
             .is_some_and(|(header, body)| !body.is_empty() && is_emitted_relay_header(header)),
         _ => false,
+    }
+}
+
+fn content_text_parts(content: Option<&Value>) -> Option<Vec<&str>> {
+    match content? {
+        Value::String(text) => Some(vec![text]),
+        Value::Array(parts) => Some(
+            parts
+                .iter()
+                .filter(|part| {
+                    matches!(
+                        part.get("type").and_then(Value::as_str),
+                        Some("input_text" | "text")
+                    )
+                })
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .collect(),
+        ),
+        _ => None,
     }
 }
 
@@ -863,7 +875,45 @@ fn is_emitted_relay_header(header: &str) -> bool {
 fn is_relay_or_peer_text(text: &str) -> bool {
     (text.starts_with("<cross-session-message") && text.contains("</cross-session-message>"))
         || text.starts_with("Another Claude session sent a message:")
-        || text.starts_with("[PEER ")
+        || ["[RELAY ", "[PEER ", "[WAKE ", "[SYSTEM "]
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
+        || is_prompt_relay_provenance_envelope(text)
+}
+
+/// `tools/prompt-relay` prepends this JSON envelope and a blank line before it
+/// writes the source words into a recipient transcript. Require the complete
+/// leading envelope rather than treating ordinary discussion of provenance as
+/// a relay marker.
+fn is_prompt_relay_provenance_envelope(text: &str) -> bool {
+    let Some((header, body)) = text.split_once("\n\n") else {
+        return false;
+    };
+    if body.is_empty() {
+        return false;
+    }
+    let Ok(header) = serde_json::from_str::<Value>(header) else {
+        return false;
+    };
+    let Some(provenance) = header.get("provenance").and_then(Value::as_object) else {
+        return false;
+    };
+    [
+        "source_path",
+        "source_format",
+        "source_message_id",
+        "source_timestamp",
+    ]
+    .iter()
+    .all(|key| {
+        provenance
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+    }) && provenance
+        .get("sha256_utf8")
+        .and_then(Value::as_str)
+        .is_some_and(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
 }
 
 fn first_six(body: &str) -> String {
@@ -976,6 +1026,37 @@ mod tests {
         assert_eq!(
             user_body(&user),
             Some("Relay is the topic of this ordinary human message".to_owned())
+        );
+    }
+
+    #[test]
+    fn prompt_relay_json_provenance_envelope_is_excluded_for_string_and_text_parts() {
+        let envelope = "{\"provenance\":{\"source_path\":\"/tmp/source.jsonl\",\"source_format\":\"codex\",\"source_message_id\":\"msg-1\",\"source_timestamp\":\"2026-09-16T00:00:00Z\",\"sha256_utf8\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}\n\nliving words";
+        let string_record = serde_json::json!({
+            "type": "user",
+            "message": { "content": envelope }
+        });
+        let text_part_record = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "text", "text": envelope }]
+            }
+        });
+        assert_eq!(user_body(&string_record), None);
+        assert_eq!(user_body(&text_part_record), None);
+    }
+
+    #[test]
+    fn ordinary_json_discussion_without_a_complete_provenance_envelope_is_not_excluded() {
+        let user = serde_json::json!({
+            "type": "user",
+            "message": { "content": "{\"provenance\":{\"source_message_id\":\"msg-1\"}}\n\nThis is ordinary discussion." }
+        });
+        assert_eq!(
+            user_body(&user),
+            Some("{\"provenance\":{\"source_message_id\":\"msg-1\"}}\n\nThis is ordinary discussion.".to_owned())
         );
     }
 

@@ -208,6 +208,9 @@
               cargoTestExtraArgs = "--bin relay tests::consolidated_codex_rollout_relay_record_is_excluded_as_one_record -- --exact";
             }
           );
+          message-relay-prompt-relay-provenance-loop-exclusion =
+            context.cargoTestFile "relay_process"
+              "prompt_relay_provenance_record_is_refused_without_socket_write_and_neighbor_is_selectable";
           message-relay-cross-session-envelope-exclusion = context.craneLib.cargoTest (
             context.commonArgs
             // {
