@@ -1,6 +1,9 @@
-use std::time::Duration;
+use std::{
+    process::{Child, Command, Stdio},
+    time::Duration,
+};
 
-use message::{Configuration, MessageDaemon, client::MessageSocket};
+use message::{Configuration, client::MessageSocket};
 use signal_message::{
     FlowDeliveryRequest, FlowIdleAnnouncement, MessageDaemonConfiguration, OwnerIdentity,
     PromptInterpretationSelection, PromptVariant, Query, Response, TypedPromptEnvelope,
@@ -39,9 +42,35 @@ fn wait_for(path: &std::path::Path) {
     panic!("socket did not appear within the bound: {}", path.display());
 }
 
+/// Daemons discover provisional flow markers relative to HOME. Process tests
+/// therefore receive a disposable HOME and never create markers in the
+/// calling user's flow lanes.
+struct DaemonChild(Child);
+
+impl Drop for DaemonChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn launch_daemon(configuration_path: &std::path::Path, home: &std::path::Path) -> DaemonChild {
+    DaemonChild(
+        Command::new(env!("CARGO_BIN_EXE_message-daemon"))
+            .arg(configuration_path)
+            .env("HOME", home)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    )
+}
+
 #[test]
 fn daemon_executes_both_producer_owned_contracts() {
     let directory = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
     let contract = contract(directory.path());
     let configuration = Configuration::new(
         contract.clone(),
@@ -54,12 +83,7 @@ fn daemon_executes_both_producer_owned_contracts() {
         .write_binary_file(&configuration_path)
         .unwrap();
 
-    std::thread::spawn(move || {
-        MessageDaemon::from_configuration_path(&configuration_path)
-            .unwrap()
-            .run()
-            .unwrap();
-    });
+    let _daemon = launch_daemon(&configuration_path, home.path());
     wait_for(configuration.socket_path());
     wait_for(configuration.meta_socket_path());
 
@@ -76,8 +100,9 @@ fn daemon_executes_both_producer_owned_contracts() {
 #[test]
 fn isolated_nexus_socket_parks_then_drains_on_a_typed_flow_idle_witness() {
     let directory = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
     let flow = format!("socket-fixture-{}", std::process::id());
-    let lanes = std::env::home_dir().unwrap().join("primary/flows");
+    let lanes = home.path().join("primary/flows");
     std::fs::create_dir_all(&lanes).unwrap();
     let marker = lanes.join(format!(".{flow}.flow-id"));
     std::fs::write(&marker, "fixture flow marker\n").unwrap();
@@ -93,12 +118,7 @@ fn isolated_nexus_socket_parks_then_drains_on_a_typed_flow_idle_witness() {
     configuration
         .write_binary_file(&configuration_path)
         .unwrap();
-    std::thread::spawn(move || {
-        MessageDaemon::from_configuration_path(&configuration_path)
-            .unwrap()
-            .run()
-            .unwrap();
-    });
+    let _daemon = launch_daemon(&configuration_path, home.path());
     wait_for(configuration.socket_path());
     let client = MessageSocket::from_path(configuration.socket_path()).client();
     let queued = client
