@@ -36,10 +36,13 @@ pub use delivery::{DeliveryDisposition, DeliveryRunner, ParkPolicy, ParkReason};
 pub use engine::MessageEngine;
 pub use error::{Error, Result};
 pub use extraction::{
-    EligibleRecord, ExtractedPrompt, ExtractionError, JsonlTranscript, PromptExtraction,
-    PromptExtractor, SourceReference, TranscriptSource,
+    EligibleRecord, ExtractedPrompt, Extracting, ExtractionError, JsonlTranscript,
+    PromptExtraction, SourceReference, TranscriptSource,
 };
-pub use flow_delivery::{FlowDeliveryOutbox, ParkOutcome, ParkedDeliveryKey};
+pub use flow_delivery::{
+    ArrivalOrdinal, FlowDeliveryOutbox, FlowDestination, LandedDelivery, Landing, ParkAttempt,
+    ParkedDelivery, ParkedDeliveryKey,
+};
 pub use flow_registry::{FlowMarkerIndex, ResolvedFlow};
 pub use meta::{MetaMessageClient, MetaMessageEndpoint, MetaMessageFrameCodec};
 pub use meta::{MetaMessageCommand, MetaMessageCommandEnvironment};

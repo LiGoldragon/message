@@ -16,7 +16,7 @@ use crate::{
     config::Configuration,
     delivery::DeliveryRunner,
     error::Error,
-    flow_delivery::FlowDeliveryOutbox,
+    flow_delivery::{FlowDeliveryOutbox, ParkAttempt},
     flow_registry::FlowMarkerIndex,
     provenance::{OriginPolicy, SenderResolver},
     runtime_model::{AgentRegistryCommand, LedgerDraft, StoreQuery, StoreWrite},
@@ -114,7 +114,12 @@ impl MessageEngine {
             return Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::UnknownFlow);
         }
         match FlowDeliveryOutbox::new(&self.tables).park(&request, origin) {
-            Ok((acknowledgment, _)) => Response::DeliveryQueued(acknowledgment),
+            Ok(
+                ParkAttempt::Parked(acknowledgment) | ParkAttempt::AlreadyParked(acknowledgment),
+            ) => Response::DeliveryQueued(acknowledgment),
+            Ok(ParkAttempt::Conflicting) => {
+                Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::ConflictingEnvelope)
+            }
             Err(_) => Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::StoreRejected),
         }
     }
@@ -131,10 +136,18 @@ impl MessageEngine {
     /// A flow announces that its turn went idle: every delivery parked for it
     /// lands, one `DeliveryLanded` receipt each.
     ///
+    /// Every receipt is built before any row is retracted, and the whole
+    /// landing is retracted in one commit: a flow's idle announce either
+    /// lands everything parked for it or lands nothing at all. Two announces
+    /// racing for one flow cannot double-deliver, and neither can lose a row.
+    ///
     /// SEAM: Flow will publish turn-idleness by subscription; interim: an
     /// explicit idle-announce op / manual prime. The PTY leg that would type
     /// the text at a live harness session is deliberately absent — landing
     /// here means the parked delivery left the store and its receipt exists.
+    /// `DeliveryLanded` still reaches no client: the ordinary wire carries
+    /// one reply per connection, so the landing half needs a subscription
+    /// design that is primary's to make.
     pub fn announce_flow_idle(
         &mut self,
         target_flow_name: &TargetFlowName,

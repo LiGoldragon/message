@@ -5,11 +5,17 @@
 //! Ports `tools/prompt-relay`'s proven design — WITNESSED,
 //! `flows/57a7aa/reports/messageRelayNexusPocs.md` §4 — into pure Rust: its
 //! `select()` locates the one durable record whose id matches (a repeat or
-//! zero matches is a refusal, never a silent guess) and its `payload()`
-//! carries a hash of the exact bytes alongside the text, never a
-//! re-derivation of it. Ruled fork (a), `flows/57a7aa/log.md`: the *design*
+//! zero matches is a refusal, never a silent guess). Ruled fork (a), `flows/57a7aa/log.md`: the *design*
 //! folds in, not the retired Node script — this module owns no JavaScript
 //! and no Python.
+//!
+//! The ported design also carried a sha256 of the exact bytes beside the
+//! text. This module does not: `TypedPromptEnvelope` has no field for it, and
+//! giving it one would change the archived layout of the relay family the
+//! park stores envelopes in — a store-schema move this prototype does not
+//! own. So the bytes are carried once, never re-derived, and their
+//! provenance is out of band. Carrying the sha on the wire is primary's to
+//! design, together with the schema move that pays for it.
 //!
 //! Only records the source format marks `origin.kind == "human"` are
 //! eligible, mirroring the anti-loop discipline of the retired script: a
@@ -17,7 +23,6 @@
 
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
 use signal_message::{
     FlowDeliveryRequest, PromptInterpretationSelection, PromptVariant, Query,
     SourceEventIdentifier, TargetFlowName, TypedPromptEnvelope,
@@ -57,13 +62,11 @@ impl SourceReference {
     }
 }
 
-/// The result of one extraction: the envelope ready for `FlowDeliveryRequest`,
-/// plus the sha256 of its exact bytes — carried, per the ported design, never
-/// re-derived downstream.
+/// The result of one extraction: the envelope ready for
+/// `FlowDeliveryRequest`, carrying the located record's exact bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtractedPrompt {
     pub typed_prompt_envelope: TypedPromptEnvelope,
-    pub source_sha256_hex: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -103,7 +106,7 @@ impl PromptExtraction {
         let reference =
             SourceReference::new(self.source_transcript_path, self.source_event_identifier);
         let source = JsonlTranscript::open(reference.source_transcript_path.clone());
-        let extracted = PromptExtractor::extract(&reference, &source)?;
+        let extracted = reference.extract(&source)?;
         Ok(Query::FlowDeliver(FlowDeliveryRequest {
             typed_prompt_envelope: extracted.typed_prompt_envelope,
             target_flow_name: self.target_flow_name,
@@ -111,16 +114,20 @@ impl PromptExtraction {
     }
 }
 
-/// The extraction call itself: one source reference resolved against one
-/// transcript source, exactly as `select()` did — a durable record located by
-/// id, never by re-derivation of its text.
-pub struct PromptExtractor;
+/// Resolving one source reference against one transcript source, exactly as
+/// `select()` did — a durable record located by id, never by re-derivation of
+/// its text.
+///
+/// The verb lives on the reference because the reference IS the address being
+/// resolved; the zero-sized `PromptExtractor` it replaces was a namespace
+/// pretending to be a thing.
+pub trait Extracting {
+    fn extract(&self, source: &impl TranscriptSource) -> Result<ExtractedPrompt, ExtractionError>;
+}
 
-impl PromptExtractor {
-    pub fn extract(
-        reference: &SourceReference,
-        source: &impl TranscriptSource,
-    ) -> Result<ExtractedPrompt, ExtractionError> {
+impl Extracting for SourceReference {
+    fn extract(&self, source: &impl TranscriptSource) -> Result<ExtractedPrompt, ExtractionError> {
+        let reference = self;
         let mut matches = source
             .eligible_records()?
             .into_iter()
@@ -135,7 +142,6 @@ impl PromptExtractor {
                 2 + remaining,
             ));
         }
-        let source_sha256_hex = hex_sha256(first.raw_prompt_text.as_bytes());
         Ok(ExtractedPrompt {
             typed_prompt_envelope: TypedPromptEnvelope {
                 prompt_variant: PromptVariant::HumanPrompt,
@@ -143,14 +149,8 @@ impl PromptExtractor {
                 raw_prompt_text: first.raw_prompt_text,
                 prompt_interpretation_selection: PromptInterpretationSelection::None,
             },
-            source_sha256_hex,
         })
     }
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// One line of a Claude-style session transcript: JSON Lines, one record per
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn a_known_human_record_is_extracted_with_its_exact_bytes_and_sha() {
+    fn a_known_human_record_is_extracted_with_its_exact_bytes() {
         let directory = tempfile::tempdir().unwrap();
         let path = fixture(
             directory.path(),
@@ -293,7 +293,7 @@ mod tests {
         );
         let source = JsonlTranscript::open(&path);
         let reference = SourceReference::new(&path, "src-1");
-        let extracted = PromptExtractor::extract(&reference, &source).unwrap();
+        let extracted = reference.extract(&source).unwrap();
         assert_eq!(
             extracted.typed_prompt_envelope.raw_prompt_text,
             "deliver this exact text"
@@ -305,10 +305,6 @@ mod tests {
         assert_eq!(
             extracted.typed_prompt_envelope.prompt_variant,
             PromptVariant::HumanPrompt
-        );
-        assert_eq!(
-            extracted.source_sha256_hex,
-            hex_sha256("deliver this exact text".as_bytes())
         );
     }
 
@@ -324,7 +320,7 @@ mod tests {
         let source = JsonlTranscript::open(&path);
         let reference = SourceReference::new(&path, "src-2");
         assert_eq!(
-            PromptExtractor::extract(&reference, &source),
+            reference.extract(&source),
             Err(ExtractionError::Unknown("src-2".to_owned()))
         );
     }
@@ -341,7 +337,7 @@ mod tests {
         let source = JsonlTranscript::open(&path);
         let reference = SourceReference::new(&path, "no-such-id");
         assert_eq!(
-            PromptExtractor::extract(&reference, &source),
+            reference.extract(&source),
             Err(ExtractionError::Unknown("no-such-id".to_owned()))
         );
     }
@@ -359,7 +355,7 @@ mod tests {
         let source = JsonlTranscript::open(&path);
         let reference = SourceReference::new(&path, "dup");
         assert_eq!(
-            PromptExtractor::extract(&reference, &source),
+            reference.extract(&source),
             Err(ExtractionError::Ambiguous("dup".to_owned(), 2))
         );
     }
@@ -375,7 +371,7 @@ mod tests {
         );
         let source = JsonlTranscript::open(&path);
         let reference = SourceReference::new(&path, "src-3");
-        let extracted = PromptExtractor::extract(&reference, &source).unwrap();
+        let extracted = reference.extract(&source).unwrap();
         assert_eq!(
             extracted.typed_prompt_envelope.raw_prompt_text,
             "part one part two"

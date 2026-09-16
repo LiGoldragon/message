@@ -171,11 +171,7 @@ fn key(input: &RelayInput) -> String {
     key_parts(&input.destination, &input.envelope.source_event_identifier)
 }
 fn key_parts(destination: &str, source_event_identifier: &str) -> String {
-    format!(
-        "{}:{destination}{}:{source_event_identifier}",
-        destination.len(),
-        source_event_identifier.len()
-    )
+    RelayRecord::key_for(destination, source_event_identifier)
 }
 fn storage(error: impl std::fmt::Display) -> RelayError {
     RelayError::Storage(error.to_string())

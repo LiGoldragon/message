@@ -22,8 +22,8 @@
 //! migrations alone.
 
 use sema_engine::{
-    Engine, EngineOpen, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan, RecordKey,
-    Retraction, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
+    CommitRequest, Engine, EngineOpen, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan,
+    RecordKey, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
     VersionedStoreName, VersioningPolicy,
 };
 
@@ -236,11 +236,16 @@ impl MessengerTables {
         Ok(())
     }
 
-    /// Drop one relay row entirely — the flow-delivery drain's dequeue: a
-    /// landed delivery leaves the park rather than lingering in a state.
-    pub(crate) fn retract_relay_record(&self, key: &str) -> Result<()> {
-        self.engine
-            .retract::<RelayRecord>(Retraction::new(self.prompt_relay, RecordKey::new(key)))?;
+    /// Drop several relay rows as ONE act — the flow-delivery drain's whole
+    /// landing. A commit refuses before it writes anything if any key is
+    /// already gone, so a landing is all-or-nothing: no partial drain can
+    /// destroy some rows and lose the receipts for the rest.
+    pub(crate) fn retract_relay_records(&self, keys: &[String]) -> Result<()> {
+        let request = keys.iter().fold(
+            CommitRequest::<RelayRecord>::new(self.prompt_relay),
+            |request, key| request.retract(RecordKey::new(key)),
+        );
+        self.engine.commit(request)?;
         Ok(())
     }
 

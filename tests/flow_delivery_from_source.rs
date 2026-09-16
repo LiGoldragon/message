@@ -3,8 +3,8 @@
 //! through the engine to `DeliveryQueued` with the fixture's exact bytes.
 
 use message::{
-    FlowMarkerIndex, JsonlTranscript, MessageEngine, MessengerTables, OriginPolicy,
-    PromptExtraction, PromptExtractor, SourceReference,
+    Extracting, FlowMarkerIndex, JsonlTranscript, MessageEngine, MessengerTables, OriginPolicy,
+    PromptExtraction, SourceReference,
 };
 use signal_message::{DeliveryQueueState, Query, Response};
 use triad_runtime::{ConnectionContext, UnixCredentials};
@@ -128,7 +128,7 @@ fn the_datom_text_a_caller_gets_is_the_exact_flow_deliver_query() {
 
     let source = JsonlTranscript::open(&fixture.transcript_path);
     let reference = SourceReference::new(&fixture.transcript_path, SOURCE_EVENT_IDENTIFIER);
-    let extracted = PromptExtractor::extract(&reference, &source).unwrap();
+    let extracted = reference.extract(&source).unwrap();
     assert_eq!(
         extracted.typed_prompt_envelope.raw_prompt_text,
         FIXTURE_RAW_TEXT

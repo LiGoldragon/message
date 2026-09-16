@@ -4,9 +4,12 @@
 //! this prototype; "landed" here means the parked envelope left the store and
 //! its compact receipt exists.
 
-use message::{FlowMarkerIndex, MessageEngine, MessengerTables, OriginPolicy, ParkedDeliveryKey};
+use message::{
+    FlowDeliveryOutbox, FlowMarkerIndex, Landing, MessageEngine, MessengerTables, OriginPolicy,
+    ParkedDeliveryKey,
+};
 use signal_message::{
-    DeliveryQueueState, FlowDeliveryRejectionReason, FlowDeliveryRequest,
+    CompactReceipt, DeliveryQueueState, FlowDeliveryRejectionReason, FlowDeliveryRequest,
     PromptInterpretationSelection, PromptVariant, Query, Response, TypedPromptEnvelope,
 };
 use triad_runtime::{ConnectionContext, UnixCredentials};
@@ -15,6 +18,10 @@ const KNOWN_FLOW: &str = "57a7aa";
 /// Multibyte on purpose: a byte count is a byte count, never a character
 /// count, and a re-encode would show up here first.
 const RAW_TEXT: &str = "señal — deliver this exact text ✓";
+/// Counted by hand — 6 (señal) + 1 + 3 (—) + 1 + 23 + 1 + 3 (✓) — not by
+/// `str::len`: the production path measures the same
+/// way, so deriving the expectation there would confirm nothing.
+const RAW_TEXT_BYTES: i64 = 38;
 
 struct Fixture {
     _directory: tempfile::TempDir,
@@ -44,8 +51,12 @@ impl Fixture {
     }
 
     fn deliver(&mut self, target_flow_name: &str, raw: &str) -> Response {
+        self.deliver_from("source-event-1", target_flow_name, raw)
+    }
+
+    fn deliver_from(&mut self, source: &str, target_flow_name: &str, raw: &str) -> Response {
         let query = Query::FlowDeliver(FlowDeliveryRequest {
-            typed_prompt_envelope: envelope(raw),
+            typed_prompt_envelope: envelope_from(source, raw),
             target_flow_name: target_flow_name.to_owned(),
         });
         runtime()
@@ -66,6 +77,28 @@ impl Fixture {
     }
 }
 
+/// The park read straight over its own store, with no wire in between: these
+/// are the outbox's own properties, not the daemon's.
+struct StoreFixture {
+    _directory: tempfile::TempDir,
+    tables: MessengerTables,
+}
+
+impl StoreFixture {
+    fn open() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let tables = MessengerTables::open(&directory.path().join("messenger.sema")).unwrap();
+        Self {
+            _directory: directory,
+            tables,
+        }
+    }
+
+    fn outbox(&self) -> FlowDeliveryOutbox<'_> {
+        FlowDeliveryOutbox::new(&self.tables)
+    }
+}
+
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().unwrap()
 }
@@ -74,13 +107,23 @@ fn connection() -> ConnectionContext {
     ConnectionContext::from(UnixCredentials::new(1000, 1000, std::process::id() as i32))
 }
 
-fn envelope(raw: &str) -> TypedPromptEnvelope {
+fn envelope_from(source: &str, raw: &str) -> TypedPromptEnvelope {
     TypedPromptEnvelope {
         prompt_variant: PromptVariant::HumanPrompt,
-        source_event_identifier: "source-event-1".to_owned(),
+        source_event_identifier: source.to_owned(),
         raw_prompt_text: raw.to_owned(),
         prompt_interpretation_selection: PromptInterpretationSelection::None,
     }
+}
+
+fn receipts(landed: &[Response]) -> Vec<CompactReceipt> {
+    landed
+        .iter()
+        .map(|response| match response {
+            Response::DeliveryLanded(receipt) => receipt.clone(),
+            other => panic!("unexpected reply: {other:?}"),
+        })
+        .collect()
 }
 
 #[test]
@@ -106,7 +149,7 @@ fn a_repeated_source_event_is_one_parked_delivery_not_two() {
     let first = fixture.deliver(KNOWN_FLOW, RAW_TEXT);
     let second = fixture.deliver(KNOWN_FLOW, RAW_TEXT);
     assert!(matches!(first, Response::DeliveryQueued(_)));
-    assert_eq!(format!("{first:?}"), format!("{second:?}"));
+    assert_eq!(first, second);
     assert_eq!(fixture.parked(KNOWN_FLOW).len(), 1);
 }
 
@@ -129,7 +172,7 @@ fn an_idle_announce_lands_the_parked_delivery_with_a_compact_receipt() {
     match &landed[0] {
         Response::DeliveryLanded(receipt) => {
             assert_eq!(receipt.source_event_identifier, "source-event-1");
-            assert_eq!(receipt.byte_count, RAW_TEXT.len() as i64);
+            assert_eq!(receipt.byte_count, RAW_TEXT_BYTES);
             assert!(receipt.landed_at > 0);
         }
         other => panic!("unexpected reply: {other:?}"),
@@ -157,7 +200,129 @@ fn the_parked_text_is_the_submitted_bytes_never_a_re_encoding() {
 
 #[test]
 fn the_park_key_separates_flows_and_source_events() {
-    let one = ParkedDeliveryKey::new("57a7aa".to_owned(), "a:b".to_owned());
-    let other = ParkedDeliveryKey::new("57a7aa:a".to_owned(), "b".to_owned());
+    let one = ParkedDeliveryKey::new("57a7aa".to_owned(), 0, "a:b".to_owned());
+    let other = ParkedDeliveryKey::new("57a7aa:a".to_owned(), 0, "b".to_owned());
     assert_ne!(one.record_key(), other.record_key());
+}
+
+/// Two deliveries for one flow land in the order the living sent them.
+///
+/// The identifiers are chosen so that alphabetical order is the REVERSE of
+/// arrival order: real source identifiers are Claude record uuids, the store
+/// iterates a family in record-key order, and nothing else in the row records
+/// when it arrived.
+#[test]
+fn two_deliveries_for_one_flow_land_oldest_arrival_first() {
+    const FIRST: &str = "f81e0c58-0000-0000-0000-000000000001";
+    const SECOND: &str = "0a3c0db4-0000-0000-0000-000000000002";
+    let mut fixture = Fixture::open();
+    fixture.deliver_from(FIRST, KNOWN_FLOW, "first, read the plan");
+    fixture.deliver_from(SECOND, KNOWN_FLOW, "now apply it");
+
+    assert_eq!(
+        fixture
+            .parked(KNOWN_FLOW)
+            .iter()
+            .map(|envelope| envelope.raw_prompt_text.clone())
+            .collect::<Vec<_>>(),
+        vec!["first, read the plan", "now apply it"]
+    );
+    let landed = fixture.announce_idle(KNOWN_FLOW);
+    assert_eq!(
+        receipts(&landed)
+            .iter()
+            .map(|receipt| receipt.source_event_identifier.clone())
+            .collect::<Vec<_>>(),
+        vec![FIRST, SECOND]
+    );
+}
+
+/// The same source identifier carrying DIFFERENT words is a conflict, never a
+/// silent drop behind a `DeliveryQueued`.
+#[test]
+fn the_same_source_event_with_different_text_is_refused_and_the_parked_text_stands() {
+    let mut fixture = Fixture::open();
+    assert!(matches!(
+        fixture.deliver(KNOWN_FLOW, RAW_TEXT),
+        Response::DeliveryQueued(_)
+    ));
+    assert_eq!(
+        fixture.deliver(KNOWN_FLOW, "entirely different words"),
+        Response::FlowDeliveryRejected(FlowDeliveryRejectionReason::ConflictingEnvelope)
+    );
+    let parked = fixture.parked(KNOWN_FLOW);
+    assert_eq!(parked.len(), 1);
+    assert_eq!(parked[0].raw_prompt_text, RAW_TEXT);
+}
+
+/// A landing whose rows are no longer all there must land NOTHING: it may
+/// not retract the rows it can still reach, and it may not answer with a
+/// receipt for words it did not deliver.
+///
+/// This is the concurrent drain made deterministic. `landing` is the read
+/// half and `land` the commit half, so a stale landing is exactly what the
+/// loser of a race holds: it was read when both rows were parked, and by the
+/// time it commits the winner has taken the second one. A retract-then-
+/// receipt loop would destroy the FIRST row here and drop its receipt on the
+/// floor — the living's words gone with no record that they ever arrived.
+#[test]
+fn a_landing_whose_rows_are_no_longer_all_parked_lands_nothing_and_loses_nothing() {
+    let fixture = StoreFixture::open();
+    let outbox = fixture.outbox();
+    let flow = KNOWN_FLOW.to_owned();
+    for (source, text) in [("event-a", "first words"), ("event-b", "second words")] {
+        outbox
+            .park(&request(&flow, source, text), origin())
+            .expect("park");
+    }
+
+    let stale = outbox.landing(&flow).expect("read the landing");
+    assert_eq!(stale.landed_deliveries.len(), 2);
+
+    // The winner of the race takes only the second row.
+    let won = Landing {
+        target_flow_name: flow.clone(),
+        landed_deliveries: vec![stale.landed_deliveries[1].clone()],
+    };
+    assert_eq!(outbox.land(won).expect("winning landing").len(), 1);
+
+    let refused = outbox.land(stale);
+    assert!(refused.is_err(), "a stale landing must not land");
+    assert_eq!(
+        outbox
+            .parked(&flow)
+            .expect("park survives")
+            .iter()
+            .map(|envelope| envelope.raw_prompt_text.clone())
+            .collect::<Vec<_>>(),
+        vec!["first words"]
+    );
+}
+
+/// Two drains of one flow deliver each parked row exactly once between them.
+#[test]
+fn a_second_drain_of_one_flow_neither_double_delivers_nor_loses_a_row() {
+    let fixture = StoreFixture::open();
+    let outbox = fixture.outbox();
+    let flow = KNOWN_FLOW.to_owned();
+    outbox
+        .park(&request(&flow, "event-a", "only words"), origin())
+        .expect("park");
+
+    let first = outbox.drain(&flow).expect("first drain");
+    let second = outbox.drain(&flow).expect("second drain");
+    assert_eq!(first.len(), 1);
+    assert!(second.is_empty());
+    assert!(outbox.parked(&flow).expect("park read").is_empty());
+}
+
+fn request(flow: &str, source: &str, text: &str) -> FlowDeliveryRequest {
+    FlowDeliveryRequest {
+        typed_prompt_envelope: envelope_from(source, text),
+        target_flow_name: flow.to_owned(),
+    }
+}
+
+fn origin() -> signal_message::MessageOrigin {
+    signal_message::MessageOrigin::External(signal_message::ConnectionClass::Owner)
 }

@@ -20,6 +20,31 @@ pub(crate) struct RelayRecord {
     pub state: DeliveryState,
 }
 
+impl RelayRecord {
+    /// The durable address of a relay row: destination and source event, each
+    /// length-prefixed so that no pair of values can spell another pair's
+    /// key. Both populations of this family — the prompt relay and the flow
+    /// park — address rows by this one spelling, written once.
+    pub(crate) fn key_for(destination: &str, source_event_identifier: &str) -> String {
+        format!(
+            "{}:{destination}{}:{source_event_identifier}",
+            destination.len(),
+            source_event_identifier.len()
+        )
+    }
+}
+
+/// Identity is trait-borne: a relay row knows its own address, so a commit
+/// never depends on a caller re-spelling it.
+impl sema_engine::EngineRecord for RelayRecord {
+    fn record_key(&self) -> sema_engine::RecordKey {
+        sema_engine::RecordKey::new(Self::key_for(
+            &self.destination,
+            &self.envelope.source_event_identifier,
+        ))
+    }
+}
+
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SenderName(String);
 
