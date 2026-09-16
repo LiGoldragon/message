@@ -201,6 +201,13 @@
           message-relay-flow-route-fanout-fixture =
             context.cargoTestFile "relay_process"
               "flow_route_fixture_fans_out_to_each_codex_target_excludes_source_and_keeps_unavailable_outcome";
+          message-relay-codex-rollout-loop-exclusion = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--bin relay consolidated_codex_rollout_relay_record_is_excluded_as_one_record -- --exact";
+            }
+          );
           message-relay-ambiguous-and-mismatched-context-refuse =
             context.cargoTestFile "relay_process"
               "ambiguous_or_mismatched_context_source_is_refused_before_delivery";
