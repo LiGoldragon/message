@@ -168,7 +168,10 @@ fn prompt_relay_provenance_record_is_refused_without_socket_write_and_neighbor_i
         "uuid": "611f76ba-f42f-45ba-aefa-4f27369071fc",
         "sessionId": "cf7879-session",
         "timestamp": "2026-09-16T08:14:34.780Z",
-        "message": { "content": "{\"provenance\":{\"source_path\":\"/sanitized/source.jsonl\",\"source_format\":\"codex\",\"source_message_id\":\"msg_01a0a722-4c6b-7da2-ac40-c694a71d565a\",\"source_timestamp\":\"2026-09-15T22:13:57.995Z\",\"sha256_utf8\":\"29ac8517808b35a12a66c760ef7d5eeeaf9aaad6e93b9ae167ea48af9f35b5b6\"}}\n\nrelayed source words must never become a new relay" }
+        "message": { "content": [
+            { "type": "text", "text": "{\"provenance\":{\"source_path\":\"/sanitized/source.jsonl\",\"source_format\":\"codex\",\"source_message_id\":\"msg_01a0a722-4c6b-7da2-ac40-c694a71d565a\",\"source_timestamp\":null,\"sha256_utf8\":\"29ac8517808b35a12a66c760ef7d5eeeaf9aaad6e93b9ae167ea48af9f35b5b6\"}}" },
+            { "type": "text", "text": "relayed source words must never become a new relay" }
+        ] }
     });
     let ordinary = serde_json::json!({
         "type": "user",

@@ -833,7 +833,9 @@ fn is_cluster_relay_record(value: &Value) -> bool {
     let Some(text_parts) = content_text_parts(content) else {
         return false;
     };
-    if text_parts.iter().any(|part| is_relay_or_peer_text(part)) {
+    if text_parts.iter().any(|part| is_relay_or_peer_text(part))
+        || is_prompt_relay_provenance_parts(&text_parts)
+    {
         return true;
     }
     match text_parts.as_slice() {
@@ -873,12 +875,18 @@ fn is_emitted_relay_header(header: &str) -> bool {
 }
 
 fn is_relay_or_peer_text(text: &str) -> bool {
-    (text.starts_with("<cross-session-message") && text.contains("</cross-session-message>"))
-        || text.starts_with("Another Claude session sent a message:")
+    is_closed_cross_session_envelope(text)
         || ["[RELAY ", "[PEER ", "[WAKE ", "[SYSTEM "]
             .iter()
             .any(|prefix| text.starts_with(prefix))
         || is_prompt_relay_provenance_envelope(text)
+}
+
+fn is_closed_cross_session_envelope(text: &str) -> bool {
+    let envelope = text
+        .strip_prefix("Another Claude session sent a message:\n\n")
+        .unwrap_or(text);
+    envelope.starts_with("<cross-session-message") && envelope.contains("</cross-session-message>")
 }
 
 /// `tools/prompt-relay` prepends this JSON envelope and a blank line before it
@@ -889,31 +897,37 @@ fn is_prompt_relay_provenance_envelope(text: &str) -> bool {
     let Some((header, body)) = text.split_once("\n\n") else {
         return false;
     };
-    if body.is_empty() {
-        return false;
-    }
+    !body.is_empty() && is_prompt_relay_provenance_header(header)
+}
+
+fn is_prompt_relay_provenance_parts(parts: &[&str]) -> bool {
+    matches!(parts, [header, body, ..] if !body.is_empty() && is_prompt_relay_provenance_header(header))
+}
+
+fn is_prompt_relay_provenance_header(header: &str) -> bool {
     let Ok(header) = serde_json::from_str::<Value>(header) else {
         return false;
     };
     let Some(provenance) = header.get("provenance").and_then(Value::as_object) else {
         return false;
     };
-    [
-        "source_path",
-        "source_format",
-        "source_message_id",
-        "source_timestamp",
-    ]
-    .iter()
-    .all(|key| {
-        provenance
-            .get(*key)
+    ["source_path", "source_format", "source_message_id"]
+        .iter()
+        .all(|key| {
+            provenance
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty())
+        })
+        && provenance.get("source_timestamp").is_some_and(|timestamp| {
+            timestamp.is_null() || timestamp.as_str().is_some_and(|value| !value.is_empty())
+        })
+        && provenance
+            .get("sha256_utf8")
             .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty())
-    }) && provenance
-        .get("sha256_utf8")
-        .and_then(Value::as_str)
-        .is_some_and(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .is_some_and(|hash| {
+                hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
 }
 
 fn first_six(body: &str) -> String {
@@ -1030,8 +1044,9 @@ mod tests {
     }
 
     #[test]
-    fn prompt_relay_json_provenance_envelope_is_excluded_for_string_and_text_parts() {
-        let envelope = "{\"provenance\":{\"source_path\":\"/tmp/source.jsonl\",\"source_format\":\"codex\",\"source_message_id\":\"msg-1\",\"source_timestamp\":\"2026-09-16T00:00:00Z\",\"sha256_utf8\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}\n\nliving words";
+    fn prompt_relay_json_provenance_envelope_is_excluded_for_combined_and_split_parts() {
+        let header = "{\"provenance\":{\"source_path\":\"/tmp/source.jsonl\",\"source_format\":\"codex\",\"source_message_id\":\"msg-1\",\"source_timestamp\":null,\"sha256_utf8\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}";
+        let envelope = format!("{header}\n\nliving words");
         let string_record = serde_json::json!({
             "type": "user",
             "message": { "content": envelope }
@@ -1041,7 +1056,10 @@ mod tests {
             "payload": {
                 "type": "message",
                 "role": "user",
-                "content": [{ "type": "text", "text": envelope }]
+                "content": [
+                    { "type": "input_text", "text": header },
+                    { "type": "input_text", "text": "living words" }
+                ]
             }
         });
         assert_eq!(user_body(&string_record), None);
@@ -1070,6 +1088,15 @@ mod tests {
         ));
         assert!(!is_relay_or_peer_text(
             "<cross-session-message incomplete human quote"
+        ));
+        assert!(is_relay_or_peer_text(
+            "Another Claude session sent a message:\n\n<cross-session-message source=\"peer\">machine text</cross-session-message>"
+        ));
+        assert!(!is_relay_or_peer_text(
+            "Another Claude session sent a message: ordinary human discussion"
+        ));
+        assert!(!is_relay_or_peer_text(
+            "Another Claude session sent a message:\n\n<cross-session-message incomplete human discussion"
         ));
     }
 

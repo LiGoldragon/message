@@ -2,11 +2,23 @@
 
 Source parent: `c60a8f2556dedc8e4124e49a2b87cfba464f096c`.
 
+Follow-up source parent: `f9078b2310c4fcdf2176592fecbd69d90993fa21`.
+
 The relay source selector now excludes a genuine leading prompt-relay JSON
 provenance envelope in either a plain string or an `input_text`/`text` part.
 The predicate requires all five prompt-relay provenance fields, a nonempty
 body after the blank-line delimiter, and a 64-character hexadecimal UTF-8
 hash. It also recognizes Relay, Peer, Wake, and System control wrappers.
+
+The follow-up accepts the producer's `source_timestamp: null` form and its
+separate Codex `text` header/body parts. The native Claude preamble is now a
+marker only when it is immediately followed by a closed
+`<cross-session-message>` envelope; ordinary and incomplete discussion stay
+selectable.
+
+The completed follow-up reran the same focused remote Nix derivation with
+exit status 0 on `ssh-ng://nix-ssh@prometheus.goldragon.criome`; captured
+errors: none.
 
 Captured local tests:
 
