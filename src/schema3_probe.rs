@@ -35,7 +35,10 @@ pub fn probe(path: &Path) -> Schema3ProbeOutcome {
  let copy=temporary.join("messenger.sema");
  if std::fs::write(&copy,&before).is_err(){let _=std::fs::remove_dir_all(&temporary);return refused(Schema3ProbeRefusal::PrivateCopyUnavailable)};
  #[cfg(unix)] if std::fs::set_permissions(&copy,std::fs::Permissions::from_mode(0o600)).is_err(){let _=std::fs::remove_dir_all(&temporary);return refused(Schema3ProbeRefusal::PrivateCopyUnavailable)};
- let result=probe_copy(&copy);
+ // redb may panic while validating a malformed archive. It only sees the
+ // private copy; contain that implementation failure as a typed refusal.
+ let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||probe_copy(&copy)))
+     .unwrap_or_else(|_|Err("legacy decoder panic".into()));
  if std::fs::remove_dir_all(&temporary).is_err(){return refused(Schema3ProbeRefusal::PrivateCleanup)};
  let Ok(after)=std::fs::read(path) else{return refused(Schema3ProbeRefusal::SourceChanged)};
  if Sha256::digest(&after)!=digest { return refused(Schema3ProbeRefusal::SourceChanged) }
