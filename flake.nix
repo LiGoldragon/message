@@ -234,8 +234,13 @@
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
           message-schema3-probe-preserves-and-validates-historical-store =
-            context.cargoTestFile "schema3_probe_behavior"
-              "historical_fixture_observes_all_six_families_without_changing_source_bytes";
+            context.craneLib.cargoTest (
+              context.commonArgs
+              // {
+                inherit (context) cargoArtifacts;
+                cargoTestExtraArgs = "--test schema3_probe_behavior";
+              }
+            );
         }
       );
 
