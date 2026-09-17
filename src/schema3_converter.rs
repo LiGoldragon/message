@@ -128,10 +128,8 @@ pub fn convert(source: &Path, destination: &Path) -> Result<(), Schema3Conversio
         // destination another process created after our initial exists check.
         std::fs::hard_link(&temporary, destination)
             .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
-        std::fs::remove_file(&temporary)
-            .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
         // Publication is committed once the create-only hard link succeeds.
-        // The caller supplies a stopped immutable source; a later cross-file
+        // Staging cleanup cannot turn that committed outcome into an error. The caller supplies a stopped immutable source; a later cross-file
         // observation cannot safely roll back a destination another writer may
         // have replaced, so the final integrity check is immediately before it.
         Ok(())
