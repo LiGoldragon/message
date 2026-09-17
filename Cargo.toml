@@ -59,6 +59,7 @@ tokio          = { version = "1", features = ["io-util", "macros", "net", "rt-mu
 triad-runtime  = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "2abec17849fe270755bb04a13d052e1edbb2a7ab" }
 
 [dev-dependencies]
+legacy-message = { package = "message", git = "https://github.com/LiGoldragon/message.git", rev = "38345dae42ac04caad0204ddbb94daf8f92c3367", default-features = false }
 redb = "4.1"
 rustix = { version = "1", features = ["process"] }
 tempfile = "3"

@@ -234,6 +234,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotos"
+version = "0.10.0"
+source = "git+https://github.com/LiGoldragon/dotos.git?rev=80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3#80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3"
+dependencies = [
+ "dotos-derive",
+ "rkyv",
+]
+
+[[package]]
+name = "dotos-derive"
+version = "0.5.0"
+source = "git+https://github.com/LiGoldragon/dotos.git?rev=80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3#80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -480,11 +499,31 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "message"
+version = "0.11.1"
+source = "git+https://github.com/LiGoldragon/message.git?rev=38345dae42ac04caad0204ddbb94daf8f92c3367#38345dae42ac04caad0204ddbb94daf8f92c3367"
+dependencies = [
+ "dotos",
+ "meta-signal-message 0.3.1",
+ "redb",
+ "rkyv",
+ "sema",
+ "sema-engine 0.15.1",
+ "signal-frame",
+ "signal-harness 0.5.1",
+ "signal-message 0.8.1",
+ "thiserror",
+ "tokio",
+ "triad-runtime 0.8.1",
+]
+
+[[package]]
+name = "message"
 version = "0.12.0"
 dependencies = [
  "base64",
  "datom-codec",
- "meta-signal-message",
+ "message 0.11.1",
+ "meta-signal-message 0.6.0",
  "protos 0.30.1",
  "redb",
  "rkyv",
@@ -497,14 +536,32 @@ dependencies = [
  "sha1",
  "sha2",
  "signal",
- "signal-harness",
+ "signal-harness 4.0.0",
  "signal-message 0.8.1",
  "signal-message 3.0.0",
  "tempfile",
  "thiserror",
  "time",
  "tokio",
- "triad-runtime",
+ "triad-runtime 0.9.0",
+]
+
+[[package]]
+name = "meta-signal-message"
+version = "0.3.1"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=96099d5f240cf16235d35a78cde80d384ec28158#96099d5f240cf16235d35a78cde80d384ec28158"
+dependencies = [
+ "core-ethos",
+ "name-table 0.3.0",
+ "rkyv",
+ "rust-logos",
+ "schema-rust",
+ "sema-translator",
+ "signal-frame",
+ "signal-message 0.8.1",
+ "signal-sema-translator",
+ "structural-codec",
+ "thiserror",
 ]
 
 [[package]]
@@ -933,6 +990,7 @@ name = "signal-frame"
 version = "0.3.1"
 source = "git+https://github.com/LiGoldragon/signal-frame.git?rev=8aa0bcaeb29fe9e461a11706a469638d2fd109ac#8aa0bcaeb29fe9e461a11706a469638d2fd109ac"
 dependencies = [
+ "dotos",
  "paste",
  "rkyv",
  "signal-frame-macros",
@@ -951,6 +1009,18 @@ dependencies = [
 
 [[package]]
 name = "signal-harness"
+version = "0.5.1"
+source = "git+https://github.com/LiGoldragon/signal-harness.git?rev=cdfd4e3cd9bba8d8fab3e1d2f65490639db0069c#cdfd4e3cd9bba8d8fab3e1d2f65490639db0069c"
+dependencies = [
+ "dotos",
+ "rkyv",
+ "signal-frame",
+ "signal-persona 0.3.1",
+ "thiserror",
+]
+
+[[package]]
+name = "signal-harness"
 version = "4.0.0"
 source = "git+https://github.com/LiGoldragon/signal-harness.git?rev=17bdd58bebe230548ff278ee394f89bbecc6ce86#17bdd58bebe230548ff278ee394f89bbecc6ce86"
 dependencies = [
@@ -959,7 +1029,7 @@ dependencies = [
  "protos 0.30.1",
  "rkyv",
  "signal",
- "signal-persona",
+ "signal-persona 4.0.0",
 ]
 
 [[package]]
@@ -989,6 +1059,24 @@ dependencies = [
  "protos 0.30.1",
  "rkyv",
  "signal",
+]
+
+[[package]]
+name = "signal-persona"
+version = "0.3.1"
+source = "git+https://github.com/LiGoldragon/signal-persona.git?rev=0baf90c8c7da11330b5e220a2a00665272ad93b3#0baf90c8c7da11330b5e220a2a00665272ad93b3"
+dependencies = [
+ "core-ethos",
+ "dotos",
+ "name-table 0.3.0",
+ "rkyv",
+ "rust-logos",
+ "schema-rust",
+ "sema-translator",
+ "signal-frame",
+ "signal-sema-translator",
+ "structural-codec",
+ "thiserror",
 ]
 
 [[package]]
@@ -1215,6 +1303,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "triad-runtime"
+version = "0.8.1"
+source = "git+https://github.com/LiGoldragon/triad-runtime.git?rev=02cdd49df63a1769b3cf1b2761261a87eeaa75a4#02cdd49df63a1769b3cf1b2761261a87eeaa75a4"
+dependencies = [
+ "kameo",
+ "rkyv",
+ "rustix",
+ "signal-frame",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
