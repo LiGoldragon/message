@@ -241,6 +241,14 @@
                 cargoTestExtraArgs = "--test schema3_probe_behavior";
               }
             );
+          message-schema3-converter-preserves-and-converts-historical-store =
+            context.craneLib.cargoTest (
+              context.commonArgs
+              // {
+                inherit (context) cargoArtifacts;
+                cargoTestExtraArgs = "--test schema3_converter_behavior";
+              }
+            );
         }
       );
 

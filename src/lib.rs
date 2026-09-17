@@ -20,6 +20,7 @@ pub mod provenance;
 pub mod relay;
 pub mod runtime_model;
 pub mod schema3_probe;
+pub mod schema3_converter;
 pub mod store_preserve;
 pub mod tables;
 pub mod text;

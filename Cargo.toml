@@ -52,6 +52,7 @@ redb           = "4.1"
 sema           = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
 sema-engine    = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "516f01fe0b03157efc6cc3d38b588f0ca123ac94" }
 legacy-sema-engine = { package = "sema-engine", git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
+legacy-message = { package = "message", git = "https://github.com/LiGoldragon/message.git", rev = "38345dae42ac04caad0204ddbb94daf8f92c3367", default-features = false }
 serde          = { version = "1", features = ["derive"] }
 serde_json     = "1"
 sha2           = "0.10"
@@ -63,7 +64,6 @@ tokio          = { version = "1", features = ["io-util", "macros", "net", "rt-mu
 triad-runtime  = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "2abec17849fe270755bb04a13d052e1edbb2a7ab" }
 
 [dev-dependencies]
-legacy-message = { package = "message", git = "https://github.com/LiGoldragon/message.git", rev = "38345dae42ac04caad0204ddbb94daf8f92c3367", default-features = false }
 redb = "4.1"
 rustix = { version = "1", features = ["process"] }
 tempfile = "3"

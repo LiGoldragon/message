@@ -807,6 +807,17 @@ impl MessengerTables {
         }
         Ok(())
     }
+
+    pub(crate) fn import_schema3_snapshot(&self, snapshot: crate::schema3_converter::Schema3Snapshot) -> Result<()> {
+        for entry in snapshot.agents { self.engine.assert_keyed(KeyedAssertion::new(self.agent_registry, RecordKey::new(entry.agent_identifier.as_str()), entry))?; }
+        for record in snapshot.ledger { self.engine.assert_keyed(KeyedAssertion::new(self.message_ledger, RecordKey::new(Self::slot_key(record.message_slot).as_str()), record))?; }
+        if let Some(head) = snapshot.head { self.engine.assert_keyed(KeyedAssertion::new(self.ledger_head, RecordKey::new(LEDGER_HEAD_KEY), head))?; }
+        for record in snapshot.inbox { self.engine.assert_keyed(KeyedAssertion::new(self.recipient_inbox, RecordKey::new(record.recipient.as_str()), record))?; }
+        for record in snapshot.threads { self.engine.assert_keyed(KeyedAssertion::new(self.thread_index, RecordKey::new(record.thread_name.as_str()), record))?; }
+        for record in snapshot.outbox { self.engine.assert_keyed(KeyedAssertion::new(self.delivery_outbox, RecordKey::new(record.recipient.as_str()), record))?; }
+        Ok(())
+    }
+
 }
 
 impl ThreadRecord {
