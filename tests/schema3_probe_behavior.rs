@@ -117,14 +117,15 @@ fn absent_path_is_refused_without_creating_a_store_and_repeat_is_consistent() {
 fn cli_emits_typed_observation_and_refusal_outcomes() {
     let directory = tempfile::tempdir().unwrap();
     let store = historical_store(directory.path());
-    let binary = env!("CARGO_BIN_EXE_message-schema3-probe");
+    let binary = std::env::var("CARGO_BIN_EXE_message-schema3-probe")
+        .expect("Cargo supplies the declared schema-3 probe binary");
 
-    let accepted = Command::new(binary).arg(&store).output().unwrap();
+    let accepted = Command::new(&binary).arg(&store).output().unwrap();
     assert!(accepted.status.success());
     assert_eq!(String::from_utf8(accepted.stdout).unwrap(), "Observed.Schema3.{ 1 2 1 1 1 1 }\n");
 
     let absent = directory.path().join("absent.sema");
-    let refused = Command::new(binary).arg(&absent).output().unwrap();
+    let refused = Command::new(&binary).arg(&absent).output().unwrap();
     assert_eq!(refused.status.code(), Some(1));
     assert_eq!(String::from_utf8(refused.stdout).unwrap(), "Refused.Schema3.InputNotRegularFile\n");
 }
