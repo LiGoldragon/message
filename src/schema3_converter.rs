@@ -12,8 +12,8 @@ use legacy_message::runtime_model::{
     LedgerRecord as LegacyLedgerRecord, ThreadRecord as LegacyThreadRecord,
 };
 use legacy_sema_engine::{
-    Engine, EngineOpen, FamilyName, QueryPlan, SchemaHash, SchemaVersion, TableDescriptor,
-    TableName, VersionedStoreName, VersioningPolicy,
+    Engine, EngineOpen, FamilyName, QueryPlan, RecordKey, SchemaHash, SchemaVersion,
+    TableDescriptor, TableName, VersionedStoreName, VersioningPolicy,
 };
 use legacy_signal_message::schema::lib::{z2Vc72 as LegacyAgent, WireShape, WireValue};
 use sha2::{Digest, Sha256};
@@ -130,10 +130,10 @@ pub fn convert(source: &Path, destination: &Path) -> Result<(), Schema3Conversio
             .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
         std::fs::remove_file(&temporary)
             .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
-        if let Err(error) = source_matches(source, &digest) {
-            let _ = std::fs::remove_file(destination);
-            return Err(error);
-        }
+        // Publication is committed once the create-only hard link succeeds.
+        // The caller supplies a stopped immutable source; a later cross-file
+        // observation cannot safely roll back a destination another writer may
+        // have replaced, so the final integrity check is immediately before it.
         Ok(())
     })();
     if write.is_err() {
@@ -175,6 +175,22 @@ fn decode(path: &Path) -> Result<Schema3Snapshot, Schema3ConversionError> {
     let inbox = table!("recipient_inbox", "recipient-inbox", 3, LegacyInboxRecord);
     let thread = table!("thread_index", "thread-index", 3, LegacyThreadRecord);
     let outbox = table!("delivery_outbox", "delivery-outbox", 3, LegacyInboxRecord);
+    // `QueryPlan::all` does not expose regular-table keys.  We validate each
+    // scanned value against the deployed writer's canonical point lookup; a
+    // duplicate embedded identity or a noncanonical/swapped key then refuses.
+    macro_rules! validate_keyed {
+        ($table:expr, $key:expr, $record:expr, $label:literal) => {{
+            let found = engine
+                .match_records(QueryPlan::key($table, RecordKey::new($key)))
+                .map_err(|error| Schema3ConversionError::Decode(error.to_string()))?;
+            if found.records().len() != 1 || found.records().first() != Some(&$record) {
+                return Err(Schema3ConversionError::Decode(format!(
+                    "{} canonical key",
+                    $label
+                )));
+            }
+        }};
+    }
 
     let old_ledger = engine
         .match_records(QueryPlan::all(ledger))
@@ -190,6 +206,17 @@ fn decode(path: &Path) -> Result<Schema3Snapshot, Schema3ConversionError> {
             "duplicate ledger slot".into(),
         ));
     }
+    for record in &old_ledger {
+        validate_keyed!(
+            ledger,
+            format!(
+                "{:020}",
+                integer_u64(record.message_slot.to_wire(), "message slot")?
+            ),
+            record.clone(),
+            "ledger"
+        );
+    }
     let old_heads = engine
         .match_records(QueryPlan::all(head))
         .map_err(|error| Schema3ConversionError::Decode(error.to_string()))?
@@ -199,6 +226,9 @@ fn decode(path: &Path) -> Result<Schema3Snapshot, Schema3ConversionError> {
         return Err(Schema3ConversionError::Decode(
             "multiple ledger heads".into(),
         ));
+    }
+    if let Some(record) = old_heads.first() {
+        validate_keyed!(head, "head", record.clone(), "ledger head");
     }
     if let Some(head) = old_heads.first() {
         let oldest = integer_u64(head.oldest_message_slot.payload().to_wire(), "oldest slot")?;
@@ -227,6 +257,51 @@ fn decode(path: &Path) -> Result<Schema3Snapshot, Schema3ConversionError> {
         .map_err(|error| Schema3ConversionError::Decode(error.to_string()))?
         .records()
         .to_vec();
+    let agents_scanned = engine
+        .match_records(QueryPlan::all(agents))
+        .map_err(|error| Schema3ConversionError::Decode(error.to_string()))?
+        .records()
+        .to_vec();
+    let mut agent_keys = BTreeSet::new();
+    for record in &agents_scanned {
+        let key = record.field_0.payload().clone();
+        if !agent_keys.insert(key.clone()) {
+            return Err(Schema3ConversionError::Decode(
+                "duplicate agent identifier".into(),
+            ));
+        }
+        validate_keyed!(agents, key, record.clone(), "agent registry");
+    }
+    let mut inbox_keys = BTreeSet::new();
+    for record in &old_inbox {
+        let key = record.recipient.payload().clone();
+        if !inbox_keys.insert(key.clone()) {
+            return Err(Schema3ConversionError::Decode(
+                "duplicate inbox recipient".into(),
+            ));
+        }
+        validate_keyed!(inbox, key, record.clone(), "inbox");
+    }
+    let mut outbox_keys = BTreeSet::new();
+    for record in &old_outbox {
+        let key = record.recipient.payload().clone();
+        if !outbox_keys.insert(key.clone()) {
+            return Err(Schema3ConversionError::Decode(
+                "duplicate outbox recipient".into(),
+            ));
+        }
+        validate_keyed!(outbox, key, record.clone(), "outbox");
+    }
+    let mut thread_keys = BTreeSet::new();
+    for record in &old_threads {
+        let key = record.thread_name.payload().clone();
+        if !thread_keys.insert(key.clone()) {
+            return Err(Schema3ConversionError::Decode(
+                "duplicate thread name".into(),
+            ));
+        }
+        validate_keyed!(thread, key, record.clone(), "thread");
+    }
     for row in old_inbox.iter().chain(old_outbox.iter()) {
         if legacy_slots(&row.slots)?
             .iter()
@@ -247,12 +322,8 @@ fn decode(path: &Path) -> Result<Schema3Snapshot, Schema3ConversionError> {
     }
 
     Ok(Schema3Snapshot {
-        agents: engine
-            .match_records(QueryPlan::all(agents))
-            .map_err(|error| Schema3ConversionError::Decode(error.to_string()))?
-            .records()
-            .iter()
-            .cloned()
+        agents: agents_scanned
+            .into_iter()
             .map(map_agent)
             .collect::<Result<_, _>>()?,
         ledger: old_ledger

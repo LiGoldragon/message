@@ -4,8 +4,12 @@
 //! public API. Conversion only ever opens a private copy of that source.
 
 use legacy_message::{
-    runtime_model::{LedgerDraft, SenderName},
+    runtime_model::{InboxRecord as LegacyInboxRecord, LedgerDraft, SenderName},
     MessengerTables as LegacyMessengerTables,
+};
+use legacy_sema_engine::{
+    Engine, EngineOpen, FamilyName, KeyedAssertion, QueryPlan, RecordKey, SchemaHash,
+    SchemaVersion, TableDescriptor, TableName, VersionedStoreName, VersioningPolicy,
 };
 use legacy_signal_message::schema::lib::{
     z2VNPW, z2VNcG, z2VPn2, z2VTJ1, z2VTiK, z2VXMQ, z2VY18, z2VY2v, z2VY3v, z2Vari, z2Vcfd, z2VdsV,
@@ -183,6 +187,48 @@ fn corrupt_source_refuses_without_destination_or_source_mutation() {
     let source = historical_store(directory.path());
     let bytes = fs::read(&source).unwrap();
     fs::write(&source, &bytes[..bytes.len() / 2]).unwrap();
+    let source_before = hash(&source);
+    let destination = directory.path().join("must-not-publish.sema");
+
+    assert!(matches!(
+        convert(&source, &destination),
+        Err(Schema3ConversionError::Decode(_))
+    ));
+    assert_eq!(hash(&source), source_before);
+    assert!(!destination.exists());
+}
+
+#[test]
+fn noncanonical_persisted_key_refuses_without_destination_or_source_mutation() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = historical_store(directory.path());
+    let mut engine = Engine::open(
+        EngineOpen::new(&source, SchemaVersion::new(3))
+            .with_versioning(VersioningPolicy::new(VersionedStoreName::new("messenger"))),
+    )
+    .unwrap();
+    let inbox = engine
+        .register_table::<LegacyInboxRecord>(TableDescriptor::new(
+            TableName::new("recipient_inbox"),
+            FamilyName::new("recipient-inbox"),
+            SchemaHash::for_label("messenger-recipient-inbox-v3"),
+        ))
+        .unwrap();
+    let record = engine
+        .match_records(QueryPlan::all(inbox))
+        .unwrap()
+        .records()
+        .first()
+        .unwrap()
+        .clone();
+    engine
+        .assert_keyed(KeyedAssertion::new(
+            inbox,
+            RecordKey::new("not-recipient"),
+            record,
+        ))
+        .unwrap();
+    drop(engine);
     let source_before = hash(&source);
     let destination = directory.path().join("must-not-publish.sema");
 
