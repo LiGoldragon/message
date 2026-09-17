@@ -13,6 +13,17 @@ use signal_message::{
 };
 
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct NexusDeliveryRecord {
+    pub request_fingerprint: String,
+    pub cluster_message: signal_message::ClusterMessage,
+    pub receipt_kind: signal_message::ReceiptKind,
+    /// Only resolution parks are safe to retry automatically. A harness
+    /// attempt is made non-retryable before crossing the external boundary;
+    /// an ambiguous crash therefore cannot type the same event twice.
+    pub retryable: bool,
+}
+
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub(crate) struct RelayRecord {
     pub destination: String,
     pub origin: MessageOrigin,

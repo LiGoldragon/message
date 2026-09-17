@@ -4,12 +4,14 @@
 //! Each strict `signal-message::Query` is decided directly into one durable
 //! messenger action and one strict `signal-message::Response`.
 
+use sha2::{Digest, Sha256};
 use signal_message::{
-    AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason,
-    FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment, FlowIdleAnnouncement,
-    InboxListingReply, MessageOperationKind, MessageRequestUnimplementedReply,
-    MessageUnimplementedReason, Query, Response, SubmissionRejectionReason, TargetFlowName,
-    ThreadIndexEntries, ThreadRejectionReason,
+    AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason, DeliveryReport,
+    DeliveryRequest, FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment,
+    FlowIdleAnnouncement, InboxListingReply, MessageOperationKind,
+    MessageRequestUnimplementedReply, MessageUnimplementedReason, Query, ReceiptKind,
+    RecipientReceipt, Response, SubmissionRejectionReason, TargetFlowName, ThreadIndexEntries,
+    ThreadRejectionReason,
 };
 use triad_runtime::ConnectionContext;
 
@@ -20,7 +22,9 @@ use crate::{
     flow_delivery::FlowDeliveryOutbox,
     flow_registry::FlowMarkerIndex,
     provenance::{OriginPolicy, SenderResolver},
-    runtime_model::{AgentRegistryCommand, LedgerDraft, StoreQuery, StoreWrite},
+    runtime_model::{
+        AgentRegistryCommand, LedgerDraft, NexusDeliveryRecord, StoreQuery, StoreWrite,
+    },
     tables::MessengerTables,
 };
 
@@ -99,6 +103,138 @@ impl MessageEngine {
                 self.park_flow_delivery(request, origin)
             }
             Query::FlowAnnounceIdle(announcement) => self.announce_idle(announcement),
+            Query::Deliver(request) => self.deliver(request),
+        })
+    }
+
+    fn deliver(&self, request: DeliveryRequest) -> Response {
+        if let Err(detail) = validate_delivery_request(&request) {
+            return Response::Error(detail);
+        }
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(crate::text::write(&request.cluster_message).as_bytes())
+        );
+        let event_key = format!("event\0{}", request.source_event_identifier);
+        match self.tables.nexus_delivery(&event_key) {
+            Ok(Some(record)) if record.request_fingerprint == fingerprint => {}
+            Ok(Some(_)) => {
+                return Response::Error(
+                    "source event identifier conflicts with an existing payload".into(),
+                );
+            }
+            Ok(None) => {
+                if self
+                    .tables
+                    .admit_nexus_delivery(
+                        &event_key,
+                        NexusDeliveryRecord {
+                            request_fingerprint: fingerprint.clone(),
+                            cluster_message: request.cluster_message.clone(),
+                            receipt_kind: ReceiptKind::FileOnly,
+                            retryable: false,
+                        },
+                    )
+                    .is_err()
+                {
+                    return Response::Error("delivery event store rejected identity".into());
+                }
+            }
+            Err(_) => return Response::Error("delivery event store rejected lookup".into()),
+        }
+        let mut recipient_receipts = Vec::with_capacity(request.target_flows.len());
+        for flow_identifier in &request.target_flows {
+            let key = format!("{}\0{}", request.source_event_identifier, flow_identifier);
+            let was_parked = match self.tables.nexus_delivery(&key) {
+                Ok(Some(record))
+                    if record.request_fingerprint == fingerprint
+                        && (record.receipt_kind != ReceiptKind::Parked || !record.retryable) =>
+                {
+                    recipient_receipts.push(RecipientReceipt {
+                        flow_identifier: flow_identifier.clone(),
+                        receipt_kind: record.receipt_kind,
+                    });
+                    continue;
+                }
+                Ok(Some(record)) if record.request_fingerprint == fingerprint => true,
+                Ok(Some(_)) => {
+                    return Response::Error(
+                        "source event identifier conflicts with an existing delivery".into(),
+                    );
+                }
+                Err(_) => return Response::Error("delivery receipt store rejected lookup".into()),
+                Ok(None) => false,
+            };
+            let node = match crate::nexus_delivery::FlowResolver::conventional()
+                .resolve(flow_identifier)
+            {
+                Ok(Some(node)) => node,
+                Ok(None) | Err(_) => {
+                    let receipt_kind = ReceiptKind::Parked;
+                    let record = NexusDeliveryRecord {
+                        request_fingerprint: fingerprint.clone(),
+                        cluster_message: request.cluster_message.clone(),
+                        receipt_kind: receipt_kind.clone(),
+                        retryable: true,
+                    };
+                    let stored = if was_parked {
+                        self.tables.replace_nexus_delivery(&key, record)
+                    } else {
+                        self.tables.admit_nexus_delivery(&key, record)
+                    };
+                    if stored.is_err() {
+                        return Response::Error("delivery receipt store rejected park".into());
+                    }
+                    recipient_receipts.push(RecipientReceipt {
+                        flow_identifier: flow_identifier.clone(),
+                        receipt_kind,
+                    });
+                    continue;
+                }
+            };
+            // Persist a non-retryable in-flight park before crossing the harness
+            // boundary. Only the adapter's positive acknowledgement promotes it
+            // to Accepted. An ambiguous timeout remains Parked and never types
+            // the same source event a second time.
+            let in_flight = NexusDeliveryRecord {
+                request_fingerprint: fingerprint.clone(),
+                cluster_message: request.cluster_message.clone(),
+                receipt_kind: ReceiptKind::Parked,
+                retryable: false,
+            };
+            let stored = if was_parked {
+                self.tables.replace_nexus_delivery(&key, in_flight)
+            } else {
+                self.tables.admit_nexus_delivery(&key, in_flight)
+            };
+            if stored.is_err() {
+                return Response::Error("delivery receipt store rejected acceptance".into());
+            }
+            let receipt_kind = crate::nexus_delivery::deliver(&node, &request.cluster_message)
+                .unwrap_or(ReceiptKind::Parked);
+            if self
+                .tables
+                .replace_nexus_delivery(
+                    &key,
+                    NexusDeliveryRecord {
+                        request_fingerprint: fingerprint.clone(),
+                        cluster_message: request.cluster_message.clone(),
+                        receipt_kind: receipt_kind.clone(),
+                        retryable: false,
+                    },
+                )
+                .is_err()
+            {
+                return Response::Error("delivery acknowledgment could not be persisted".into());
+            }
+            recipient_receipts.push(RecipientReceipt {
+                flow_identifier: flow_identifier.clone(),
+                receipt_kind,
+            });
+        }
+        Response::DeliveryRecorded(DeliveryReport {
+            source_event_identifier: request.source_event_identifier,
+            recipient_receipts,
         })
     }
 
@@ -242,4 +378,39 @@ impl MessageEngine {
     fn error_output(message: impl Into<String>) -> Response {
         Response::Error(message.into())
     }
+}
+
+fn validate_delivery_request(request: &DeliveryRequest) -> Result<(), String> {
+    if request.target_flows.is_empty() {
+        return Err("delivery requires at least one target flow".into());
+    }
+    match &request.cluster_message {
+        signal_message::ClusterMessage::Peer(peer) => {
+            if peer.source_event_identifier != request.source_event_identifier {
+                return Err("delivery event does not match Peer source event".into());
+            }
+            let actual = format!("{:x}", Sha256::digest(peer.peer_body.as_bytes()));
+            if peer.peer_body_sha256 != actual {
+                return Err("Peer body sha256 does not match its exact body".into());
+            }
+        }
+        signal_message::ClusterMessage::Relay(relay) => {
+            // Relay identifies the exact prompt by transcript path, word
+            // boundaries, and hash; the prompt bytes intentionally are not
+            // duplicated in this derived-context carrier. Enforce the internal
+            // source binding that can be decided from the carried value.
+            if relay.prompt_sha256 != relay.context.prompt_sha256
+                || relay.transcript_path != relay.context.transcript_path
+                || relay.flow_identifier != relay.context.flow_identifier
+                || relay.prompt_sha256.len() != 64
+                || !relay
+                    .prompt_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err("Relay source provenance fields do not agree".into());
+            }
+        }
+    }
+    Ok(())
 }

@@ -12,10 +12,18 @@ It provides:
 - `message-nexus`, the two-listener runtime;
 - `message-write-configuration`, a Datom-to-binary startup helper;
 - `messenger.sema`, the bounded durable ledger, inbox, thread index, agent
-  registry, and delivery outbox.
+  registry, delivery outbox, and event-scoped Nexus receipt store.
+
+`Deliver` carries `ClusterMessage.Peer` or `ClusterMessage.Relay` through the
+ordinary socket. The Nexus resolves each target through Flow Nexus, persists
+the source-event identity and target attempt before crossing a harness
+boundary, and returns `DeliveryRecorded` with typed recipient receipts. Claude
+delivery uses the daemon attach protocol; Codex delivery uses app-server
+`turn/start`. Both receive the canonical ClusterMessage Datom directly.
 
 The compatibility binary names `meta-message` and `message-daemon` remain
-available during deployment migration. The Nexus receives one binary
+available during deployment migration. There is no cluster delivery wrapper
+or adapter CLI. The Nexus receives one binary
 configuration path as its only argument. The
 ordinary CLI connects through `MESSAGE_SOCKET`; the owner CLI connects through
 `MESSAGE_META_SOCKET`. Both CLIs accept exactly one inline Datom value and

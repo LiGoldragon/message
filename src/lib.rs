@@ -6,7 +6,6 @@
 //! listener runtime that executes those contracts.
 
 pub mod client;
-pub mod cluster;
 pub mod command;
 pub mod config;
 pub mod daemon;
@@ -16,6 +15,7 @@ pub mod error;
 pub mod flow_delivery;
 pub mod flow_registry;
 pub mod meta;
+pub mod nexus_delivery;
 pub mod output_validator;
 pub mod provenance;
 pub mod relay;

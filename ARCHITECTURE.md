@@ -22,6 +22,12 @@ The behavioral center is component-owned:
 - `OriginPolicy` derives sender and ingress facts from the connection.
 - `DeliveryRunner` delivers producer-owned inbox entries through harness Signal
   or terminal Datom.
+- `FlowResolver` asks Flow Nexus for the recipient's current session, harness,
+  endpoint, and readiness immediately before direct delivery.
+- the Nexus delivery family binds one immutable payload fingerprint to each
+  source event and one durable attempt to each event/target pair. A resolution
+  park is retryable; an attempt becomes non-retryable before the external
+  write, and only a positive harness acknowledgment becomes `Accepted`.
 - `MessageDaemon` serves ordinary and owner sockets. Owner Configure currently
   returns the producer's typed `OperationUnimplemented(NotBuiltYet)` reply.
 
@@ -49,4 +55,7 @@ text feature.
 - durable delivery parking and Datom terminal injection;
 - current-store reopen without repair or identity loss;
 - live ordinary and owner daemon listeners;
+- ordinary `Deliver` Signal with a durable typed receipt and event-wide
+  collision rejection;
+- direct Flow resolution plus Claude attach and Codex app-server adapters;
 - default and binary-only Cargo matrices plus Nix flake checks.

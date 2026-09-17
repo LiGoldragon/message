@@ -5,8 +5,10 @@ use std::{
 
 use message::{Configuration, client::MessageSocket};
 use signal_message::{
-    FlowDeliveryRequest, FlowIdleAnnouncement, MessageDaemonConfiguration, OwnerIdentity,
-    PromptInterpretationSelection, PromptVariant, Query, Response, TypedPromptEnvelope,
+    ClusterMessage, DeliveryRequest, FlowDeliveryRequest, FlowIdleAnnouncement,
+    MessageDaemonConfiguration, OwnerIdentity, PeerEnvelope, PeerSender,
+    PromptInterpretationSelection, PromptVariant, Query, ReceiptKind, Response,
+    TypedPromptEnvelope,
 };
 
 fn contract(directory: &std::path::Path) -> MessageDaemonConfiguration {
@@ -25,6 +27,75 @@ fn contract(directory: &std::path::Path) -> MessageDaemonConfiguration {
         component_ingresses: Vec::new(),
         owner_identity: OwnerIdentity::UnixUser(i64::from(rustix::process::getuid().as_raw())),
     }
+}
+
+#[test]
+fn ordinary_signal_records_a_typed_parked_delivery_idempotently() {
+    let directory = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let configuration = Configuration::new(
+        contract(directory.path()),
+        directory.path().join("delivery.sema"),
+        "owner",
+    )
+    .unwrap();
+    let configuration_path = directory.path().join("message.configuration");
+    configuration
+        .write_binary_file(&configuration_path)
+        .unwrap();
+    let _daemon = launch_daemon(&configuration_path, home.path());
+    wait_for(configuration.socket_path());
+    let client = MessageSocket::from_path(configuration.socket_path()).client();
+    let request = DeliveryRequest {
+        source_event_identifier: "fac697-process-boundary".into(),
+        cluster_message: ClusterMessage::Peer(PeerEnvelope {
+            peer_sender: PeerSender {
+                flow_identifier: "fac697".into(),
+                session_identifier: "codex-primary".into(),
+            },
+            source_event_identifier: "fac697-process-boundary".into(),
+            peer_source_path: "flows/fac697/reports/message.md".into(),
+            peer_body_sha256: "52b797a276d825aaa28f449f1d35682bd4d271f6455be84e3869cdd7aed2ca03"
+                .into(),
+            peer_body: "NEXUS".into(),
+        }),
+        target_flows: vec!["unresolved-fixture".into()],
+    };
+    let mut invalid = request.clone();
+    let ClusterMessage::Peer(peer) = &mut invalid.cluster_message else {
+        unreachable!()
+    };
+    peer.peer_body_sha256 = "0".repeat(64);
+    assert!(matches!(
+        client.submit(Query::Deliver(invalid)).unwrap(),
+        Response::Error(_)
+    ));
+    let query = Query::Deliver(request);
+    for _ in 0..2 {
+        let Response::DeliveryRecorded(report) = client.submit(query.clone()).unwrap() else {
+            panic!("ordinary Deliver did not return DeliveryRecorded")
+        };
+        assert_eq!(report.source_event_identifier, "fac697-process-boundary");
+        assert_eq!(report.recipient_receipts.len(), 1);
+        assert_eq!(
+            report.recipient_receipts[0].receipt_kind,
+            ReceiptKind::Parked
+        );
+    }
+    let Query::Deliver(mut conflicting) = query else {
+        unreachable!()
+    };
+    conflicting.target_flows = vec!["another-target".into()];
+    let ClusterMessage::Peer(peer) = &mut conflicting.cluster_message else {
+        unreachable!()
+    };
+    peer.peer_body = "OTHER".into();
+    peer.peer_body_sha256 =
+        "1c55d9b826e8dfa994370e306ae8dc2e849f3e003381dc848a0b95f782c0c0e3".into();
+    assert!(matches!(
+        client.submit(Query::Deliver(conflicting)).unwrap(),
+        Response::Error(_)
+    ));
 }
 
 /// Wait on the tested event — the listener binding its socket — with a
