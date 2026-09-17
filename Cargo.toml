@@ -41,11 +41,13 @@ protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "87a54b0a1cbc9aa02f9ff62e46c6ffca52f9ec25", features = ["datom"] }
 signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "a9708f3384af18129cb1c983ffed850c4d631e46", features = ["datom"] }
+legacy-signal-message = { package = "signal-message", git = "https://github.com/LiGoldragon/signal-message.git", rev = "dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31" }
 signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
 rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 redb           = "4.1"
 sema           = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
 sema-engine    = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "516f01fe0b03157efc6cc3d38b588f0ca123ac94" }
+legacy-sema-engine = { package = "sema-engine", git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
 serde          = { version = "1", features = ["derive"] }
 serde_json     = "1"
 sha2           = "0.10"
