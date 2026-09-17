@@ -201,7 +201,15 @@ impl FlowRoute {
         let accepted = match self.harness.as_str() {
             "claude" => {
                 receipt.get("kind").and_then(Value::as_str) == Some("claude-bytes-written-to-pty")
-                    && receipt.get("session_id").and_then(Value::as_str) == Some(session)
+                    && receipt
+                        .get("session_id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|reported| {
+                            reported == session
+                                || reported
+                                    .strip_prefix(session)
+                                    .is_some_and(|suffix| suffix.starts_with('-'))
+                        })
             }
             "codex" => {
                 receipt.get("kind").and_then(Value::as_str) == Some("codex-turn-bytes-written")
