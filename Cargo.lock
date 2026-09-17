@@ -538,7 +538,7 @@ dependencies = [
  "signal",
  "signal-harness 4.0.0",
  "signal-message 0.8.1",
- "signal-message 3.0.0",
+ "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=3e4693cbcef4a13973ecf47b71fe291620224037)",
  "tempfile",
  "thiserror",
  "time",
@@ -574,7 +574,7 @@ dependencies = [
  "protos 0.30.1",
  "rkyv",
  "signal",
- "signal-message 3.0.0",
+ "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=7ea1c22ddd6a99806574a8af11db5511f2173a59)",
 ]
 
 [[package]]
@@ -1047,6 +1047,18 @@ dependencies = [
  "signal-sema-translator",
  "structural-codec",
  "thiserror",
+]
+
+[[package]]
+name = "signal-message"
+version = "3.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git?rev=3e4693cbcef4a13973ecf47b71fe291620224037#3e4693cbcef4a13973ecf47b71fe291620224037"
+dependencies = [
+ "datom-codec",
+ "ethos-zero",
+ "protos 0.30.1",
+ "rkyv",
+ "signal",
 ]
 
 [[package]]

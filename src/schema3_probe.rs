@@ -51,6 +51,34 @@ struct ThreadRecord {
 }
 
 pub use signal_message::{Schema3ProbeCounts, Schema3ProbeOutcome, Schema3ProbeRefusal};
+
+#[derive(Clone, Copy)]
+enum LegacyStage {
+    EngineOpenOrSchema,
+    AgentRegistryRegistration, MessageLedgerRegistration, LedgerHeadRegistration,
+    RecipientInboxRegistration, ThreadIndexRegistration, DeliveryOutboxRegistration,
+    AgentRegistryDecode, MessageLedgerDecode, LedgerHeadDecode, RecipientInboxDecode,
+    ThreadIndexDecode, DeliveryOutboxDecode, LedgerInvariant, ReferenceInvariant,
+}
+impl LegacyStage {
+    fn refusal(self) -> Schema3ProbeRefusal { match self {
+        Self::EngineOpenOrSchema => Schema3ProbeRefusal::LegacyEngineOpenOrSchema,
+        Self::AgentRegistryRegistration => Schema3ProbeRefusal::LegacyAgentRegistryRegistration,
+        Self::MessageLedgerRegistration => Schema3ProbeRefusal::LegacyMessageLedgerRegistration,
+        Self::LedgerHeadRegistration => Schema3ProbeRefusal::LegacyLedgerHeadRegistration,
+        Self::RecipientInboxRegistration => Schema3ProbeRefusal::LegacyRecipientInboxRegistration,
+        Self::ThreadIndexRegistration => Schema3ProbeRefusal::LegacyThreadIndexRegistration,
+        Self::DeliveryOutboxRegistration => Schema3ProbeRefusal::LegacyDeliveryOutboxRegistration,
+        Self::AgentRegistryDecode => Schema3ProbeRefusal::LegacyAgentRegistryDecode,
+        Self::MessageLedgerDecode => Schema3ProbeRefusal::LegacyMessageLedgerDecode,
+        Self::LedgerHeadDecode => Schema3ProbeRefusal::LegacyLedgerHeadDecode,
+        Self::RecipientInboxDecode => Schema3ProbeRefusal::LegacyRecipientInboxDecode,
+        Self::ThreadIndexDecode => Schema3ProbeRefusal::LegacyThreadIndexDecode,
+        Self::DeliveryOutboxDecode => Schema3ProbeRefusal::LegacyDeliveryOutboxDecode,
+        Self::LedgerInvariant => Schema3ProbeRefusal::LegacyLedgerInvariant,
+        Self::ReferenceInvariant => Schema3ProbeRefusal::LegacyReferenceInvariant,
+    }}
+}
 pub fn probe(path: &Path) -> Schema3ProbeOutcome {
     fn refused(r: Schema3ProbeRefusal) -> Schema3ProbeOutcome {
         Schema3ProbeOutcome::Refused(r)
@@ -65,7 +93,7 @@ pub fn probe(path: &Path) -> Schema3ProbeOutcome {
     // through the legacy engine would initialize a new private database and
     // turn absence into a false observation.
     if before.is_empty() {
-        return refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant);
+        return refused(Schema3ProbeRefusal::LegacyEngineOpenOrSchema);
     }
     let digest = Sha256::digest(&before);
     let Ok(nanos) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
@@ -96,8 +124,7 @@ pub fn probe(path: &Path) -> Schema3ProbeOutcome {
     };
     // redb may panic while validating a malformed archive. It only sees the
     // private copy; contain that implementation failure as a typed refusal.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| probe_copy(&copy)))
-        .unwrap_or_else(|_| Err("legacy decoder panic".into()));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| probe_copy(&copy)));
     if std::fs::remove_dir_all(&temporary).is_err() {
         return refused(Schema3ProbeRefusal::PrivateCleanup);
     };
@@ -108,49 +135,50 @@ pub fn probe(path: &Path) -> Schema3ProbeOutcome {
         return refused(Schema3ProbeRefusal::SourceChanged);
     }
     match result {
-        Ok(value) => Schema3ProbeOutcome::Observed(value),
-        Err(_) => refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant),
+        Ok(Ok(value)) => Schema3ProbeOutcome::Observed(value),
+        Ok(Err(stage)) => refused(stage.refusal()),
+        Err(_) => refused(Schema3ProbeRefusal::LegacyDecoderPanic),
     }
 }
 
-fn probe_copy(path: &Path) -> Result<Schema3ProbeCounts, String> {
+fn probe_copy(path: &Path) -> Result<Schema3ProbeCounts, LegacyStage> {
     let mut e = Engine::open(
         EngineOpen::new(path, SchemaVersion::new(3))
             .with_versioning(VersioningPolicy::new(VersionedStoreName::new("messenger"))),
     )
-    .map_err(|x| x.to_string())?;
+    .map_err(|_| LegacyStage::EngineOpenOrSchema)?;
     macro_rules! table {
-        ($n:literal,$f:literal,$v:expr,$t:ty) => {
+        ($n:literal,$f:literal,$v:expr,$t:ty,$stage:expr) => {
             e.register_table::<$t>(TableDescriptor::new(
                 TableName::new($n),
                 FamilyName::new($f),
                 SchemaHash::for_label(format!("messenger-{}-v{}", $f, $v)),
             ))
-            .map_err(|x| x.to_string())?
+            .map_err(|_| $stage)?
         };
     }
-    let agents = table!("agent_registry", "agent-registry", 2, z2Vc72);
-    let ledger = table!("message_ledger", "message-ledger", 3, LedgerRecord);
-    let head = table!("ledger_head", "message-ledger-head", 3, LedgerHead);
-    let inbox = table!("recipient_inbox", "recipient-inbox", 3, InboxRecord);
-    let thread = table!("thread_index", "thread-index", 3, ThreadRecord);
-    let outbox = table!("delivery_outbox", "delivery-outbox", 3, InboxRecord);
+    let agents = table!("agent_registry", "agent-registry", 2, z2Vc72, LegacyStage::AgentRegistryRegistration);
+    let ledger = table!("message_ledger", "message-ledger", 3, LedgerRecord, LegacyStage::MessageLedgerRegistration);
+    let head = table!("ledger_head", "message-ledger-head", 3, LedgerHead, LegacyStage::LedgerHeadRegistration);
+    let inbox = table!("recipient_inbox", "recipient-inbox", 3, InboxRecord, LegacyStage::RecipientInboxRegistration);
+    let thread = table!("thread_index", "thread-index", 3, ThreadRecord, LegacyStage::ThreadIndexRegistration);
+    let outbox = table!("delivery_outbox", "delivery-outbox", 3, InboxRecord, LegacyStage::DeliveryOutboxRegistration);
     let l = e
         .match_records(QueryPlan::all(ledger))
-        .map_err(|x| x.to_string())?
+        .map_err(|_| LegacyStage::MessageLedgerDecode)?
         .records()
         .to_vec();
     let slots: BTreeSet<u64> = l.iter().map(|r| *r.message_slot.payload()).collect();
     if slots.len() != l.len() {
-        return Err("schema3 duplicate ledger slot".into());
+        return Err(LegacyStage::LedgerInvariant);
     }
     let heads = e
         .match_records(QueryPlan::all(head))
-        .map_err(|x| x.to_string())?
+        .map_err(|_| LegacyStage::LedgerHeadDecode)?
         .records()
         .to_vec();
     if heads.len() > 1 {
-        return Err("schema3 multiple ledger heads".into());
+        return Err(LegacyStage::LedgerInvariant);
     }
     if let Some(h) = heads.first() {
         let oldest = *h.oldest_message_slot.0.payload();
@@ -159,14 +187,14 @@ fn probe_copy(path: &Path) -> Result<Schema3ProbeCounts, String> {
             || next.saturating_sub(oldest) > 1024
             || slots.iter().any(|slot| *slot < oldest || *slot >= next)
         {
-            return Err("schema3 ledger head invariant failed".into());
+            return Err(LegacyStage::LedgerInvariant);
         }
     }
-    let check = |rows: Vec<InboxRecord>| -> Result<usize, String> {
+    let check = |rows: Vec<InboxRecord>| -> Result<usize, LegacyStage> {
         for row in &rows {
             for slot in &row.slots.0 {
                 if !slots.contains(slot.payload()) {
-                    return Err("schema3 reference invariant failed".into());
+                    return Err(LegacyStage::ReferenceInvariant);
                 }
             }
         }
@@ -174,30 +202,30 @@ fn probe_copy(path: &Path) -> Result<Schema3ProbeCounts, String> {
     };
     let inbox_rows = e
         .match_records(QueryPlan::all(inbox))
-        .map_err(|x| x.to_string())?
+        .map_err(|_| LegacyStage::RecipientInboxDecode)?
         .records()
         .to_vec();
     let thread_rows = e
         .match_records(QueryPlan::all(thread))
-        .map_err(|x| x.to_string())?
+        .map_err(|_| LegacyStage::ThreadIndexDecode)?
         .records()
         .to_vec();
     let out_rows = e
         .match_records(QueryPlan::all(outbox))
-        .map_err(|x| x.to_string())?
+        .map_err(|_| LegacyStage::DeliveryOutboxDecode)?
         .records()
         .to_vec();
     for row in &thread_rows {
         for slot in &row.slots.0 {
             if !slots.contains(slot.payload()) {
-                return Err("schema3 reference invariant failed".into());
+                return Err(LegacyStage::ReferenceInvariant);
             }
         }
     }
     Ok(Schema3ProbeCounts {
         agent_registry_count: e
             .match_records(QueryPlan::all(agents))
-            .map_err(|x| x.to_string())?
+            .map_err(|_| LegacyStage::AgentRegistryDecode)?
             .records()
             .len() as i64,
         message_ledger_count: l.len() as i64,

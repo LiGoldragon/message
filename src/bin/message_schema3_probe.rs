@@ -21,7 +21,22 @@ fn refusal_name(refusal: Schema3ProbeRefusal) -> &'static str {
         Schema3ProbeRefusal::InputUnreadable => "InputUnreadable",
         Schema3ProbeRefusal::PrivateCopyUnavailable => "PrivateCopyUnavailable",
         Schema3ProbeRefusal::SourceChanged => "SourceChanged",
-        Schema3ProbeRefusal::LegacyDecodeOrInvariant => "LegacyDecodeOrInvariant",
+        Schema3ProbeRefusal::LegacyEngineOpenOrSchema => "LegacyEngineOpenOrSchema",
+        Schema3ProbeRefusal::LegacyAgentRegistryRegistration => "LegacyAgentRegistryRegistration",
+        Schema3ProbeRefusal::LegacyMessageLedgerRegistration => "LegacyMessageLedgerRegistration",
+        Schema3ProbeRefusal::LegacyLedgerHeadRegistration => "LegacyLedgerHeadRegistration",
+        Schema3ProbeRefusal::LegacyRecipientInboxRegistration => "LegacyRecipientInboxRegistration",
+        Schema3ProbeRefusal::LegacyThreadIndexRegistration => "LegacyThreadIndexRegistration",
+        Schema3ProbeRefusal::LegacyDeliveryOutboxRegistration => "LegacyDeliveryOutboxRegistration",
+        Schema3ProbeRefusal::LegacyAgentRegistryDecode => "LegacyAgentRegistryDecode",
+        Schema3ProbeRefusal::LegacyMessageLedgerDecode => "LegacyMessageLedgerDecode",
+        Schema3ProbeRefusal::LegacyLedgerHeadDecode => "LegacyLedgerHeadDecode",
+        Schema3ProbeRefusal::LegacyRecipientInboxDecode => "LegacyRecipientInboxDecode",
+        Schema3ProbeRefusal::LegacyThreadIndexDecode => "LegacyThreadIndexDecode",
+        Schema3ProbeRefusal::LegacyDeliveryOutboxDecode => "LegacyDeliveryOutboxDecode",
+        Schema3ProbeRefusal::LegacyLedgerInvariant => "LegacyLedgerInvariant",
+        Schema3ProbeRefusal::LegacyReferenceInvariant => "LegacyReferenceInvariant",
+        Schema3ProbeRefusal::LegacyDecoderPanic => "LegacyDecoderPanic",
         Schema3ProbeRefusal::PrivateCleanup => "PrivateCleanup",
     }
 }
@@ -66,12 +81,12 @@ fn decode_in_private_child(path: OsString) -> Schema3ProbeOutcome {
                 Ok(output) => output,
                 Err(_) => {
                     return Schema3ProbeOutcome::Refused(
-                        Schema3ProbeRefusal::LegacyDecodeOrInvariant,
+                        Schema3ProbeRefusal::LegacyDecoderPanic,
                     );
                 }
             };
             return decode_private_stdout(&output.stdout).unwrap_or(Schema3ProbeOutcome::Refused(
-                Schema3ProbeRefusal::LegacyDecodeOrInvariant,
+                Schema3ProbeRefusal::LegacyDecoderPanic,
             ));
         }
         thread::sleep(Duration::from_millis(10));
@@ -103,7 +118,23 @@ fn decode_private_stdout(stdout: &[u8]) -> Option<Schema3ProbeOutcome> {
                 "InputUnreadable" => Schema3ProbeRefusal::InputUnreadable,
                 "PrivateCopyUnavailable" => Schema3ProbeRefusal::PrivateCopyUnavailable,
                 "SourceChanged" => Schema3ProbeRefusal::SourceChanged,
-                "LegacyDecodeOrInvariant" => Schema3ProbeRefusal::LegacyDecodeOrInvariant,
+                "LegacyEngineOpenOrSchema" => Schema3ProbeRefusal::LegacyEngineOpenOrSchema,
+                "LegacyAgentRegistryRegistration" => Schema3ProbeRefusal::LegacyAgentRegistryRegistration,
+                "LegacyMessageLedgerRegistration" => Schema3ProbeRefusal::LegacyMessageLedgerRegistration,
+                "LegacyLedgerHeadRegistration" => Schema3ProbeRefusal::LegacyLedgerHeadRegistration,
+                "LegacyRecipientInboxRegistration" => Schema3ProbeRefusal::LegacyRecipientInboxRegistration,
+                "LegacyThreadIndexRegistration" => Schema3ProbeRefusal::LegacyThreadIndexRegistration,
+                "LegacyDeliveryOutboxRegistration" => Schema3ProbeRefusal::LegacyDeliveryOutboxRegistration,
+                "LegacyAgentRegistryDecode" => Schema3ProbeRefusal::LegacyAgentRegistryDecode,
+                "LegacyMessageLedgerDecode" => Schema3ProbeRefusal::LegacyMessageLedgerDecode,
+                "LegacyLedgerHeadDecode" => Schema3ProbeRefusal::LegacyLedgerHeadDecode,
+                "LegacyRecipientInboxDecode" => Schema3ProbeRefusal::LegacyRecipientInboxDecode,
+                "LegacyThreadIndexDecode" => Schema3ProbeRefusal::LegacyThreadIndexDecode,
+                "LegacyDeliveryOutboxDecode" => Schema3ProbeRefusal::LegacyDeliveryOutboxDecode,
+                "LegacyLedgerInvariant" => Schema3ProbeRefusal::LegacyLedgerInvariant,
+                "LegacyReferenceInvariant" => Schema3ProbeRefusal::LegacyReferenceInvariant,
+                "LegacyDecoderPanic" => Schema3ProbeRefusal::LegacyDecoderPanic,
+                "LegacyDecodeOrInvariant" => Schema3ProbeRefusal::LegacyDecoderPanic,
                 "PrivateCleanup" => Schema3ProbeRefusal::PrivateCleanup,
                 _ => return None,
             };

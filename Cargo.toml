@@ -44,7 +44,7 @@ datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6d
 protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "ba42d09f90e97c7dbc4d8fa068e8869f3f84f610", features = ["datom"] }
 signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "7ea1c22ddd6a99806574a8af11db5511f2173a59", features = ["datom"] }
+signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "3e4693cbcef4a13973ecf47b71fe291620224037", features = ["datom"] }
 legacy-signal-message = { package = "signal-message", git = "https://github.com/LiGoldragon/signal-message.git", rev = "dff3fbf3f9e2cd018f06bcf96a06c8367d3e7f31" }
 signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
 rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }

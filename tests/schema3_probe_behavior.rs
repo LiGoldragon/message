@@ -117,7 +117,7 @@ fn historical_pending_reference_that_has_no_ledger_row_is_refused_unchanged() {
 
     assert_eq!(
         probe(&store),
-        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant)
+        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyReferenceInvariant)
     );
     assert_eq!(hash(&store), before);
 }
@@ -132,7 +132,7 @@ fn corrupt_historical_row_is_refused_unchanged() {
 
     assert_eq!(
         probe(&store),
-        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant)
+        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyDecoderPanic)
     );
     assert_eq!(hash(&store), before);
 }
@@ -155,7 +155,7 @@ fn corrupt_cli_refuses_without_legacy_panic_output() {
     assert!(
         String::from_utf8(output.stdout)
             .unwrap()
-            .starts_with("Refused.LegacyDecodeOrInvariant")
+            .starts_with("Refused.LegacyDecoderPanic")
     );
     assert!(
         output.stderr.is_empty(),
@@ -214,7 +214,7 @@ fn empty_regular_file_is_refused_without_initialization_or_byte_change() {
     let before = hash(&store);
     assert_eq!(
         probe(&store),
-        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant)
+        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyEngineOpenOrSchema)
     );
     assert_eq!(hash(&store), before);
 }
