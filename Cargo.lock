@@ -538,7 +538,7 @@ dependencies = [
  "signal",
  "signal-harness 4.0.0",
  "signal-message 0.8.1",
- "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=3e4693cbcef4a13973ecf47b71fe291620224037)",
+ "signal-message 3.0.0",
  "tempfile",
  "thiserror",
  "time",
@@ -567,14 +567,14 @@ dependencies = [
 [[package]]
 name = "meta-signal-message"
 version = "0.6.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=ba42d09f90e97c7dbc4d8fa068e8869f3f84f610#ba42d09f90e97c7dbc4d8fa068e8869f3f84f610"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=c16a8bcc3abfd348fefd01f872bbbd793c8ee36b#c16a8bcc3abfd348fefd01f872bbbd793c8ee36b"
 dependencies = [
  "datom-codec",
  "ethos-zero",
  "protos 0.30.1",
  "rkyv",
  "signal",
- "signal-message 3.0.0 (git+https://github.com/LiGoldragon/signal-message.git?rev=7ea1c22ddd6a99806574a8af11db5511f2173a59)",
+ "signal-message 3.0.0",
 ]
 
 [[package]]
@@ -1053,18 +1053,6 @@ dependencies = [
 name = "signal-message"
 version = "3.0.0"
 source = "git+https://github.com/LiGoldragon/signal-message.git?rev=3e4693cbcef4a13973ecf47b71fe291620224037#3e4693cbcef4a13973ecf47b71fe291620224037"
-dependencies = [
- "datom-codec",
- "ethos-zero",
- "protos 0.30.1",
- "rkyv",
- "signal",
-]
-
-[[package]]
-name = "signal-message"
-version = "3.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?rev=7ea1c22ddd6a99806574a8af11db5511f2173a59#7ea1c22ddd6a99806574a8af11db5511f2173a59"
 dependencies = [
  "datom-codec",
  "ethos-zero",
