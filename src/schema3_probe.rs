@@ -61,6 +61,12 @@ pub fn probe(path: &Path) -> Schema3ProbeOutcome {
     let Ok(before) = std::fs::read(path) else {
         return refused(Schema3ProbeRefusal::InputUnreadable);
     };
+    // An empty regular file is not an established schema-3 store. Opening it
+    // through the legacy engine would initialize a new private database and
+    // turn absence into a false observation.
+    if before.is_empty() {
+        return refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant);
+    }
     let digest = Sha256::digest(&before);
     let Ok(nanos) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
         return refused(Schema3ProbeRefusal::PrivateCopyUnavailable);

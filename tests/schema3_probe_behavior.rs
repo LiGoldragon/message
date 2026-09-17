@@ -207,6 +207,19 @@ fn cli_emits_typed_observation_and_refusal_outcomes() {
 }
 
 #[test]
+fn empty_regular_file_is_refused_without_initialization_or_byte_change() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = directory.path().join("empty.sema");
+    fs::write(&store, []).unwrap();
+    let before = hash(&store);
+    assert_eq!(
+        probe(&store),
+        Schema3ProbeOutcome::Refused(Schema3ProbeRefusal::LegacyDecodeOrInvariant)
+    );
+    assert_eq!(hash(&store), before);
+}
+
+#[test]
 fn malformed_public_query_is_refused_before_any_store_access() {
     let directory = tempfile::tempdir().unwrap();
     let absent = directory.path().join("must-not-create.sema");
