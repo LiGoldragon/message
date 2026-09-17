@@ -20,7 +20,15 @@ name = "message-daemon"
 path = "src/bin/message_daemon.rs"
 
 [[bin]]
+name = "message-nexus"
+path = "src/bin/message_daemon.rs"
+
+[[bin]]
 name = "meta-message"
+path = "src/bin/meta_message.rs"
+
+[[bin]]
+name = "message-meta"
 path = "src/bin/meta_message.rs"
 
 [[bin]]

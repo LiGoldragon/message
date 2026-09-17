@@ -7,14 +7,16 @@ those Types by identity.
 
 It provides:
 
-- `message`, a one-value Datom client for the ordinary interface;
-- `meta-message`, a one-value Datom client for the owner interface;
-- `message-daemon`, the two-listener runtime;
+- `message`, a one-value Datom client for the ordinary interface (argv or stdin);
+- `message-meta`, the privileged one-value Datom client;
+- `message-nexus`, the two-listener runtime;
 - `message-write-configuration`, a Datom-to-binary startup helper;
 - `messenger.sema`, the bounded durable ledger, inbox, thread index, agent
   registry, and delivery outbox.
 
-The daemon receives one binary configuration path as its only argument. The
+The compatibility binary names `meta-message` and `message-daemon` remain
+available during deployment migration. The Nexus receives one binary
+configuration path as its only argument. The
 ordinary CLI connects through `MESSAGE_SOCKET`; the owner CLI connects through
 `MESSAGE_META_SOCKET`. Both CLIs accept exactly one inline Datom value and
 print the producer-owned reply in Datom.
