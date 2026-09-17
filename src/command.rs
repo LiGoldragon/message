@@ -128,10 +128,12 @@ impl FlowRoutes {
             });
         };
         let ready = match route.harness.as_str() {
-            "claude" => route.readiness == "idle",
-            // The app-server bridge acknowledges a queued Codex turn, so a
-            // known busy thread remains a valid delivery target.
-            "codex" => matches!(route.readiness.as_str(), "idle" | "busy"),
+            // Both daemon-owned harnesses accept input while a turn is busy:
+            // Claude's PTY queues it as the next user turn and Codex's app
+            // server starts the next turn after the current one.  Refusing a
+            // fresh Busy observation here loses the Message Nexus property
+            // that peers can always reach a live flow.
+            "claude" | "codex" => matches!(route.readiness.as_str(), "idle" | "busy"),
             _ => false,
         };
         if !ready {
