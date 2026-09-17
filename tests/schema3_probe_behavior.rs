@@ -147,7 +147,10 @@ fn corrupt_cli_refuses_without_legacy_panic_output() {
 
     let binary = std::env::var("CARGO_BIN_EXE_message-schema3-probe")
         .expect("Cargo supplies the declared schema-3 probe binary");
-    let output = Command::new(binary).arg(&store).output().unwrap();
+    let output = Command::new(binary)
+        .arg(format!("Inspect.«{}»", store.display()))
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(
         String::from_utf8(output.stdout)
@@ -179,7 +182,10 @@ fn cli_emits_typed_observation_and_refusal_outcomes() {
     let binary = std::env::var("CARGO_BIN_EXE_message-schema3-probe")
         .expect("Cargo supplies the declared schema-3 probe binary");
 
-    let accepted = Command::new(&binary).arg(&store).output().unwrap();
+    let accepted = Command::new(&binary)
+        .arg(format!("Inspect.«{}»", store.display()))
+        .output()
+        .unwrap();
     assert!(accepted.status.success());
     assert!(
         String::from_utf8(accepted.stdout)
@@ -188,13 +194,30 @@ fn cli_emits_typed_observation_and_refusal_outcomes() {
     );
 
     let absent = directory.path().join("absent.sema");
-    let refused = Command::new(&binary).arg(&absent).output().unwrap();
+    let refused = Command::new(&binary)
+        .arg(format!("Inspect.«{}»", absent.display()))
+        .output()
+        .unwrap();
     assert_eq!(refused.status.code(), Some(1));
     assert!(
         String::from_utf8(refused.stdout)
             .unwrap()
             .starts_with("Refused.InputNotRegularFile")
     );
+}
+
+#[test]
+fn malformed_public_query_is_refused_before_any_store_access() {
+    let directory = tempfile::tempdir().unwrap();
+    let absent = directory.path().join("must-not-create.sema");
+    let binary = std::env::var("CARGO_BIN_EXE_message-schema3-probe").unwrap();
+    let output = Command::new(binary)
+        .arg(absent.display().to_string())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(!absent.exists());
 }
 
 #[test]

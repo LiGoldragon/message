@@ -567,7 +567,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-message"
 version = "0.6.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=93381d785b95a7affec6521fad5d3b447e84ed8c#93381d785b95a7affec6521fad5d3b447e84ed8c"
+source = "git+https://github.com/LiGoldragon/meta-signal-message.git?rev=ba42d09f90e97c7dbc4d8fa068e8869f3f84f610#ba42d09f90e97c7dbc4d8fa068e8869f3f84f610"
 dependencies = [
  "datom-codec",
  "ethos-zero",
@@ -1052,7 +1052,7 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "3.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?rev=8da790ff5b1b6945a6bd5318c8d01c86b77165eb#8da790ff5b1b6945a6bd5318c8d01c86b77165eb"
+source = "git+https://github.com/LiGoldragon/signal-message.git?rev=7ea1c22ddd6a99806574a8af11db5511f2173a59#7ea1c22ddd6a99806574a8af11db5511f2173a59"
 dependencies = [
  "datom-codec",
  "ethos-zero",

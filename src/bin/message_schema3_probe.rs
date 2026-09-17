@@ -1,6 +1,10 @@
 use datom_codec::Datomizable;
-use message::schema3_probe::{Schema3ProbeCounts, Schema3ProbeOutcome, Schema3ProbeRefusal, probe};
+use message::{
+    schema3_probe::{Schema3ProbeCounts, Schema3ProbeOutcome, Schema3ProbeRefusal, probe},
+    text,
+};
 use protos::{Protosizable, Textualizable};
+use signal_message::Schema3ProbeQuery;
 use std::{
     ffi::OsString,
     process::{Command, ExitCode},
@@ -143,7 +147,23 @@ fn main() -> ExitCode {
             .unwrap_or(ExitCode::from(2));
     }
     if arguments.next().is_some() {
+        eprintln!("expected exactly one inline Datom value");
         return ExitCode::from(2);
     }
-    print_public(decode_in_private_child(first))
+    let argument = match first.into_string() {
+        Ok(argument) => argument,
+        Err(_) => {
+            eprintln!("query is not UTF-8");
+            return ExitCode::from(2);
+        }
+    };
+    let query = match text::read::<Schema3ProbeQuery>(&argument) {
+        Ok(query) => query,
+        Err(_) => {
+            eprintln!("malformed Schema3ProbeQuery");
+            return ExitCode::from(2);
+        }
+    };
+    let Schema3ProbeQuery::Inspect(path) = query;
+    print_public(decode_in_private_child(path.into()))
 }
