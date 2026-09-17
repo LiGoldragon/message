@@ -23,6 +23,8 @@ use signal_message::{
     MessageKind, MessageOrigin, OtherPersonaEngine, ProcessPinSelection, ResumeSelection,
     ThreadRelation, ThreadRelationSelection, ThreadSelection,
 };
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::{collections::BTreeSet, path::Path};
 
 #[derive(Debug, thiserror::Error)]
@@ -78,25 +80,31 @@ pub fn convert(source: &Path, destination: &Path) -> Result<(), Schema3Conversio
             .as_nanos()
     );
     let private = std::env::temp_dir().join(format!("message-schema3-convert-{nonce}"));
-    std::fs::create_dir(&private)
-        .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
     let private_source = private.join("messenger.sema");
-    std::fs::write(&private_source, &original)
-        .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
-    let snapshot =
+    let snapshot = (|| {
+        #[cfg(unix)]
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&private)
+            .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
+        #[cfg(not(unix))]
+        std::fs::create_dir(&private)
+            .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
+        std::fs::write(&private_source, &original)
+            .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
+        #[cfg(unix)]
+        std::fs::set_permissions(&private_source, PermissionsExt::from_mode(0o600))
+            .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode(&private_source)))
             .unwrap_or_else(|_| {
                 Err(Schema3ConversionError::Decode(
                     "legacy decoder panic".into(),
                 ))
-            })?;
-    std::fs::remove_dir_all(&private)
-        .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
-    let after = std::fs::read(source)
-        .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
-    if Sha256::digest(after) != digest {
-        return Err(Schema3ConversionError::SourceChanged);
-    }
+            })
+    })();
+    let _ = std::fs::remove_dir_all(&private);
+    let snapshot = snapshot?;
+    source_matches(source, &digest)?;
 
     let temporary = destination.with_file_name(format!(
         ".{}-schema5-{nonce}",
@@ -115,13 +123,33 @@ pub fn convert(source: &Path, destination: &Path) -> Result<(), Schema3Conversio
             .import_schema3_snapshot(snapshot)
             .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
         drop(tables);
-        std::fs::rename(&temporary, destination)
-            .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))
+        source_matches(source, &digest)?;
+        // hard_link has create-only semantics: unlike rename it cannot replace a
+        // destination another process created after our initial exists check.
+        std::fs::hard_link(&temporary, destination)
+            .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
+        std::fs::remove_file(&temporary)
+            .map_err(|error| Schema3ConversionError::DestinationWrite(error.to_string()))?;
+        if let Err(error) = source_matches(source, &digest) {
+            let _ = std::fs::remove_file(destination);
+            return Err(error);
+        }
+        Ok(())
     })();
     if write.is_err() {
         let _ = std::fs::remove_file(&temporary);
     }
     write
+}
+
+fn source_matches(source: &Path, digest: &[u8]) -> Result<(), Schema3ConversionError> {
+    let current = std::fs::read(source)
+        .map_err(|error| Schema3ConversionError::PrivateCopy(error.to_string()))?;
+    if Sha256::digest(current).as_slice() == digest {
+        Ok(())
+    } else {
+        Err(Schema3ConversionError::SourceChanged)
+    }
 }
 
 fn decode(path: &Path) -> Result<Schema3Snapshot, Schema3ConversionError> {

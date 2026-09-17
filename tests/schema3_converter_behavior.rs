@@ -193,3 +193,26 @@ fn corrupt_source_refuses_without_destination_or_source_mutation() {
     assert_eq!(hash(&source), source_before);
     assert!(!destination.exists());
 }
+
+#[test]
+fn existing_or_same_destination_is_never_replaced() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = historical_store(directory.path());
+    let source_before = hash(&source);
+    let destination = directory.path().join("existing.sema");
+    fs::write(&destination, b"preexisting destination").unwrap();
+    let destination_before = fs::read(&destination).unwrap();
+
+    assert!(matches!(
+        convert(&source, &destination),
+        Err(Schema3ConversionError::DestinationExists)
+    ));
+    assert_eq!(hash(&source), source_before);
+    assert_eq!(fs::read(&destination).unwrap(), destination_before);
+
+    assert!(matches!(
+        convert(&source, &source),
+        Err(Schema3ConversionError::DestinationExists)
+    ));
+    assert_eq!(hash(&source), source_before);
+}
