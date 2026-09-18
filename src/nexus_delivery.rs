@@ -433,6 +433,35 @@ mod tests {
     use std::{os::unix::net::UnixListener, sync::mpsc, thread};
     use tempfile::tempdir;
 
+    fn herdr_route() -> HerdrRoute {
+        HerdrRoute {
+            herdr_session_name: "s".into(),
+            herdr_agent_name: "agent".into(),
+            herdr_pane_id: "w1:p1".into(),
+            herdr_terminal_id: "term".into(),
+        }
+    }
+
+    #[test]
+    fn herdr_guard_accepts_only_the_registered_idle_blank_composer() {
+        let directory = tempdir().unwrap();
+        let program = directory.path().join("herdr");
+        std::fs::write(&program, r#"#!/bin/sh
+if [ "$4" = get ]; then echo '{"result":{"agent":{"name":"agent","pane_id":"w1:p1","terminal_id":"term","agent":"codex","agent_status":"idle"}}}'; exit 0; fi
+if [ "$4" = read ]; then printf 'output\n❯\n'; exit 0; fi
+exit 9
+"#).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        assert!(
+            validate_herdr_composer(program.as_os_str(), &herdr_route(), &HarnessKind::Codex)
+                .is_ok()
+        );
+    }
+
     #[test]
     fn flow_resolution_and_claude_delivery_use_direct_protocols() {
         let directory = tempdir().unwrap();
