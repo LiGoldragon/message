@@ -21,6 +21,7 @@ use crate::{
     error::Error,
     flow_delivery::FlowDeliveryOutbox,
     flow_registry::FlowMarkerIndex,
+    nexus_delivery::{LiveNexusDelivery, NexusDelivery},
     provenance::{OriginPolicy, SenderResolver},
     runtime_model::{
         AgentRegistryCommand, LedgerDraft, NexusDeliveryRecord, StoreQuery, StoreWrite,
@@ -28,13 +29,21 @@ use crate::{
     tables::MessengerTables,
 };
 
-#[derive(Debug)]
 pub struct MessageEngine {
     tables: MessengerTables,
     origin_policy: OriginPolicy,
     /// SEAM: the Flow component (item 31) will own flow-name resolution;
     /// interim reads `.flow-id` markers.
     flow_registry: FlowMarkerIndex,
+    nexus_delivery: Box<dyn NexusDelivery>,
+}
+
+impl std::fmt::Debug for MessageEngine {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MessageEngine")
+            .finish_non_exhaustive()
+    }
 }
 
 impl MessageEngine {
@@ -43,7 +52,13 @@ impl MessageEngine {
             tables,
             origin_policy,
             flow_registry: FlowMarkerIndex::conventional(),
+            nexus_delivery: Box::new(LiveNexusDelivery::conventional()),
         }
+    }
+
+    pub fn with_nexus_delivery(mut self, nexus_delivery: impl NexusDelivery + 'static) -> Self {
+        self.nexus_delivery = Box::new(nexus_delivery);
+        self
     }
 
     /// Replace the interim flow registry — the seam's one injection point,
@@ -165,9 +180,7 @@ impl MessageEngine {
                 Err(_) => return Response::Error("delivery receipt store rejected lookup".into()),
                 Ok(None) => false,
             };
-            let node = match crate::nexus_delivery::FlowResolver::conventional()
-                .resolve(flow_identifier)
-            {
+            let node = match self.nexus_delivery.resolve(flow_identifier) {
                 Ok(Some(node)) => node,
                 Ok(None) | Err(_) => {
                     let receipt_kind = ReceiptKind::Parked;
@@ -193,9 +206,10 @@ impl MessageEngine {
                 }
             };
             // Persist a non-retryable in-flight park before crossing the harness
-            // boundary. Only the adapter's positive acknowledgement promotes it
-            // to Accepted. An ambiguous timeout remains Parked and never types
-            // the same source event a second time.
+            // boundary. Only the adapter's positive transport-submission
+            // acknowledgement promotes it to Accepted; Accepted does not assert
+            // target-harness consumption. An ambiguous outcome remains Parked
+            // and never types the same source event a second time.
             let in_flight = NexusDeliveryRecord {
                 request_fingerprint: fingerprint.clone(),
                 cluster_message: request.cluster_message.clone(),
@@ -210,7 +224,9 @@ impl MessageEngine {
             if stored.is_err() {
                 return Response::Error("delivery receipt store rejected acceptance".into());
             }
-            let receipt_kind = crate::nexus_delivery::deliver(&node, &request.cluster_message)
+            let receipt_kind = self
+                .nexus_delivery
+                .deliver(&node, &request.cluster_message)
                 .unwrap_or(ReceiptKind::Parked);
             if self
                 .tables

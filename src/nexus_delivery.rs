@@ -4,7 +4,10 @@
 //! typed Message Signal; it never selects or executes a harness bridge.
 
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fmt::Debug,
+    fs,
     io::{BufRead, BufReader, Read, Write},
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
@@ -22,6 +25,7 @@ use signal_message::{ClusterMessage, ReceiptKind};
 
 const FLOW_SOCKET: &str = "/run/user/1001/flow/flow.sock";
 
+#[derive(Clone, Debug)]
 pub struct FlowResolver {
     socket: PathBuf,
 }
@@ -70,64 +74,122 @@ impl FlowResolver {
     }
 }
 
-pub fn deliver(node: &FlowNode, message: &ClusterMessage) -> Result<ReceiptKind, String> {
-    if let HerdrRouteSelection::Available(route) = &node.herdr_route_selection {
-        let datom = crate::text::write(message);
-        deliver_herdr(node, route, &datom)?;
-        return Ok(ReceiptKind::Accepted);
-    }
-    let EndpointSelection::Available(endpoint) = &node.endpoint_selection else {
-        return Ok(ReceiptKind::Parked);
-    };
-    if endpoint.route_readiness == RouteReadiness::Parked {
-        return Ok(ReceiptKind::Parked);
-    }
-    let datom = crate::text::write(message);
-    match node.harness_kind {
-        HarnessKind::Claude => deliver_claude(
-            Path::new(&endpoint.endpoint_path),
-            &node.flow_id,
-            &node.session_id,
-            &datom,
-        ),
-        HarnessKind::Codex => {
-            deliver_codex(Path::new(&endpoint.endpoint_path), &node.session_id, &datom)
-        }
-    }?;
-    Ok(ReceiptKind::Accepted)
+/// The complete Message-owned delivery boundary. Tests replace this contract
+/// with the same adapter pointed at disposable Flow and Herdr processes.
+///
+/// `Accepted` records transport submission only. It does not claim that the
+/// target harness consumed, interpreted, or completed the submitted message.
+pub trait NexusDelivery: Debug + Send + Sync {
+    fn resolve(&self, flow: &str) -> Result<Option<FlowNode>, String>;
+    fn deliver(&self, node: &FlowNode, message: &ClusterMessage) -> Result<ReceiptKind, String>;
 }
 
-/// Submits only a Flow-resolved, ready Herdr route.  Flow owns the live
-/// identity and blank-composer witness; Message repeats resolution immediately
-/// before the single prompt call so replacement or stale routes receive no input.
-fn deliver_herdr(node: &FlowNode, route: &HerdrRoute, datom: &str) -> Result<(), String> {
-    let Some(current) = FlowResolver::conventional().resolve(&node.flow_id)? else {
-        return Err("Flow no longer resolves the Herdr recipient".into());
-    };
-    if current.flow_id != node.flow_id
-        || current.session_id != node.session_id
-        || current.harness_kind != node.harness_kind
-        || current.herdr_route_selection != HerdrRouteSelection::Available(route.clone())
-    {
-        return Err("Herdr recipient changed or is no longer ready".into());
+#[derive(Clone, Debug)]
+pub struct LiveNexusDelivery {
+    resolver: FlowResolver,
+    herdr_program: OsString,
+}
+
+impl LiveNexusDelivery {
+    pub fn conventional() -> Self {
+        Self {
+            resolver: FlowResolver::conventional(),
+            herdr_program: env::var_os("MESSAGE_HERDR_PROGRAM").unwrap_or_else(|| "herdr".into()),
+        }
     }
-    let program = env::var_os("MESSAGE_HERDR_PROGRAM").unwrap_or_else(|| "herdr".into());
-    validate_herdr_composer(&program, route, &node.harness_kind)?;
-    let status = Command::new(&program)
-        .args([
-            "--session",
-            &route.herdr_session_name,
-            "agent",
-            "prompt",
-            &route.herdr_pane_id,
-            datom,
-        ])
-        .status()
-        .map_err(|error| format!("start Herdr prompt: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err("Herdr prompt refused or outcome is uncertain".into())
+
+    pub fn with_paths(flow_socket: impl Into<PathBuf>, herdr_program: impl Into<OsString>) -> Self {
+        Self {
+            resolver: FlowResolver::from_path(flow_socket),
+            herdr_program: herdr_program.into(),
+        }
+    }
+
+    fn deliver_resolved(
+        &self,
+        node: &FlowNode,
+        message: &ClusterMessage,
+    ) -> Result<ReceiptKind, String> {
+        if let HerdrRouteSelection::Available(route) = &node.herdr_route_selection {
+            let datom = crate::text::write(message);
+            self.deliver_herdr(node, route, &datom)?;
+            return Ok(ReceiptKind::Accepted);
+        }
+        let EndpointSelection::Available(endpoint) = &node.endpoint_selection else {
+            return Ok(ReceiptKind::Parked);
+        };
+        if endpoint.route_readiness == RouteReadiness::Parked {
+            return Ok(ReceiptKind::Parked);
+        }
+        let datom = crate::text::write(message);
+        match node.harness_kind {
+            HarnessKind::Claude => deliver_claude(
+                Path::new(&endpoint.endpoint_path),
+                &node.flow_id,
+                &node.session_id,
+                &datom,
+            ),
+            HarnessKind::Codex => {
+                deliver_codex(Path::new(&endpoint.endpoint_path), &node.session_id, &datom)
+            }
+        }?;
+        Ok(ReceiptKind::Accepted)
+    }
+
+    fn deliver_herdr(
+        &self,
+        node: &FlowNode,
+        route: &HerdrRoute,
+        datom: &str,
+    ) -> Result<(), String> {
+        let Some(current) = self.resolver.resolve(&node.flow_id)? else {
+            return Err("Flow no longer resolves the Herdr recipient".into());
+        };
+        if current.flow_id != node.flow_id
+            || current.session_id != node.session_id
+            || current.harness_kind != node.harness_kind
+            || current.herdr_route_selection != HerdrRouteSelection::Available(route.clone())
+        {
+            return Err("Herdr recipient changed or is no longer ready".into());
+        }
+        // Herdr exposes identity, visible-screen, and prompt operations, but no
+        // revision or compare-and-swap token spanning them. The identity and
+        // blank-composer reads therefore reject known-stale routes; they cannot
+        // make the screen snapshot atomic with prompt submission. A successful
+        // prompt is recorded as transport acceptance, and the endpoint-only
+        // check below detects replacement observed immediately afterward.
+        validate_herdr_composer(&self.herdr_program, route, &node.harness_kind)?;
+        let status = Command::new(&self.herdr_program)
+            .args([
+                "--session",
+                &route.herdr_session_name,
+                "agent",
+                "prompt",
+                &route.herdr_pane_id,
+                datom,
+            ])
+            .status()
+            .map_err(|error| format!("start Herdr prompt: {error}"))?;
+        if status.success() {
+            validate_herdr_identity(
+                &self.herdr_program,
+                route,
+                &node.harness_kind,
+                IdentityCheck::EndpointOnly,
+            )
+        } else {
+            Err("Herdr prompt refused or outcome is uncertain".into())
+        }
+    }
+}
+
+impl NexusDelivery for LiveNexusDelivery {
+    fn resolve(&self, flow: &str) -> Result<Option<FlowNode>, String> {
+        self.resolver.resolve(flow)
+    }
+
+    fn deliver(&self, node: &FlowNode, message: &ClusterMessage) -> Result<ReceiptKind, String> {
+        self.deliver_resolved(node, message)
     }
 }
 
@@ -135,6 +197,49 @@ fn validate_herdr_composer(
     program: &std::ffi::OsStr,
     route: &HerdrRoute,
     harness: &HarnessKind,
+) -> Result<(), String> {
+    validate_herdr_identity(program, route, harness, IdentityCheck::ReadyComposer)?;
+    let visible = Command::new(program)
+        .args([
+            "--session",
+            &route.herdr_session_name,
+            "agent",
+            "read",
+            &route.herdr_pane_id,
+            "--source",
+            "visible",
+            "--lines",
+            "80",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !visible.status.success() {
+        return Err("Herdr composer snapshot refused".into());
+    }
+    let screen =
+        String::from_utf8(visible.stdout).map_err(|_| "Herdr composer snapshot was not text")?;
+    let lines = screen.lines().collect::<Vec<_>>();
+    let blank_prompt = match harness {
+        HarnessKind::Claude => blank_claude_composer(&lines),
+        HarnessKind::Codex => blank_codex_composer(&lines),
+    };
+    if !blank_prompt {
+        return Err("Herdr composer is not a supported blank prompt".into());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum IdentityCheck {
+    ReadyComposer,
+    EndpointOnly,
+}
+
+fn validate_herdr_identity(
+    program: &std::ffi::OsStr,
+    route: &HerdrRoute,
+    harness: &HarnessKind,
+    check: IdentityCheck,
 ) -> Result<(), String> {
     let get = Command::new(program)
         .args([
@@ -163,37 +268,65 @@ fn validate_herdr_composer(
                 HarnessKind::Codex => "codex",
                 HarnessKind::Claude => "claude",
             })
-        || agent
-            .get("agent_status")
-            .and_then(serde_json::Value::as_str)
-            != Some("idle")
     {
-        return Err("Herdr recipient is not the registered idle agent".into());
+        return Err("Herdr recipient is not the registered agent".into());
     }
-    let visible = Command::new(program)
-        .args([
-            "--session",
-            &route.herdr_session_name,
-            "agent",
-            "read",
-            &route.herdr_pane_id,
-            "--source",
-            "visible",
-            "--lines",
-            "80",
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !visible.status.success() {
-        return Err("Herdr composer snapshot refused".into());
-    }
-    let screen =
-        String::from_utf8(visible.stdout).map_err(|_| "Herdr composer snapshot was not text")?;
-    let blank_prompt = screen.lines().last().is_some_and(|line| line.trim() == "❯");
-    if !blank_prompt {
-        return Err("Herdr composer is not a supported blank prompt".into());
+    if matches!(check, IdentityCheck::ReadyComposer) {
+        let status = agent
+            .get("agent_status")
+            .and_then(serde_json::Value::as_str);
+        if !matches!(status, Some("idle" | "working"))
+            || agent
+                .get("interactive_ready")
+                .and_then(serde_json::Value::as_bool)
+                != Some(true)
+        {
+            return Err("Herdr recipient is not ready for prompt submission".into());
+        }
     }
     Ok(())
+}
+
+fn is_composer_rule(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.chars().count() >= 8
+        && trimmed.starts_with('─')
+        && trimmed.ends_with('─')
+        && trimmed
+            .chars()
+            .filter(|character| *character == '─')
+            .count()
+            >= 8
+}
+
+fn blank_claude_composer(lines: &[&str]) -> bool {
+    let Some(prompt) = lines.iter().rposition(|line| line.trim().starts_with('❯')) else {
+        return false;
+    };
+    prompt > 0
+        && lines[prompt].trim() == "❯"
+        && prompt + 2 < lines.len()
+        && lines.len() - prompt <= 6
+        && is_composer_rule(lines[prompt - 1])
+        && is_composer_rule(lines[prompt + 1])
+        && lines[prompt + 2..]
+            .iter()
+            .any(|line| !line.trim().is_empty())
+}
+
+fn blank_codex_composer(lines: &[&str]) -> bool {
+    let Some(prompt) = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with('›'))
+    else {
+        return false;
+    };
+    lines[prompt].trim() == "› Ask Codex to do anything"
+        && prompt + 1 < lines.len()
+        && lines.len() - prompt <= 10
+        && lines[prompt + 1..]
+            .iter()
+            .any(|line| !line.trim().is_empty())
 }
 
 fn deliver_claude(control: &Path, flow: &str, session: &str, datom: &str) -> Result<(), String> {
@@ -430,7 +563,11 @@ mod tests {
         Available_Data, EndpointSelection, FlowLifecycle, HarnessKind, OriginClue,
         Response as FlowResponse,
     };
-    use std::{os::unix::net::UnixListener, sync::mpsc, thread};
+    use std::{
+        os::unix::{fs::PermissionsExt, net::UnixListener},
+        sync::mpsc,
+        thread,
+    };
     use tempfile::tempdir;
 
     fn herdr_route() -> HerdrRoute {
@@ -442,23 +579,424 @@ mod tests {
         }
     }
 
-    #[test]
-    fn herdr_guard_accepts_only_the_registered_idle_blank_composer() {
-        let directory = tempdir().unwrap();
-        let program = directory.path().join("herdr");
-        std::fs::write(&program, r#"#!/bin/sh
-if [ "$4" = get ]; then echo '{"result":{"agent":{"name":"agent","pane_id":"w1:p1","terminal_id":"term","agent":"codex","agent_status":"idle"}}}'; exit 0; fi
-if [ "$4" = read ]; then printf 'output\n❯\n'; exit 0; fi
-exit 9
-"#).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    fn flow_node(harness_kind: HarnessKind, route: HerdrRouteSelection) -> FlowNode {
+        FlowNode {
+            flow_id: "flow-a".into(),
+            session_id: "session-a".into(),
+            harness_kind,
+            endpoint_selection: EndpointSelection::Unavailable,
+            herdr_route_selection: route,
+            origin_clue: OriginClue {
+                flow_id: "origin".into(),
+                session_id: "session".into(),
+                turn_id: "turn".into(),
+            },
+            flow_lifecycle: FlowLifecycle::Active,
         }
+    }
+
+    fn serve_resolutions(socket: &Path, nodes: Vec<FlowNode>) -> thread::JoinHandle<()> {
+        let listener = UnixListener::bind(socket).unwrap();
+        thread::spawn(move || {
+            for node in nodes {
+                let (mut peer, _) = listener.accept().unwrap();
+                let mut length = [0; 4];
+                peer.read_exact(&mut length).unwrap();
+                let mut body = vec![0; u32::from_be_bytes(length) as usize];
+                peer.read_exact(&mut body).unwrap();
+                assert_eq!(
+                    rkyv::from_bytes::<FlowQuery, rkyv::rancor::Error>(&body).unwrap(),
+                    FlowQuery::ResolveRecipient("flow-a".into())
+                );
+                let response = FlowResponse::RecipientResolved(node);
+                let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&response).unwrap();
+                peer.write_all(&(bytes.len() as u32).to_be_bytes()).unwrap();
+                peer.write_all(&bytes).unwrap();
+            }
+        })
+    }
+
+    fn serve_resolution(socket: &Path, node: FlowNode) -> thread::JoinHandle<()> {
+        serve_resolutions(socket, vec![node])
+    }
+
+    struct FakeHerdr<'fixture> {
+        directory: &'fixture Path,
+        harness: &'fixture str,
+        status: Option<&'fixture str>,
+        interactive_ready: bool,
+        terminal: &'fixture str,
+        post_terminal: Option<&'fixture str>,
+        screen: &'fixture str,
+        prompt_exit: i32,
+    }
+
+    impl FakeHerdr<'_> {
+        fn write(&self) -> PathBuf {
+            let program = self.directory.join("herdr");
+            let log = self.directory.join("commands");
+            let prompt = self.directory.join("prompt");
+            let get_once = self.directory.join("get-once");
+            let status = self
+                .status
+                .map(|value| format!(r#", \"agent_status\":\"{value}\""#))
+                .unwrap_or_default();
+            let script = r#"#!/bin/sh
+printf '%s\n' "$4" >> '__LOG__'
+case "$4" in
+get)
+  if [ -e '__GET_ONCE__' ]; then terminal='__POST_TERMINAL__'; else touch '__GET_ONCE__'; terminal='__TERMINAL__'; fi
+  printf '%s\n' "{\"id\":\"cli:agent:get\",\"result\":{\"agent\":{\"agent\":\"__HARNESS__\",\"name\":\"agent\",\"pane_id\":\"w1:p1\",\"terminal_id\":\"$terminal\",\"interactive_ready\":__READY____STATUS__}}}" ;;
+read) cat <<'SCREEN'
+__SCREEN__
+SCREEN
+;;
+prompt) printf '%s' "$6" >> '__PROMPT__'; exit __PROMPT_EXIT__ ;;
+*) exit 9 ;;
+esac
+"#
+            .replace("__LOG__", &log.display().to_string())
+            .replace("__HARNESS__", self.harness)
+            .replace("__GET_ONCE__", &get_once.display().to_string())
+            .replace(
+                "__POST_TERMINAL__",
+                self.post_terminal.unwrap_or(self.terminal),
+            )
+            .replace("__TERMINAL__", self.terminal)
+            .replace("__READY__", &self.interactive_ready.to_string())
+            .replace("__STATUS__", &status)
+            .replace("__SCREEN__", self.screen)
+            .replace("__PROMPT__", &prompt.display().to_string())
+            .replace("__PROMPT_EXIT__", &self.prompt_exit.to_string());
+            std::fs::write(&program, script).unwrap();
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+            program
+        }
+    }
+
+    fn peer_message() -> ClusterMessage {
+        use signal_message::{PeerEnvelope, PeerSender};
+        ClusterMessage::Peer(PeerEnvelope {
+            peer_sender: PeerSender {
+                flow_identifier: "source-flow".into(),
+                session_identifier: "source-session".into(),
+            },
+            source_event_identifier: "event-1".into(),
+            peer_source_path: "flows/source/reports/exact.md".into(),
+            peer_body_sha256: "a1e4e331d40278d0c2c1fdf2cdabd1690682bd13c1fd49dadd40c9df3dc6d6ad"
+                .into(),
+            peer_body: "exact body".into(),
+        })
+    }
+
+    #[test]
+    fn herdr_guard_accepts_live_claude_and_codex_blank_composers() {
+        let directory = tempdir().unwrap();
+        let program = FakeHerdr {
+            directory: directory.path(),
+            harness: "claude",
+            status: Some("idle"),
+            interactive_ready: true,
+            terminal: "term",
+            post_terminal: None,
+            screen: "✻ Brewed for 31s · done 8:03 PM\n\n──────── primary Psyche opus ────────\n❯\n────────────────────────────────────\n  primary main  Opus 5·medium\n  -- INSERT -- auto mode on",
+            prompt_exit: 0,
+        }
+        .write();
+        assert!(
+            validate_herdr_composer(program.as_os_str(), &herdr_route(), &HarnessKind::Claude)
+                .is_ok()
+        );
+
+        let program = FakeHerdr {
+            directory: directory.path(),
+            harness: "codex",
+            status: Some("working"),
+            interactive_ready: true,
+            terminal: "term",
+            post_terminal: None,
+            screen: "prior output\n\n› Ask Codex to do anything\n\n\n  ? for shortcuts                       100% context left",
+            prompt_exit: 0,
+        }
+        .write();
         assert!(
             validate_herdr_composer(program.as_os_str(), &herdr_route(), &HarnessKind::Codex)
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn herdr_guard_refuses_busy_nonblank_wrong_terminal_unready_and_missing_status() {
+        let cases = [
+            (
+                Some("waiting"),
+                true,
+                "term",
+                "──────── title ────────\n❯\n────────────────\nfooter",
+            ),
+            (
+                Some("idle"),
+                true,
+                "term",
+                "──────── title ────────\n❯ living draft\n────────────────\nfooter",
+            ),
+            (
+                Some("idle"),
+                true,
+                "other",
+                "──────── title ────────\n❯\n────────────────\nfooter",
+            ),
+            (
+                Some("idle"),
+                false,
+                "term",
+                "──────── title ────────\n❯\n────────────────\nfooter",
+            ),
+            (
+                None,
+                true,
+                "term",
+                "──────── title ────────\n❯\n────────────────\nfooter",
+            ),
+        ];
+        for (status, interactive_ready, terminal, screen) in cases {
+            let directory = tempdir().unwrap();
+            let program = FakeHerdr {
+                directory: directory.path(),
+                harness: "claude",
+                status,
+                interactive_ready,
+                terminal,
+                post_terminal: None,
+                screen,
+                prompt_exit: 0,
+            }
+            .write();
+            assert!(
+                validate_herdr_composer(program.as_os_str(), &herdr_route(), &HarnessKind::Claude)
+                    .is_err()
+            );
+            let commands = std::fs::read_to_string(directory.path().join("commands")).unwrap();
+            assert!(!commands.lines().any(|command| command == "prompt"));
+        }
+    }
+
+    #[test]
+    fn herdr_delivery_submits_the_canonical_datom_once() {
+        let directory = tempdir().unwrap();
+        let program = FakeHerdr {
+            directory: directory.path(),
+            harness: "claude",
+            status: Some("idle"),
+            interactive_ready: true,
+            terminal: "term",
+            post_terminal: None,
+            screen: "──────── primary Psyche opus ────────\n❯\n────────────────────────────────────\n  primary main  Opus 5·medium\n  -- INSERT -- auto mode on",
+            prompt_exit: 0,
+        }
+        .write();
+        let route = herdr_route();
+        let node = flow_node(
+            HarnessKind::Claude,
+            HerdrRouteSelection::Available(route.clone()),
+        );
+        let socket = directory.path().join("flow.sock");
+        let flow = serve_resolution(&socket, node.clone());
+        let message = peer_message();
+        let adapter = LiveNexusDelivery::with_paths(&socket, &program);
+        assert_eq!(
+            adapter.deliver(&node, &message).unwrap(),
+            ReceiptKind::Accepted
+        );
+        flow.join().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("commands")).unwrap(),
+            "get\nread\nprompt\nget\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("prompt")).unwrap(),
+            crate::text::write(&message)
+        );
+    }
+
+    #[test]
+    fn changed_or_unavailable_flow_revalidation_never_invokes_herdr() {
+        for changed in [
+            flow_node(HarnessKind::Claude, HerdrRouteSelection::Unavailable),
+            flow_node(
+                HarnessKind::Claude,
+                HerdrRouteSelection::Available(HerdrRoute {
+                    herdr_terminal_id: "replacement".into(),
+                    ..herdr_route()
+                }),
+            ),
+        ] {
+            let directory = tempdir().unwrap();
+            let program = FakeHerdr {
+                directory: directory.path(),
+                harness: "claude",
+                status: Some("idle"),
+                interactive_ready: true,
+                terminal: "term",
+                post_terminal: None,
+                screen: "──────── title ────────\n❯\n────────────────\nfooter",
+                prompt_exit: 0,
+            }
+            .write();
+            let node = flow_node(
+                HarnessKind::Claude,
+                HerdrRouteSelection::Available(herdr_route()),
+            );
+            let socket = directory.path().join("flow.sock");
+            let flow = serve_resolution(&socket, changed);
+            let adapter = LiveNexusDelivery::with_paths(&socket, &program);
+            assert!(adapter.deliver(&node, &peer_message()).is_err());
+            flow.join().unwrap();
+            assert!(!directory.path().join("commands").exists());
+        }
+    }
+
+    #[test]
+    fn stale_herdr_route_with_parked_native_endpoint_never_falls_back() {
+        let directory = tempdir().unwrap();
+        let node = FlowNode {
+            endpoint_selection: EndpointSelection::Available(Available_Data {
+                endpoint_path: directory
+                    .path()
+                    .join("absent-native.sock")
+                    .display()
+                    .to_string(),
+                route_readiness: RouteReadiness::Parked,
+            }),
+            ..flow_node(HarnessKind::Codex, HerdrRouteSelection::Unavailable)
+        };
+        let archive = rkyv::to_bytes::<rkyv::rancor::Error>(&node).unwrap();
+        let resolved = rkyv::from_bytes::<FlowNode, rkyv::rancor::Error>(&archive).unwrap();
+        let adapter = LiveNexusDelivery::with_paths(
+            directory.path().join("unused-flow.sock"),
+            directory.path().join("unused-herdr"),
+        );
+
+        assert_eq!(
+            adapter.deliver(&resolved, &peer_message()).unwrap(),
+            ReceiptKind::Parked
+        );
+        assert!(!directory.path().join("absent-native.sock").exists());
+    }
+
+    #[test]
+    fn accepted_and_ambiguous_parked_v6_rows_reopen_without_retry() {
+        use crate::{MessageEngine, MessengerTables, OriginPolicy};
+        use signal_message::{DeliveryRequest, Query, Response};
+        use triad_runtime::{ConnectionContext, UnixCredentials};
+
+        for (prompt_exit, expected, expected_commands) in [
+            (0, ReceiptKind::Accepted, "get\nread\nprompt\nget\n"),
+            (23, ReceiptKind::Parked, "get\nread\nprompt\n"),
+        ] {
+            let directory = tempdir().unwrap();
+            let program = FakeHerdr {
+                directory: directory.path(),
+                harness: "claude",
+                status: Some("working"),
+                interactive_ready: true,
+                terminal: "term",
+                post_terminal: None,
+                screen: "──────── primary Psyche opus ────────\n❯\n────────────────────────────────────\n  primary main  Opus 5·medium\n  -- INSERT -- auto mode on",
+                prompt_exit,
+            }
+            .write();
+            let node = flow_node(
+                HarnessKind::Claude,
+                HerdrRouteSelection::Available(herdr_route()),
+            );
+            let socket = directory.path().join("flow.sock");
+            let flow = serve_resolutions(&socket, vec![node.clone(), node]);
+            let store = directory.path().join("messenger.sema");
+            let source_event_identifier = format!("durable-{prompt_exit}");
+            let mut cluster_message = peer_message();
+            let ClusterMessage::Peer(peer) = &mut cluster_message else {
+                unreachable!()
+            };
+            peer.source_event_identifier = source_event_identifier.clone();
+            let request = DeliveryRequest {
+                source_event_identifier,
+                cluster_message,
+                target_flows: vec!["flow-a".into()],
+            };
+            let connection = ConnectionContext::from(UnixCredentials::new(
+                1000,
+                1000,
+                std::process::id() as i32,
+            ));
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            {
+                let mut engine = MessageEngine::new(
+                    MessengerTables::open(&store).unwrap(),
+                    OriginPolicy::for_owner_user_id(1000, "owner"),
+                )
+                .with_nexus_delivery(LiveNexusDelivery::with_paths(&socket, &program));
+                let response = runtime
+                    .block_on(engine.handle(Query::Deliver(request.clone()), &connection))
+                    .unwrap();
+                let Response::DeliveryRecorded(report) = response else {
+                    panic!("delivery was not durably recorded: {response:?}")
+                };
+                assert_eq!(report.recipient_receipts[0].receipt_kind, expected);
+            }
+            flow.join().unwrap();
+            assert_eq!(
+                std::fs::read_to_string(directory.path().join("commands")).unwrap(),
+                expected_commands
+            );
+
+            std::fs::remove_file(&socket).ok();
+            let mut reopened = MessageEngine::new(
+                MessengerTables::open(&store).unwrap(),
+                OriginPolicy::for_owner_user_id(1000, "owner"),
+            )
+            .with_nexus_delivery(LiveNexusDelivery::with_paths(&socket, &program));
+            let Response::DeliveryRecorded(report) = runtime
+                .block_on(reopened.handle(Query::Deliver(request), &connection))
+                .unwrap()
+            else {
+                panic!("reopened delivery was not found")
+            };
+            assert_eq!(report.recipient_receipts[0].receipt_kind, expected);
+            assert_eq!(
+                std::fs::read_to_string(directory.path().join("commands")).unwrap(),
+                expected_commands,
+                "reopening and repeating a source event must not prompt again"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_replacement_after_prompt_is_an_uncertain_failure() {
+        let directory = tempdir().unwrap();
+        let program = FakeHerdr {
+            directory: directory.path(),
+            harness: "claude",
+            status: Some("working"),
+            interactive_ready: true,
+            terminal: "term",
+            post_terminal: Some("replacement"),
+            screen: "──────── primary Psyche opus ────────\n❯\n────────────────────────────────────\n  primary main  Opus 5·medium",
+            prompt_exit: 0,
+        }
+        .write();
+        let node = flow_node(
+            HarnessKind::Claude,
+            HerdrRouteSelection::Available(herdr_route()),
+        );
+        let socket = directory.path().join("flow.sock");
+        let flow = serve_resolution(&socket, node.clone());
+        let adapter = LiveNexusDelivery::with_paths(&socket, &program);
+        assert!(adapter.deliver(&node, &peer_message()).is_err());
+        flow.join().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("commands")).unwrap(),
+            "get\nread\nprompt\nget\n"
         );
     }
 

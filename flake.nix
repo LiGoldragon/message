@@ -71,6 +71,14 @@
                 cargoTestExtraArgs = "--test ${testFile} ${testName} -- --exact";
               }
             );
+          cargoLibTest =
+            testName: craneLib.cargoTest (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoTestExtraArgs = "--lib ${testName} -- --exact";
+              }
+            );
           context = {
             inherit
               pkgs
@@ -80,6 +88,7 @@
               cargoArtifacts
               sourceConstraintCheck
               cargoTestFile
+              cargoLibTest
               ;
           };
         in
@@ -187,53 +196,19 @@
           message-flow-delivery-repeated-idle-is-idempotent =
             context.cargoTestFile "flow_delivery"
               "repeated_idle_queries_are_acknowledged_without_relanding";
+          message-herdr-route-submits-canonical-datom-once = context.cargoLibTest
+            "nexus_delivery::tests::herdr_delivery_submits_the_canonical_datom_once";
+          message-herdr-route-refuses-unready-composers = context.cargoLibTest
+            "nexus_delivery::tests::herdr_guard_refuses_busy_nonblank_wrong_terminal_unready_and_missing_status";
+          message-stale-herdr-route-never-falls-back-to-native = context.cargoLibTest
+            "nexus_delivery::tests::stale_herdr_route_with_parked_native_endpoint_never_falls_back";
+          message-native-only-direct-protocol-remains-routable = context.cargoLibTest
+            "nexus_delivery::tests::flow_resolution_and_claude_delivery_use_direct_protocols";
+          message-herdr-uncertain-delivery-is-durable-without-retry = context.cargoLibTest
+            "nexus_delivery::tests::accepted_and_ambiguous_parked_v6_rows_reopen_without_retry";
           message-relay-busy-delivery-is-durable-before-socket-write =
             context.cargoTestFile "relay_fixture"
               "busy_delivery_is_persisted_before_any_socket_write";
-          message-relay-ordinary-claude-parser = context.craneLib.cargoTest (
-            context.commonArgs
-            // {
-              inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--bin relay";
-            }
-          );
-          message-relay-ordinary-claude-process-fixture =
-            context.cargoTestFile "relay_process"
-              "ordinary_claude_turn_reaches_the_typed_relay_header_without_context_or_delivery";
-          message-cluster-datom-cli = context.cargoTestFile "cluster_cli"
-            "verifies_a_producer_cluster_relay_and_preserves_verbatim_words";
-          message-relay-codex-socket-fixture =
-            context.cargoTestFile "relay_process"
-              "fake_codex_socket_receives_the_exact_header_and_ordinary_claude_body";
-          message-relay-flow-route-fanout-fixture =
-            context.cargoTestFile "relay_process"
-              "configured_busy_nexus_route_parks_the_typed_cluster_relay_before_delivery";
-          message-relay-unknown-route-refusal =
-            context.cargoTestFile "relay_process"
-              "unknown_route_readiness_refuses_without_connecting_an_endpoint";
-          message-relay-configured-claude-peer-file-fixture =
-            context.cargoTestFile "relay_process"
-              "configured_claude_peer_file_is_bounded_and_requires_matching_pty_receipt";
-          message-relay-codex-rollout-loop-exclusion = context.craneLib.cargoTest (
-            context.commonArgs
-            // {
-              inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--bin relay tests::consolidated_codex_rollout_relay_record_is_excluded_as_one_record -- --exact";
-            }
-          );
-          message-relay-prompt-relay-provenance-loop-exclusion =
-            context.cargoTestFile "relay_process"
-              "prompt_relay_provenance_record_is_refused_without_socket_write_and_neighbor_is_selectable";
-          message-relay-cross-session-envelope-exclusion = context.craneLib.cargoTest (
-            context.commonArgs
-            // {
-              inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--bin relay tests::cross_session_markup_requires_a_closed_envelope_at_the_start -- --exact";
-            }
-          );
-          message-relay-ambiguous-and-mismatched-context-refuse =
-            context.cargoTestFile "relay_process"
-              "ambiguous_or_mismatched_context_source_is_refused_before_delivery";
           message-previous-store-schema-fails-closed =
             context.cargoTestFile "store_migration"
               "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
