@@ -112,7 +112,8 @@ fn deliver_herdr(node: &FlowNode, route: &HerdrRoute, datom: &str) -> Result<(),
         return Err("Herdr recipient changed or is no longer ready".into());
     }
     let program = env::var_os("MESSAGE_HERDR_PROGRAM").unwrap_or_else(|| "herdr".into());
-    let status = Command::new(program)
+    validate_herdr_composer(&program, route, &node.harness_kind)?;
+    let status = Command::new(&program)
         .args([
             "--session",
             &route.herdr_session_name,
@@ -128,6 +129,71 @@ fn deliver_herdr(node: &FlowNode, route: &HerdrRoute, datom: &str) -> Result<(),
     } else {
         Err("Herdr prompt refused or outcome is uncertain".into())
     }
+}
+
+fn validate_herdr_composer(
+    program: &std::ffi::OsStr,
+    route: &HerdrRoute,
+    harness: &HarnessKind,
+) -> Result<(), String> {
+    let get = Command::new(program)
+        .args([
+            "--session",
+            &route.herdr_session_name,
+            "agent",
+            "get",
+            &route.herdr_pane_id,
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !get.status.success() {
+        return Err("Herdr agent identity lookup refused".into());
+    }
+    let agent: serde_json::Value =
+        serde_json::from_slice(&get.stdout).map_err(|_| "Herdr agent identity was not JSON")?;
+    let agent = agent
+        .pointer("/result/agent")
+        .ok_or("Herdr agent result missing")?;
+    if agent.get("name").and_then(serde_json::Value::as_str) != Some(&route.herdr_agent_name)
+        || agent.get("pane_id").and_then(serde_json::Value::as_str) != Some(&route.herdr_pane_id)
+        || agent.get("terminal_id").and_then(serde_json::Value::as_str)
+            != Some(&route.herdr_terminal_id)
+        || agent.get("agent").and_then(serde_json::Value::as_str)
+            != Some(match harness {
+                HarnessKind::Codex => "codex",
+                HarnessKind::Claude => "claude",
+            })
+        || agent
+            .get("agent_status")
+            .and_then(serde_json::Value::as_str)
+            != Some("idle")
+    {
+        return Err("Herdr recipient is not the registered idle agent".into());
+    }
+    let visible = Command::new(program)
+        .args([
+            "--session",
+            &route.herdr_session_name,
+            "agent",
+            "read",
+            &route.herdr_pane_id,
+            "--source",
+            "visible",
+            "--lines",
+            "80",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !visible.status.success() {
+        return Err("Herdr composer snapshot refused".into());
+    }
+    let screen =
+        String::from_utf8(visible.stdout).map_err(|_| "Herdr composer snapshot was not text")?;
+    let blank_prompt = screen.lines().last().is_some_and(|line| line.trim() == "❯");
+    if !blank_prompt {
+        return Err("Herdr composer is not a supported blank prompt".into());
+    }
+    Ok(())
 }
 
 fn deliver_claude(control: &Path, flow: &str, session: &str, datom: &str) -> Result<(), String> {
