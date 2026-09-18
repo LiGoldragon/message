@@ -8,14 +8,15 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
+    process::Command,
     time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use sha1::{Digest as _, Sha1};
 use signal_flow::{
-    EndpointSelection, FlowNode, HarnessKind, Query as FlowQuery, Response as FlowResponse,
-    RouteReadiness,
+    EndpointSelection, FlowNode, HarnessKind, HerdrRoute, HerdrRouteSelection, Query as FlowQuery,
+    Response as FlowResponse, RouteReadiness,
 };
 use signal_message::{ClusterMessage, ReceiptKind};
 
@@ -70,6 +71,11 @@ impl FlowResolver {
 }
 
 pub fn deliver(node: &FlowNode, message: &ClusterMessage) -> Result<ReceiptKind, String> {
+    if let HerdrRouteSelection::Available(route) = &node.herdr_route_selection {
+        let datom = crate::text::write(message);
+        deliver_herdr(node, route, &datom)?;
+        return Ok(ReceiptKind::Accepted);
+    }
     let EndpointSelection::Available(endpoint) = &node.endpoint_selection else {
         return Ok(ReceiptKind::Parked);
     };
@@ -89,6 +95,39 @@ pub fn deliver(node: &FlowNode, message: &ClusterMessage) -> Result<ReceiptKind,
         }
     }?;
     Ok(ReceiptKind::Accepted)
+}
+
+/// Submits only a Flow-resolved, ready Herdr route.  Flow owns the live
+/// identity and blank-composer witness; Message repeats resolution immediately
+/// before the single prompt call so replacement or stale routes receive no input.
+fn deliver_herdr(node: &FlowNode, route: &HerdrRoute, datom: &str) -> Result<(), String> {
+    let Some(current) = FlowResolver::conventional().resolve(&node.flow_id)? else {
+        return Err("Flow no longer resolves the Herdr recipient".into());
+    };
+    if current.flow_id != node.flow_id
+        || current.session_id != node.session_id
+        || current.harness_kind != node.harness_kind
+        || current.herdr_route_selection != HerdrRouteSelection::Available(route.clone())
+    {
+        return Err("Herdr recipient changed or is no longer ready".into());
+    }
+    let program = env::var_os("MESSAGE_HERDR_PROGRAM").unwrap_or_else(|| "herdr".into());
+    let status = Command::new(program)
+        .args([
+            "--session",
+            &route.herdr_session_name,
+            "agent",
+            "prompt",
+            &route.herdr_pane_id,
+            datom,
+        ])
+        .status()
+        .map_err(|error| format!("start Herdr prompt: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Herdr prompt refused or outcome is uncertain".into())
+    }
 }
 
 fn deliver_claude(control: &Path, flow: &str, session: &str, datom: &str) -> Result<(), String> {
@@ -351,6 +390,7 @@ mod tests {
                     endpoint_path: "/tmp/control.sock".into(),
                     route_readiness: RouteReadiness::Ready,
                 }),
+                herdr_route_selection: HerdrRouteSelection::Unavailable,
                 origin_clue: OriginClue {
                     flow_id: "origin".into(),
                     session_id: "session".into(),

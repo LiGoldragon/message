@@ -785,7 +785,7 @@ dependencies = [
 [[package]]
 name = "signal-flow"
 version = "1.1.0"
-source = "git+https://github.com/LiGoldragon/signal-flow.git?rev=5334763fe61513f4cd8d58160e411c9e8315d1b9#5334763fe61513f4cd8d58160e411c9e8315d1b9"
+source = "git+https://github.com/LiGoldragon/signal-flow.git?rev=968ae3b00a64ebcb1ef05e21a0a55cee55ad015c#968ae3b00a64ebcb1ef05e21a0a55cee55ad015c"
 dependencies = [
  "ethos-zero 10.0.0",
  "rkyv",
