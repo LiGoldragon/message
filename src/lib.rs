@@ -10,6 +10,8 @@ pub mod command;
 pub mod config;
 pub mod daemon;
 pub mod delivery;
+pub(crate) mod delivery_address;
+pub(crate) mod delivery_receipts;
 pub mod engine;
 pub mod error;
 pub mod flow_delivery;

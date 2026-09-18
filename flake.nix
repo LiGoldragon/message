@@ -196,6 +196,12 @@
           message-flow-delivery-repeated-idle-is-idempotent =
             context.cargoTestFile "flow_delivery"
               "repeated_idle_queries_are_acknowledged_without_relanding";
+          message-delivery-receipt-query = context.cargoTestFile "delivery_receipts"
+            "receipt_queries_preserve_recorded_states_after_reopen_and_order_missing_targets";
+          message-delivery-address-domain = context.cargoTestFile "delivery_receipts"
+            "invalid_address_selections_are_typed_and_cannot_mutate_or_resolve";
+          message-delivery-receipt-public-socket = context.cargoTestFile "process_boundary"
+            "ordinary_socket_accepts_the_public_receipt_query_datom";
           message-herdr-route-submits-canonical-datom-once = context.cargoLibTest
             "nexus_delivery::tests::herdr_delivery_submits_the_canonical_datom_once";
           message-herdr-route-refuses-unready-composers = context.cargoLibTest

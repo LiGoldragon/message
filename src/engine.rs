@@ -6,18 +6,20 @@
 
 use sha2::{Digest, Sha256};
 use signal_message::{
-    AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason, DeliveryReport,
-    DeliveryRequest, FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment,
-    FlowIdleAnnouncement, InboxListingReply, MessageOperationKind,
-    MessageRequestUnimplementedReply, MessageUnimplementedReason, Query, ReceiptKind,
-    RecipientReceipt, Response, SubmissionRejectionReason, TargetFlowName, ThreadIndexEntries,
-    ThreadRejectionReason,
+    AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason,
+    DeliveryReceiptQuery, DeliveryReceiptQueryRejection, DeliveryReport, DeliveryRequest,
+    FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment, FlowIdleAnnouncement,
+    InboxListingReply, MessageOperationKind, MessageRequestUnimplementedReply,
+    MessageUnimplementedReason, Query, ReceiptKind, RecipientReceipt, Response,
+    SubmissionRejectionReason, TargetFlowName, ThreadIndexEntries, ThreadRejectionReason,
 };
 use triad_runtime::ConnectionContext;
 
 use crate::{
     config::Configuration,
     delivery::DeliveryRunner,
+    delivery_address::DeliveryAddressSelection,
+    delivery_receipts::{DeliveryReceiptLookup, StoredDeliveryReceipts},
     error::Error,
     flow_delivery::FlowDeliveryOutbox,
     flow_registry::FlowMarkerIndex,
@@ -119,10 +121,14 @@ impl MessageEngine {
             }
             Query::FlowAnnounceIdle(announcement) => self.announce_idle(announcement),
             Query::Deliver(request) => self.deliver(request),
+            Query::QueryDeliveryReceipts(query) => self.query_delivery_receipts(query),
         })
     }
 
     fn deliver(&self, request: DeliveryRequest) -> Response {
+        if let Err(reason) = request.validate_address_selection() {
+            return Response::DeliveryRejected(reason);
+        }
         if let Err(detail) = validate_delivery_request(&request) {
             return Response::Error(detail);
         }
@@ -252,6 +258,28 @@ impl MessageEngine {
             source_event_identifier: request.source_event_identifier,
             recipient_receipts,
         })
+    }
+
+    fn query_delivery_receipts(&self, query: DeliveryReceiptQuery) -> Response {
+        if let Err(reason) = query.validate_address_selection() {
+            return Response::DeliveryReceiptQueryRejected(
+                DeliveryReceiptQueryRejection::InvalidAddressSelection(reason),
+            );
+        }
+        Self::receipt_query_response(
+            StoredDeliveryReceipts::new(&self.tables).lookup_delivery_receipts(&query),
+        )
+    }
+
+    fn receipt_query_response(
+        result: crate::Result<signal_message::DeliveryReceiptListing>,
+    ) -> Response {
+        match result {
+            Ok(listing) => Response::DeliveryReceiptListing(listing),
+            Err(_) => {
+                Response::DeliveryReceiptQueryRejected(DeliveryReceiptQueryRejection::StoreRejected)
+            }
+        }
     }
 
     /// Park one flow delivery, or refuse it typed.
@@ -397,9 +425,6 @@ impl MessageEngine {
 }
 
 fn validate_delivery_request(request: &DeliveryRequest) -> Result<(), String> {
-    if request.target_flows.is_empty() {
-        return Err("delivery requires at least one target flow".into());
-    }
     match &request.cluster_message {
         signal_message::ClusterMessage::Peer(peer) => {
             if peer.source_event_identifier != request.source_event_identifier {
@@ -411,10 +436,6 @@ fn validate_delivery_request(request: &DeliveryRequest) -> Result<(), String> {
             }
         }
         signal_message::ClusterMessage::Relay(relay) => {
-            // Relay identifies the exact prompt by transcript path, word
-            // boundaries, and hash; the prompt bytes intentionally are not
-            // duplicated in this derived-context carrier. Enforce the internal
-            // source binding that can be decided from the carried value.
             if relay.prompt_sha256 != relay.context.prompt_sha256
                 || relay.transcript_path != relay.context.transcript_path
                 || relay.flow_identifier != relay.context.flow_identifier
@@ -429,4 +450,124 @@ fn validate_delivery_request(request: &DeliveryRequest) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use signal_flow::FlowNode;
+    use signal_message::{
+        ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget, Context,
+        DeliveryAddressSelectionRejection, DeliveryRequest, Query,
+    };
+    use triad_runtime::UnixCredentials;
+
+    #[derive(Debug)]
+    struct PanicNexusDelivery;
+
+    impl NexusDelivery for PanicNexusDelivery {
+        fn resolve(&self, _flow: &str) -> std::result::Result<Option<FlowNode>, String> {
+            panic!("reserved source reached resolver")
+        }
+
+        fn deliver(
+            &self,
+            _node: &FlowNode,
+            _message: &signal_message::ClusterMessage,
+        ) -> std::result::Result<ReceiptKind, String> {
+            panic!("reserved source reached delivery")
+        }
+    }
+
+    #[test]
+    fn receipt_store_failures_are_typed_without_exposing_the_store_error() {
+        let response =
+            MessageEngine::receipt_query_response(Err(Error::InvalidValidatorArgument {
+                detail: "disposable receipt-store fixture fault".into(),
+            }));
+        assert_eq!(
+            response,
+            Response::DeliveryReceiptQueryRejected(DeliveryReceiptQueryRejection::StoreRejected)
+        );
+    }
+
+    #[test]
+    fn reserved_event_refuses_the_reachable_relay_receipt_key_alias() {
+        let directory = tempfile::tempdir().unwrap();
+        let tables = MessengerTables::open(&directory.path().join("messenger.sema")).unwrap();
+        let relay = relay();
+        tables
+            .admit_nexus_delivery(
+                "event\0target",
+                NexusDeliveryRecord {
+                    request_fingerprint: format!(
+                        "{:x}",
+                        Sha256::digest(crate::text::write(&relay).as_bytes())
+                    ),
+                    cluster_message: relay.clone(),
+                    receipt_kind: ReceiptKind::FileOnly,
+                    retryable: false,
+                },
+            )
+            .unwrap();
+        let mut engine = MessageEngine::new(tables, OriginPolicy::for_owner_user_id(1000, "owner"))
+            .with_nexus_delivery(PanicNexusDelivery);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let connection = ConnectionContext::from(UnixCredentials::new(1000, 1000, 1));
+        let response = runtime
+            .block_on(engine.handle(
+                Query::Deliver(DeliveryRequest {
+                    source_event_identifier: "event".into(),
+                    cluster_message: relay,
+                    target_flows: vec!["target".into()],
+                }),
+                &connection,
+            ))
+            .unwrap();
+        assert_eq!(
+            response,
+            Response::DeliveryRejected(
+                DeliveryAddressSelectionRejection::ReservedSourceEventIdentifier
+            )
+        );
+        assert!(
+            engine
+                .tables
+                .nexus_delivery("event\0target")
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    fn relay() -> ClusterMessage {
+        let prompt_sha256 = "a".repeat(64);
+        ClusterMessage::Relay(ClusterRelay {
+            flow_identifier: "source-flow".into(),
+            session_identifier: "source-session".into(),
+            transcript_path: "flows/source-flow/transcript.md".into(),
+            prompt_first_six_words: "one two three four five six".into(),
+            prompt_last_six_words: "seven eight nine ten eleven twelve".into(),
+            prompt_sha256: prompt_sha256.clone(),
+            context: Context {
+                flow_identifier: "source-flow".into(),
+                source_turn_identifier: "turn-1".into(),
+                transcript_path: "flows/source-flow/transcript.md".into(),
+                prompt_sha256,
+                what_living_said: "fixture".into(),
+                context_about: "fixture".into(),
+                context_answered: "fixture".into(),
+                context_corrected: "fixture".into(),
+                context_uncertainties: Vec::new(),
+            },
+            timestamp_nanos: 1,
+            cluster_target: ClusterTarget::Primary,
+            cluster_members: vec![ClusterMember {
+                flow_identifier: "source-flow".into(),
+                session_identifier: "source-session".into(),
+            }],
+        })
+    }
 }

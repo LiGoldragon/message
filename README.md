@@ -5,6 +5,27 @@ interfaces. `signal-message` owns every public ordinary Type and
 `meta-signal-message` owns every public owner Type; this repository imports
 those Types by identity.
 
+Query one known delivery with:
+
+```
+message 'QueryDeliveryReceipts.{ event-42 [ target-a target-b ] }'
+```
+
+The query and `Deliver` share one address domain: a nonempty source identifier
+other than `event`, plus 1–64 unique, nonempty target identifiers, with no NUL
+in either identifier. `Recorded` reports the persisted receipt kind and its
+retryability; `Missing` means that exact key has no record. `Accepted` means
+transport submission only. Querying never retries or sends anything: it only
+observes persisted retryability. The durable values do not retain an index of
+their keys, so global receipt discovery is intentionally unavailable.
+Existing v6 rows remain unchanged: lookup rejects pre-existing ambiguous
+addresses and, for a valid address, reports the stored status without
+validating or repairing the historical delivery.
+
+The source identifier `event` is reserved for the messenger's event-identity
+sentinel. This protects against identical valid Relay payloads under different
+source-event identifiers aliasing the sentinel as a `FileOnly` event record.
+
 It provides:
 
 - `message`, a one-value Datom client for the ordinary interface (argv or stdin);

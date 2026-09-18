@@ -443,7 +443,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "message"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "base64",
  "datom-codec 0.27.0",
@@ -461,7 +461,7 @@ dependencies = [
  "signal",
  "signal-flow",
  "signal-harness",
- "signal-message 4.0.0",
+ "signal-message 5.0.0",
  "tempfile",
  "thiserror",
  "time",
@@ -819,8 +819,8 @@ dependencies = [
 
 [[package]]
 name = "signal-message"
-version = "4.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message.git?rev=37c3e5b75b05f86b7dc27198bb4523ccbd495e4b#37c3e5b75b05f86b7dc27198bb4523ccbd495e4b"
+version = "5.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message.git?rev=7f2fc2d44b7b1a5e59c32b8071c56a4822310ed8#7f2fc2d44b7b1a5e59c32b8071c56a4822310ed8"
 dependencies = [
  "datom-codec 0.27.0",
  "ethos-zero 9.0.0",

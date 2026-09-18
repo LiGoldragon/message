@@ -3,7 +3,9 @@ use std::{
     time::Duration,
 };
 
+use datom_codec::{Actualizing, Budget, Potential};
 use message::{Configuration, client::MessageSocket};
+use protos::ReaderBudget;
 use signal_message::{
     ClusterMessage, DeliveryRequest, FlowDeliveryRequest, FlowIdleAnnouncement,
     MessageDaemonConfiguration, OwnerIdentity, PeerEnvelope, PeerSender,
@@ -96,6 +98,49 @@ fn ordinary_signal_records_a_typed_parked_delivery_idempotently() {
         client.submit(Query::Deliver(conflicting)).unwrap(),
         Response::Error(_)
     ));
+}
+
+#[test]
+fn ordinary_socket_accepts_the_public_receipt_query_datom() {
+    let directory = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let configuration = Configuration::new(
+        contract(directory.path()),
+        directory.path().join("messenger.sema"),
+        "owner",
+    )
+    .unwrap();
+    let configuration_path = directory.path().join("message.configuration");
+    configuration
+        .write_binary_file(&configuration_path)
+        .unwrap();
+    let _daemon = launch_daemon(&configuration_path, home.path());
+    wait_for(configuration.socket_path());
+
+    let mut input =
+        Potential::<Query>::from("QueryDeliveryReceipts.{ event-42 [ accepted parked ] }");
+    let query = input
+        .actualize(&mut Budget {
+            remaining: 4096,
+            reader: ReaderBudget { remaining: 4096 },
+            depth: 0,
+            maximum_depth: 256,
+        })
+        .expect("public receipt-query Datom literal is valid");
+    let response = MessageSocket::from_path(configuration.socket_path())
+        .client()
+        .submit(query)
+        .unwrap();
+    assert_eq!(
+        response,
+        Response::DeliveryReceiptListing(signal_message::DeliveryReceiptListing {
+            source_event_identifier: "event-42".into(),
+            delivery_receipt_states: vec![
+                signal_message::DeliveryReceiptState::Missing("accepted".into()),
+                signal_message::DeliveryReceiptState::Missing("parked".into()),
+            ],
+        })
+    );
 }
 
 /// Wait on the tested event — the listener binding its socket — with a
