@@ -15,6 +15,7 @@ pub(crate) mod delivery_receipts;
 pub mod engine;
 pub mod error;
 pub mod flow_delivery;
+pub mod delivery_gate;
 pub mod flow_registry;
 pub mod meta;
 pub mod nexus_delivery;

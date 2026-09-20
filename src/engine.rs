@@ -5,6 +5,7 @@
 //! messenger action and one strict `signal-message::Response`.
 
 use sha2::{Digest, Sha256};
+use std::sync::Mutex;
 use signal_message::{
     AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason,
     DeliveryReceiptQuery, DeliveryReceiptQueryRejection, DeliveryReport, DeliveryRequest,
@@ -22,6 +23,7 @@ use crate::{
     delivery_receipts::{DeliveryReceiptLookup, StoredDeliveryReceipts},
     error::Error,
     flow_delivery::FlowDeliveryOutbox,
+    delivery_gate::{DeliveryGate, EndpointBinding},
     flow_registry::FlowMarkerIndex,
     nexus_delivery::{LiveNexusDelivery, NexusDelivery},
     provenance::{OriginPolicy, SenderResolver},
@@ -38,6 +40,7 @@ pub struct MessageEngine {
     /// interim reads `.flow-id` markers.
     flow_registry: FlowMarkerIndex,
     nexus_delivery: Box<dyn NexusDelivery>,
+    delivery_gate: Mutex<DeliveryGate>,
 }
 
 impl std::fmt::Debug for MessageEngine {
@@ -55,6 +58,7 @@ impl MessageEngine {
             origin_policy,
             flow_registry: FlowMarkerIndex::conventional(),
             nexus_delivery: Box::new(LiveNexusDelivery::conventional()),
+            delivery_gate: Mutex::new(DeliveryGate::open()),
         }
     }
 
@@ -68,6 +72,25 @@ impl MessageEngine {
     pub fn with_flow_registry(mut self, flow_registry: FlowMarkerIndex) -> Self {
         self.flow_registry = flow_registry;
         self
+    }
+
+    /// Flow calls this before it begins a replacement. This only quiesces
+    /// Message-owned attempts; it makes no claim about work already accepted
+    /// by a harness or terminal queue.
+    pub fn hold_delivery_binding(&self, binding: EndpointBinding) -> Result<(), Error> {
+        self.delivery_gate
+            .lock()
+            .map_err(|_| Error::InvalidValidatorArgument { detail: "delivery gate lock poisoned".into() })?
+            .quiesce(binding)
+            .map_err(|reason| Error::InvalidValidatorArgument { detail: format!("delivery hold refused: {reason:?}") })
+    }
+
+    pub fn acknowledge_delivery_binding_ready(&self, binding: &EndpointBinding) -> Result<(), Error> {
+        self.delivery_gate
+            .lock()
+            .map_err(|_| Error::InvalidValidatorArgument { detail: "delivery gate lock poisoned".into() })?
+            .acknowledge_ready(binding)
+            .map_err(|reason| Error::InvalidValidatorArgument { detail: format!("delivery release refused: {reason:?}") })
     }
 
     pub fn from_configuration(configuration: &Configuration) -> Result<Self, Error> {
@@ -211,6 +234,27 @@ impl MessageEngine {
                     continue;
                 }
             };
+            let binding = EndpointBinding::from_flow_node(&node);
+            if self
+                .delivery_gate
+                .lock()
+                .map_err(|_| ())
+                .and_then(|gate| gate.permit(&binding).map_err(|_| ()))
+                .is_err()
+            {
+                let record = NexusDeliveryRecord {
+                    request_fingerprint: fingerprint.clone(),
+                    cluster_message: request.cluster_message.clone(),
+                    receipt_kind: ReceiptKind::Parked,
+                    retryable: false,
+                };
+                let _ = self.tables.replace_nexus_delivery(&key, record);
+                recipient_receipts.push(RecipientReceipt {
+                    flow_identifier: flow_identifier.clone(),
+                    receipt_kind: ReceiptKind::Parked,
+                });
+                continue;
+            }
             // Persist a non-retryable in-flight park before crossing the harness
             // boundary. Only the adapter's positive transport-submission
             // acknowledgement promotes it to Accepted; Accepted does not assert
