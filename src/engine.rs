@@ -5,30 +5,33 @@
 //! messenger action and one strict `signal-message::Response`.
 
 use sha2::{Digest, Sha256};
-use std::sync::Mutex;
 use signal_message::{
     AgentRegistryListingReply, AgentRegistryQuery, AgentRegistryRejectionReason,
+    AttemptDeliveryReceipt, CancelPending, CancelPendingResult, DeliveryAttemptState,
     DeliveryReceiptQuery, DeliveryReceiptQueryRejection, DeliveryReport, DeliveryRequest,
     FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment, FlowIdleAnnouncement,
     InboxListingReply, MessageOperationKind, MessageRequestUnimplementedReply,
-    MessageUnimplementedReason, Query, ReceiptKind, RecipientReceipt, Response,
-    SubmissionRejectionReason, TargetFlowName, ThreadIndexEntries, ThreadRejectionReason,
+    MessageUnimplementedReason, Query, QueryDeliveryReceipt, ReceiptKind, RecipientReceipt,
+    Response, SubmissionRejectionReason, SubmitDelivery, SubmitDeliveryRejection,
+    SubmitDeliveryResult, TargetFlowName, ThreadIndexEntries, ThreadRejectionReason, WaitOutcome,
 };
+use std::sync::Mutex;
 use triad_runtime::ConnectionContext;
 
 use crate::{
     config::Configuration,
     delivery::DeliveryRunner,
     delivery_address::DeliveryAddressSelection,
+    delivery_gate::{DeliveryGate, EndpointBinding},
     delivery_receipts::{DeliveryReceiptLookup, StoredDeliveryReceipts},
     error::Error,
     flow_delivery::FlowDeliveryOutbox,
-    delivery_gate::{DeliveryGate, EndpointBinding},
     flow_registry::FlowMarkerIndex,
     nexus_delivery::{LiveNexusDelivery, NexusDelivery},
     provenance::{OriginPolicy, SenderResolver},
     runtime_model::{
-        AgentRegistryCommand, LedgerDraft, NexusDeliveryRecord, StoreQuery, StoreWrite,
+        AgentRegistryCommand, DeliveryAttemptRecord, LedgerDraft, NexusDeliveryRecord, StoreQuery,
+        StoreWrite,
     },
     tables::MessengerTables,
 };
@@ -80,17 +83,28 @@ impl MessageEngine {
     pub fn hold_delivery_binding(&self, binding: EndpointBinding) -> Result<(), Error> {
         self.delivery_gate
             .lock()
-            .map_err(|_| Error::InvalidValidatorArgument { detail: "delivery gate lock poisoned".into() })?
+            .map_err(|_| Error::InvalidValidatorArgument {
+                detail: "delivery gate lock poisoned".into(),
+            })?
             .quiesce(binding)
-            .map_err(|reason| Error::InvalidValidatorArgument { detail: format!("delivery hold refused: {reason:?}") })
+            .map_err(|reason| Error::InvalidValidatorArgument {
+                detail: format!("delivery hold refused: {reason:?}"),
+            })
     }
 
-    pub fn acknowledge_delivery_binding_ready(&self, binding: &EndpointBinding) -> Result<(), Error> {
+    pub fn acknowledge_delivery_binding_ready(
+        &self,
+        binding: &EndpointBinding,
+    ) -> Result<(), Error> {
         self.delivery_gate
             .lock()
-            .map_err(|_| Error::InvalidValidatorArgument { detail: "delivery gate lock poisoned".into() })?
+            .map_err(|_| Error::InvalidValidatorArgument {
+                detail: "delivery gate lock poisoned".into(),
+            })?
             .acknowledge_ready(binding)
-            .map_err(|reason| Error::InvalidValidatorArgument { detail: format!("delivery release refused: {reason:?}") })
+            .map_err(|reason| Error::InvalidValidatorArgument {
+                detail: format!("delivery release refused: {reason:?}"),
+            })
     }
 
     pub fn from_configuration(configuration: &Configuration) -> Result<Self, Error> {
@@ -145,6 +159,107 @@ impl MessageEngine {
             Query::FlowAnnounceIdle(announcement) => self.announce_idle(announcement),
             Query::Deliver(request) => self.deliver(request),
             Query::QueryDeliveryReceipts(query) => self.query_delivery_receipts(query),
+            Query::SubmitDelivery(request) => self.submit_delivery(request),
+            Query::CancelPending(request) => self.cancel_pending(request),
+            Query::QueryDeliveryReceipt(query) => self.query_delivery_receipt(query),
+        })
+    }
+
+    fn submit_delivery(&self, request: SubmitDelivery) -> Response {
+        if request.single_flow_recipient.is_empty() {
+            return Response::DeliverySubmissionRejected(SubmitDeliveryRejection::InvalidDeadline);
+        }
+        let request_id = format!(
+            "request:{:x}",
+            Sha256::digest(
+                format!(
+                    "{}\0{}",
+                    request.source_event_identifier, request.single_flow_recipient
+                )
+                .as_bytes()
+            )
+        );
+        let attempt_id = format!(
+            "attempt:{:x}",
+            Sha256::digest(format!("{}\0{}", request_id, request.message_body).as_bytes())
+        );
+        let key = format!("{request_id}\0{attempt_id}");
+        let record = DeliveryAttemptRecord {
+            request_id: request_id.clone(),
+            attempt_id: attempt_id.clone(),
+            source_event_identifier: request.source_event_identifier,
+            recipient: request.single_flow_recipient,
+            message_body: request.message_body,
+            state: crate::runtime_model::DeliveryAttemptState::Queued,
+        };
+        if self.tables.delivery_attempt(&key).ok().flatten().is_none()
+            && self.tables.admit_delivery_attempt(&key, record).is_err()
+        {
+            return Response::DeliverySubmissionRejected(SubmitDeliveryRejection::StoreRejected);
+        }
+        Response::DeliverySubmitted(SubmitDeliveryResult {
+            delivery_request_id: request_id.clone(),
+            delivery_attempt_id: attempt_id.clone(),
+            durable_submission_receipt: format!("durable:{request_id}:{attempt_id}"),
+            wait_outcome: WaitOutcome::NotWaited,
+        })
+    }
+
+    fn cancel_pending(&self, request: CancelPending) -> Response {
+        let key = format!(
+            "{}\0{}",
+            request.delivery_request_id, request.delivery_attempt_id
+        );
+        let Ok(Some(mut record)) = self.tables.delivery_attempt(&key) else {
+            return Response::PendingCancelled(CancelPendingResult::UnknownRequest);
+        };
+        match record.state {
+            crate::runtime_model::DeliveryAttemptState::Queued => {
+                record.state = crate::runtime_model::DeliveryAttemptState::WaitCancelled;
+                let _ = self.tables.replace_delivery_attempt(&key, record);
+                Response::PendingCancelled(CancelPendingResult::CancelledQueued)
+            }
+            crate::runtime_model::DeliveryAttemptState::PermitHeld
+            | crate::runtime_model::DeliveryAttemptState::Ambiguous => {
+                Response::PendingCancelled(CancelPendingResult::WaitCancelledDeliveryContinues)
+            }
+            _ => Response::PendingCancelled(CancelPendingResult::AlreadyTerminal),
+        }
+    }
+
+    fn query_delivery_receipt(&self, query: QueryDeliveryReceipt) -> Response {
+        let key = format!(
+            "{}\0{}",
+            query.delivery_request_id, query.delivery_attempt_id
+        );
+        let state = self
+            .tables
+            .delivery_attempt(&key)
+            .ok()
+            .flatten()
+            .map(|record| match record.state {
+                crate::runtime_model::DeliveryAttemptState::Queued
+                | crate::runtime_model::DeliveryAttemptState::WaitCancelled => {
+                    DeliveryAttemptState::Queued
+                }
+                crate::runtime_model::DeliveryAttemptState::PermitHeld => {
+                    DeliveryAttemptState::PermitHeld
+                }
+                crate::runtime_model::DeliveryAttemptState::TransportConfirmed => {
+                    DeliveryAttemptState::TransportConfirmed
+                }
+                crate::runtime_model::DeliveryAttemptState::Ambiguous => {
+                    DeliveryAttemptState::Ambiguous
+                }
+                crate::runtime_model::DeliveryAttemptState::Released => {
+                    DeliveryAttemptState::Released
+                }
+            })
+            .unwrap_or(DeliveryAttemptState::Missing);
+        Response::DeliveryReceiptQueried(AttemptDeliveryReceipt {
+            delivery_request_id: query.delivery_request_id,
+            delivery_attempt_id: query.delivery_attempt_id,
+            delivery_attempt_state: state,
         })
     }
 
@@ -577,13 +692,11 @@ mod tests {
                 DeliveryAddressSelectionRejection::ReservedSourceEventIdentifier
             )
         );
-        assert!(
-            engine
-                .tables
-                .nexus_delivery("event\0target")
-                .unwrap()
-                .is_some()
-        );
+        assert!(engine
+            .tables
+            .nexus_delivery("event\0target")
+            .unwrap()
+            .is_some());
     }
 
     fn relay() -> ClusterMessage {

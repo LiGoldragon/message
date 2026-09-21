@@ -23,6 +23,28 @@ pub(crate) struct NexusDeliveryRecord {
     pub retryable: bool,
 }
 
+/// Durable state for one single-recipient submission. Waiting and cancellation
+/// change this local record only; neither creates a Flow release authority.
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct DeliveryAttemptRecord {
+    pub request_id: String,
+    pub attempt_id: String,
+    pub source_event_identifier: String,
+    pub recipient: String,
+    pub message_body: String,
+    pub state: DeliveryAttemptState,
+}
+
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) enum DeliveryAttemptState {
+    Queued,
+    PermitHeld,
+    TransportConfirmed,
+    Ambiguous,
+    Released,
+    WaitCancelled,
+}
+
 #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub(crate) struct RelayRecord {
     pub destination: String,

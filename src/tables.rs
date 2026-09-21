@@ -27,12 +27,12 @@ use sema_engine::{
     VersionedStoreName, VersioningPolicy,
 };
 
-use crate::Result;
 use crate::runtime_model::{
-    InboxRecord, LedgerDraft, LedgerHead, LedgerRecord, NextMessageSlot, NexusDeliveryRecord,
-    OldestMessageSlot, RelayRecord, Slots, ThreadRecord,
+    DeliveryAttemptRecord, InboxRecord, LedgerDraft, LedgerHead, LedgerRecord, NextMessageSlot,
+    NexusDeliveryRecord, OldestMessageSlot, RelayRecord, Slots, ThreadRecord,
 };
 use crate::store_preserve::PreMigrationPreserve;
+use crate::Result;
 use signal_message::{
     AgentDeathMark, AgentEndpointBinding, AgentIdentityAssignment, AgentRegistryEntry,
     AgentRegistryQuery, AssignedAgentIdentity, BoundAgentEndpoint, EndpointSelection, HarnessPid,
@@ -75,7 +75,7 @@ const SEMA_SCHEMA_VERSION_KEY: &str = "schema_version";
 /// re-stamped forward and read as if it were v4 — that would be silent
 /// corruption. v3 is deliberately absent from the additive list below and
 /// fails closed, preserving the file aside for an operator to decide about.
-const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(6);
+const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(7);
 
 /// The prior store versions whose every intervening family layout is additive
 /// up to the current version — a store stamped at one of these re-stamps
@@ -83,7 +83,11 @@ const MESSENGER_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(6);
 ///
 /// v4 -> v5 adds the independent prompt-relay family; existing families keep
 /// their layout and are preserved before the store is re-stamped.
-const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 2] = [SchemaVersion::new(4), SchemaVersion::new(5)];
+const ADDITIVE_PRIOR_VERSIONS: [SchemaVersion; 3] = [
+    SchemaVersion::new(4),
+    SchemaVersion::new(5),
+    SchemaVersion::new(6),
+];
 
 /// The store version at which the agent registry's layout was last set.
 const AGENT_REGISTRY_LAYOUT_VERSION: SchemaVersion = SchemaVersion::new(4);
@@ -104,6 +108,7 @@ const THREAD_INDEX: TableName = TableName::new("thread_index");
 const DELIVERY_OUTBOX: TableName = TableName::new("delivery_outbox");
 const PROMPT_RELAY: TableName = TableName::new("prompt_relay");
 const NEXUS_DELIVERY: TableName = TableName::new("nexus_delivery");
+const DELIVERY_ATTEMPTS: TableName = TableName::new("delivery_attempts");
 
 const LEDGER_HEAD_KEY: &str = "head";
 
@@ -121,6 +126,7 @@ pub struct MessengerTables {
     delivery_outbox: TableReference<InboxRecord>,
     prompt_relay: TableReference<RelayRecord>,
     nexus_delivery: TableReference<NexusDeliveryRecord>,
+    delivery_attempts: TableReference<DeliveryAttemptRecord>,
 }
 
 impl std::fmt::Debug for MessengerTables {
@@ -193,6 +199,11 @@ impl MessengerTables {
             "nexus-delivery",
             MESSENGER_SCHEMA_VERSION,
         ))?;
+        let delivery_attempts = engine.register_table(Self::family_descriptor(
+            DELIVERY_ATTEMPTS,
+            "delivery-attempts",
+            MESSENGER_SCHEMA_VERSION,
+        ))?;
         Ok(Self {
             engine,
             agent_registry,
@@ -203,6 +214,7 @@ impl MessengerTables {
             delivery_outbox,
             prompt_relay,
             nexus_delivery,
+            delivery_attempts,
         })
     }
 
@@ -235,6 +247,41 @@ impl MessengerTables {
     ) -> Result<()> {
         self.engine.mutate_keyed(KeyedMutation::new(
             self.nexus_delivery,
+            RecordKey::new(key),
+            record,
+        ))?;
+        Ok(())
+    }
+
+    pub(crate) fn delivery_attempt(&self, key: &str) -> Result<Option<DeliveryAttemptRecord>> {
+        Ok(self
+            .engine
+            .match_records(QueryPlan::key(self.delivery_attempts, RecordKey::new(key)))?
+            .records()
+            .first()
+            .cloned())
+    }
+
+    pub(crate) fn admit_delivery_attempt(
+        &self,
+        key: &str,
+        record: DeliveryAttemptRecord,
+    ) -> Result<()> {
+        self.engine.assert_keyed(KeyedAssertion::new(
+            self.delivery_attempts,
+            RecordKey::new(key),
+            record,
+        ))?;
+        Ok(())
+    }
+
+    pub(crate) fn replace_delivery_attempt(
+        &self,
+        key: &str,
+        record: DeliveryAttemptRecord,
+    ) -> Result<()> {
+        self.engine.mutate_keyed(KeyedMutation::new(
+            self.delivery_attempts,
             RecordKey::new(key),
             record,
         ))?;
