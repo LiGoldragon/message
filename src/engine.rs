@@ -171,7 +171,7 @@ impl MessageEngine {
         if request.single_flow_recipient.is_empty() {
             return Response::DeliverySubmissionRejected(SubmitDeliveryRejection::InvalidDeadline);
         }
-        let delivery_visibility = match request.delivery_mode_selection {
+        let delivery_visibility = match &request.delivery_mode_selection {
             DeliveryModeSelection::Raw => match connection.peer() {
                 PeerIdentity::Unix(credentials)
                     if self.origin_policy.is_owner_uid(credentials.user_id()) => {
