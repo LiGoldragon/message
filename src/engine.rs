@@ -10,13 +10,15 @@ use signal_message::{
     AttemptDeliveryReceipt, CancelPending, CancelPendingResult, DeliveryAttemptState,
     DeliveryReceiptQuery, DeliveryReceiptQueryRejection, DeliveryReport, DeliveryRequest,
     FlowDeliveryRejectionReason, FlowDeliveryRequest, FlowIdleAcknowledgment, FlowIdleAnnouncement,
-    InboxListingReply, MessageOperationKind, MessageRequestUnimplementedReply,
+    DeliveryLockState, DeliveryModeSelection, DeliveryVisibility, InboxListingReply,
+    MessageOperationKind, MessageRequestUnimplementedReply,
     MessageUnimplementedReason, Query, QueryDeliveryReceipt, ReceiptKind, RecipientReceipt,
     Response, SubmissionRejectionReason, SubmitDelivery, SubmitDeliveryRejection,
-    SubmitDeliveryResult, TargetFlowName, ThreadIndexEntries, ThreadRejectionReason, WaitOutcome,
+    RawDeliveryVisibility, SenderAttribution, SubmitDeliveryResult, TargetFlowName,
+    ThreadIndexEntries, ThreadRejectionReason, UidAuthorization, WaitOutcome,
 };
 use std::sync::Mutex;
-use triad_runtime::ConnectionContext;
+use triad_runtime::{ConnectionContext, PeerIdentity};
 
 use crate::{
     config::Configuration,
@@ -159,16 +161,40 @@ impl MessageEngine {
             Query::FlowAnnounceIdle(announcement) => self.announce_idle(announcement),
             Query::Deliver(request) => self.deliver(request),
             Query::QueryDeliveryReceipts(query) => self.query_delivery_receipts(query),
-            Query::SubmitDelivery(request) => self.submit_delivery(request),
+            Query::SubmitDelivery(request) => self.submit_delivery(request, connection),
             Query::CancelPending(request) => self.cancel_pending(request),
             Query::QueryDeliveryReceipt(query) => self.query_delivery_receipt(query),
         })
     }
 
-    fn submit_delivery(&self, request: SubmitDelivery) -> Response {
+    fn submit_delivery(&self, request: SubmitDelivery, connection: &ConnectionContext) -> Response {
         if request.single_flow_recipient.is_empty() {
             return Response::DeliverySubmissionRejected(SubmitDeliveryRejection::InvalidDeadline);
         }
+        let delivery_visibility = match request.delivery_mode_selection {
+            DeliveryModeSelection::Raw => match connection.peer() {
+                PeerIdentity::Unix(credentials)
+                    if self.origin_policy.is_owner_uid(credentials.user_id()) => {
+                    DeliveryVisibility::RawUnlocked(RawDeliveryVisibility {
+                        delivery_lock_state: DeliveryLockState::Unlocked,
+                        uid_authorization: UidAuthorization::UidAuthorized,
+                        sender_attribution: SenderAttribution::Unattributed,
+                    })
+                }
+                _ => {
+                    return Response::DeliverySubmissionRejected(
+                        SubmitDeliveryRejection::RawUnauthorized,
+                    );
+                }
+            },
+            // Flow locking needs a live Flow permit plus a validated delegation.
+            // Neither is inferred from this requester-selected mode.
+            DeliveryModeSelection::FlowLocked => {
+                return Response::DeliverySubmissionRejected(
+                    SubmitDeliveryRejection::FlowLockUnavailable,
+                );
+            }
+        };
         let request_id = format!(
             "request:{:x}",
             Sha256::digest(
@@ -202,6 +228,7 @@ impl MessageEngine {
             delivery_attempt_id: attempt_id.clone(),
             durable_submission_receipt: format!("durable:{request_id}:{attempt_id}"),
             wait_outcome: WaitOutcome::NotWaited,
+            delivery_visibility,
         })
     }
 
@@ -617,7 +644,8 @@ mod tests {
     use signal_flow::FlowNode;
     use signal_message::{
         ClusterMember, ClusterMessage, ClusterRelay, ClusterTarget, Context,
-        DeliveryAddressSelectionRejection, DeliveryRequest, Query,
+        DeliveryAddressSelectionRejection, DeliveryModeSelection, DeliveryRequest, Query,
+        SubmitDelivery, SubmitDeliveryRejection, WaitDeadline,
     };
     use triad_runtime::UnixCredentials;
 
@@ -636,6 +664,68 @@ mod tests {
         ) -> std::result::Result<ReceiptKind, String> {
             panic!("reserved source reached delivery")
         }
+    }
+
+    fn delivery_submission(mode: DeliveryModeSelection) -> SubmitDelivery {
+        SubmitDelivery {
+            source_event_identifier: "event-raw".into(),
+            single_flow_recipient: "disposable-flow".into(),
+            message_body: "disposable body".into(),
+            wait_deadline: WaitDeadline::Default,
+            delivery_mode_selection: mode,
+        }
+    }
+
+    #[test]
+    fn raw_requires_owner_uid_and_records_only_unattributed_visibility() {
+        let directory = tempfile::tempdir().unwrap();
+        let engine = MessageEngine::new(
+            MessengerTables::open(&directory.path().join("messenger.sema")).unwrap(),
+            OriginPolicy::for_owner_user_id(1000, "owner"),
+        );
+        let owner = ConnectionContext::from(UnixCredentials::new(1000, 1000, 1));
+        let other = ConnectionContext::from(UnixCredentials::new(1001, 1001, 2));
+
+        assert!(matches!(
+            engine.submit_delivery(delivery_submission(DeliveryModeSelection::Raw), &owner),
+            Response::DeliverySubmitted(SubmitDeliveryResult {
+                delivery_visibility: DeliveryVisibility::RawUnlocked(_),
+                ..
+            })
+        ));
+        assert_eq!(
+            engine.submit_delivery(delivery_submission(DeliveryModeSelection::Raw), &other),
+            Response::DeliverySubmissionRejected(SubmitDeliveryRejection::RawUnauthorized)
+        );
+    }
+
+    #[test]
+    fn flow_locked_refuses_before_any_queue_record_without_a_permit_and_delegation() {
+        let directory = tempfile::tempdir().unwrap();
+        let engine = MessageEngine::new(
+            MessengerTables::open(&directory.path().join("messenger.sema")).unwrap(),
+            OriginPolicy::for_owner_user_id(1000, "owner"),
+        );
+        let owner = ConnectionContext::from(UnixCredentials::new(1000, 1000, 1));
+
+        let submission = delivery_submission(DeliveryModeSelection::FlowLocked);
+        let request_id = format!(
+            "request:{:x}",
+            Sha256::digest(b"event-raw\0disposable-flow")
+        );
+        let attempt_id = format!(
+            "attempt:{:x}",
+            Sha256::digest(format!("{request_id}\0disposable body").as_bytes())
+        );
+        assert_eq!(
+            engine.submit_delivery(submission, &owner),
+            Response::DeliverySubmissionRejected(SubmitDeliveryRejection::FlowLockUnavailable)
+        );
+        assert!(engine
+            .tables
+            .delivery_attempt(&format!("{request_id}\0{attempt_id}"))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
