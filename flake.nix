@@ -48,6 +48,9 @@
             strictDeps = true;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          resolveCargoLock = import ./nix/resolve-cargo-lock.nix {
+            inherit pkgs src;
+          };
           sourceConstraintCheck =
             name: script:
             pkgs.runCommand name { } ''
@@ -89,6 +92,7 @@
               sourceConstraintCheck
               cargoTestFile
               cargoLibTest
+              resolveCargoLock
               ;
           };
         in
@@ -145,6 +149,7 @@
               inherit (context) cargoArtifacts;
             }
           );
+          resolve-cargo-lock = context.resolveCargoLock;
           clippy = context.craneLib.cargoClippy (
             context.commonArgs
             // {
