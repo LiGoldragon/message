@@ -23,6 +23,8 @@ use signal_flow::{
 };
 use signal_message::{ClusterMessage, ReceiptKind};
 
+use crate::flow_permit::{FlowPermitError, FlowPermitTransport};
+
 const FLOW_SOCKET: &str = "/run/user/1001/flow/flow.sock";
 
 #[derive(Clone, Debug)]
@@ -46,15 +48,26 @@ impl FlowResolver {
     }
 
     pub fn resolve(&self, flow: &str) -> Result<Option<FlowNode>, String> {
+        match self.query(FlowQuery::ResolveRecipient(flow.to_owned()))? {
+            FlowResponse::RecipientResolved(node) => Ok(Some(node)),
+            FlowResponse::RecipientResolutionRejected(_) => Ok(None),
+            other => Err(format!(
+                "Flow Nexus returned non-resolution response: {other:?}"
+            )),
+        }
+    }
+
+    /// Sends exactly one Flow Signal frame over the existing ordinary Flow
+    /// socket. The caller supplies only producer-owned Flow queries; socket,
+    /// codec, and response failures are returned to the permit bridge.
+    fn query(&self, query: FlowQuery) -> Result<FlowResponse, String> {
         let mut peer = UnixStream::connect(&self.socket)
             .map_err(|error| format!("connect Flow Nexus {}: {error}", self.socket.display()))?;
         peer.set_read_timeout(Some(Duration::from_secs(5)))
             .map_err(|e| e.to_string())?;
         peer.set_write_timeout(Some(Duration::from_secs(5)))
             .map_err(|e| e.to_string())?;
-        let bytes =
-            rkyv::to_bytes::<rkyv::rancor::Error>(&FlowQuery::ResolveRecipient(flow.to_owned()))
-                .map_err(|e| e.to_string())?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&query).map_err(|e| e.to_string())?;
         peer.write_all(&(bytes.len() as u32).to_be_bytes())
             .map_err(|e| e.to_string())?;
         peer.write_all(&bytes).map_err(|e| e.to_string())?;
@@ -62,15 +75,13 @@ impl FlowResolver {
         peer.read_exact(&mut length).map_err(|e| e.to_string())?;
         let mut reply = vec![0; u32::from_be_bytes(length) as usize];
         peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
-        match rkyv::from_bytes::<FlowResponse, rkyv::rancor::Error>(&reply)
-            .map_err(|e| e.to_string())?
-        {
-            FlowResponse::RecipientResolved(node) => Ok(Some(node)),
-            FlowResponse::RecipientResolutionRejected(_) => Ok(None),
-            other => Err(format!(
-                "Flow Nexus returned non-resolution response: {other:?}"
-            )),
-        }
+        rkyv::from_bytes::<FlowResponse, rkyv::rancor::Error>(&reply).map_err(|e| e.to_string())
+    }
+}
+
+impl FlowPermitTransport for FlowResolver {
+    fn query(&self, request: FlowQuery) -> Result<FlowResponse, FlowPermitError> {
+        self.query(request).map_err(|_| FlowPermitError::Unavailable)
     }
 }
 
@@ -618,6 +629,25 @@ mod tests {
 
     fn serve_resolution(socket: &Path, node: FlowNode) -> thread::JoinHandle<()> {
         serve_resolutions(socket, vec![node])
+    }
+
+    #[test]
+    fn flow_permit_transport_uses_the_existing_single_frame_flow_codec() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let node = flow_node(HarnessKind::Codex, HerdrRouteSelection::Unavailable);
+        let server = serve_resolution(&socket, node.clone());
+        let transport = FlowResolver::from_path(&socket);
+
+        assert_eq!(
+            FlowPermitTransport::query(
+                &transport,
+                FlowQuery::ResolveRecipient("flow-a".into()),
+            )
+            .unwrap(),
+            FlowResponse::RecipientResolved(node),
+        );
+        server.join().unwrap();
     }
 
     struct FakeHerdr<'fixture> {
