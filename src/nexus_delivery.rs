@@ -4,6 +4,7 @@
 //! typed Message Signal; it never selects or executes a harness bridge.
 
 use std::{
+    collections::HashSet,
     env,
     ffi::OsString,
     fmt::Debug,
@@ -15,19 +16,21 @@ use std::{
     time::Duration,
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use sha1::{Digest as _, Sha1};
 use signal_flow::{
     EndpointSelection, FlowLifecycle, FlowNode, HarnessKind, HerdrRoute, HerdrRouteSelection,
-    Query as FlowQuery, Response as FlowResponse, RouteReadiness,
+    Query as FlowQuery, RecipientDisposition, Response as FlowResponse, RouteReadiness,
 };
 use signal_message::{ClusterMessage, ReceiptKind};
 
 const FLOW_SOCKET: &str = "/run/user/1001/flow/flow.sock";
+const DEFAULT_MAXIMUM_REROUTES: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct FlowResolver {
     socket: PathBuf,
+    maximum_reroutes: usize,
 }
 
 impl FlowResolver {
@@ -36,16 +39,65 @@ impl FlowResolver {
             socket: env::var_os("FLOW_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| FLOW_SOCKET.into()),
+            maximum_reroutes: match env::var("MESSAGE_FLOW_REROUTE_LIMIT") {
+                Ok(value) => value.parse().ok().filter(|value| *value > 0).unwrap_or(0),
+                Err(env::VarError::NotPresent) => DEFAULT_MAXIMUM_REROUTES,
+                Err(env::VarError::NotUnicode(_)) => 0,
+            },
         }
     }
 
     pub fn from_path(path: impl Into<PathBuf>) -> Self {
         Self {
             socket: path.into(),
+            maximum_reroutes: DEFAULT_MAXIMUM_REROUTES,
         }
     }
 
     pub fn resolve(&self, flow: &str) -> Result<Option<FlowNode>, String> {
+        let mut current = flow.to_owned();
+        let mut visited = HashSet::new();
+        for _ in 0..=self.maximum_reroutes {
+            if !visited.insert(current.clone()) {
+                return Err("Flow recipient reroute cycle".into());
+            }
+            let Some(disposition) = self.resolve_once(&current)? else {
+                return Ok(None);
+            };
+            match disposition {
+                RecipientDisposition::Deliverable(node)
+                    if node.flow_id == current && node.flow_lifecycle == FlowLifecycle::Ready =>
+                {
+                    return Ok(Some(node));
+                }
+                RecipientDisposition::Deliverable(_) => return Ok(None),
+                RecipientDisposition::Held(hold)
+                    if hold.flow_id == current && hold.flow_lifecycle != FlowLifecycle::Ready =>
+                {
+                    return Ok(None);
+                }
+                RecipientDisposition::Held(_) => {
+                    return Err("Flow returned an invalid held recipient".into());
+                }
+                RecipientDisposition::Reroute(reroute)
+                    if reroute.flow_id == current
+                        && matches!(
+                            reroute.flow_lifecycle,
+                            FlowLifecycle::Retiring | FlowLifecycle::Archived
+                        )
+                        && !reroute.replacement_flow_id.is_empty() =>
+                {
+                    current = reroute.replacement_flow_id;
+                }
+                RecipientDisposition::Reroute(_) => {
+                    return Err("Flow returned an invalid recipient reroute".into());
+                }
+            }
+        }
+        Err("Flow recipient reroute limit exceeded".into())
+    }
+
+    fn resolve_once(&self, flow: &str) -> Result<Option<RecipientDisposition>, String> {
         let mut peer = UnixStream::connect(&self.socket)
             .map_err(|error| format!("connect Flow Nexus {}: {error}", self.socket.display()))?;
         peer.set_read_timeout(Some(Duration::from_secs(5)))
@@ -65,7 +117,7 @@ impl FlowResolver {
         match rkyv::from_bytes::<FlowResponse, rkyv::rancor::Error>(&reply)
             .map_err(|e| e.to_string())?
         {
-            FlowResponse::RecipientResolved(node) => Ok(Some(node)),
+            FlowResponse::RecipientDispositioned(disposition) => Ok(Some(disposition)),
             FlowResponse::RecipientResolutionRejected(_) => Ok(None),
             other => Err(format!(
                 "Flow Nexus returned non-resolution response: {other:?}"
@@ -110,7 +162,7 @@ impl LiveNexusDelivery {
         node: &FlowNode,
         message: &ClusterMessage,
     ) -> Result<ReceiptKind, String> {
-        if node.flow_lifecycle != FlowLifecycle::Active {
+        if node.flow_lifecycle != FlowLifecycle::Ready {
             return Ok(ReceiptKind::Parked);
         }
         if let HerdrRouteSelection::Available(route) = &node.herdr_route_selection {
@@ -594,7 +646,7 @@ mod tests {
                 session_id: "session".into(),
                 turn_id: "turn".into(),
             },
-            flow_lifecycle: FlowLifecycle::Active,
+            flow_lifecycle: FlowLifecycle::Ready,
         }
     }
 
@@ -611,7 +663,8 @@ mod tests {
                     rkyv::from_bytes::<FlowQuery, rkyv::rancor::Error>(&body).unwrap(),
                     FlowQuery::ResolveRecipient("flow-a".into())
                 );
-                let response = FlowResponse::RecipientResolved(node);
+                let response =
+                    FlowResponse::RecipientDispositioned(RecipientDisposition::Deliverable(node));
                 let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&response).unwrap();
                 peer.write_all(&(bytes.len() as u32).to_be_bytes()).unwrap();
                 peer.write_all(&bytes).unwrap();
@@ -621,6 +674,165 @@ mod tests {
 
     fn serve_resolution(socket: &Path, node: FlowNode) -> thread::JoinHandle<()> {
         serve_resolutions(socket, vec![node])
+    }
+
+    fn serve_dispositions(
+        socket: &Path,
+        exchanges: Vec<(&'static str, RecipientDisposition)>,
+    ) -> thread::JoinHandle<()> {
+        let listener = UnixListener::bind(socket).unwrap();
+        thread::spawn(move || {
+            for (expected_flow, disposition) in exchanges {
+                let (mut peer, _) = listener.accept().unwrap();
+                let mut length = [0; 4];
+                peer.read_exact(&mut length).unwrap();
+                let mut body = vec![0; u32::from_be_bytes(length) as usize];
+                peer.read_exact(&mut body).unwrap();
+                assert_eq!(
+                    rkyv::from_bytes::<FlowQuery, rkyv::rancor::Error>(&body).unwrap(),
+                    FlowQuery::ResolveRecipient(expected_flow.into())
+                );
+                let response = FlowResponse::RecipientDispositioned(disposition);
+                let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&response).unwrap();
+                peer.write_all(&(bytes.len() as u32).to_be_bytes()).unwrap();
+                peer.write_all(&bytes).unwrap();
+            }
+        })
+    }
+
+    #[test]
+    fn registered_unconfirmed_resolution_is_held() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let server = serve_dispositions(
+            &socket,
+            vec![(
+                "flow-a",
+                RecipientDisposition::Held(signal_flow::RecipientHold {
+                    flow_id: "flow-a".into(),
+                    flow_lifecycle: FlowLifecycle::RegisteredUnconfirmed,
+                    delivery_hold_reason: signal_flow::DeliveryHoldReason::NativeReceiptUnconfirmed,
+                }),
+            )],
+        );
+        assert!(FlowResolver::from_path(socket)
+            .resolve("flow-a")
+            .unwrap()
+            .is_none());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn retiring_recipient_reroutes_to_ready_replacement() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let mut replacement = flow_node(HarnessKind::Claude, HerdrRouteSelection::Unavailable);
+        replacement.flow_id = "flow-b".into();
+        let server = serve_dispositions(
+            &socket,
+            vec![
+                (
+                    "flow-a",
+                    RecipientDisposition::Reroute(signal_flow::RecipientReroute {
+                        flow_id: "flow-a".into(),
+                        replacement_flow_id: "flow-b".into(),
+                        flow_lifecycle: FlowLifecycle::Retiring,
+                    }),
+                ),
+                ("flow-b", RecipientDisposition::Deliverable(replacement)),
+            ],
+        );
+        assert_eq!(
+            FlowResolver::from_path(socket)
+                .resolve("flow-a")
+                .unwrap()
+                .unwrap()
+                .flow_id,
+            "flow-b"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reroute_cycle_is_rejected() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let server = serve_dispositions(
+            &socket,
+            vec![
+                (
+                    "flow-a",
+                    RecipientDisposition::Reroute(signal_flow::RecipientReroute {
+                        flow_id: "flow-a".into(),
+                        replacement_flow_id: "flow-b".into(),
+                        flow_lifecycle: FlowLifecycle::Retiring,
+                    }),
+                ),
+                (
+                    "flow-b",
+                    RecipientDisposition::Reroute(signal_flow::RecipientReroute {
+                        flow_id: "flow-b".into(),
+                        replacement_flow_id: "flow-a".into(),
+                        flow_lifecycle: FlowLifecycle::Archived,
+                    }),
+                ),
+            ],
+        );
+        assert!(FlowResolver::from_path(socket).resolve("flow-a").is_err());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn configured_reroute_limit_is_an_explicit_refusal() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let server = serve_dispositions(
+            &socket,
+            vec![
+                (
+                    "flow-a",
+                    RecipientDisposition::Reroute(signal_flow::RecipientReroute {
+                        flow_id: "flow-a".into(),
+                        replacement_flow_id: "flow-b".into(),
+                        flow_lifecycle: FlowLifecycle::Retiring,
+                    }),
+                ),
+                (
+                    "flow-b",
+                    RecipientDisposition::Reroute(signal_flow::RecipientReroute {
+                        flow_id: "flow-b".into(),
+                        replacement_flow_id: "flow-c".into(),
+                        flow_lifecycle: FlowLifecycle::Retiring,
+                    }),
+                ),
+            ],
+        );
+        let resolver = FlowResolver {
+            socket,
+            maximum_reroutes: 1,
+        };
+        assert_eq!(
+            resolver.resolve("flow-a").unwrap_err(),
+            "Flow recipient reroute limit exceeded"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn deliverable_non_ready_node_fails_closed() {
+        let directory = tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let mut node = flow_node(HarnessKind::Claude, HerdrRouteSelection::Unavailable);
+        node.flow_lifecycle = FlowLifecycle::RegisteredUnconfirmed;
+        let server = serve_dispositions(
+            &socket,
+            vec![("flow-a", RecipientDisposition::Deliverable(node))],
+        );
+        assert!(FlowResolver::from_path(socket)
+            .resolve("flow-a")
+            .unwrap()
+            .is_none());
+        server.join().unwrap();
     }
 
     struct FakeHerdr<'fixture> {
@@ -775,10 +987,12 @@ esac
                 prompt_exit: 0,
             }
             .write();
-            assert!(
-                validate_herdr_composer(program.as_os_str(), &herdr_route(), &HarnessKind::Claude)
-                    .is_err()
-            );
+            assert!(validate_herdr_composer(
+                program.as_os_str(),
+                &herdr_route(),
+                &HarnessKind::Claude
+            )
+            .is_err());
             let commands = std::fs::read_to_string(directory.path().join("commands")).unwrap();
             assert!(!commands.lines().any(|command| command == "prompt"));
         }
@@ -831,7 +1045,7 @@ esac
             HarnessKind::Claude,
             HerdrRouteSelection::Available(herdr_route()),
         );
-        node.flow_lifecycle = FlowLifecycle::Pending;
+        node.flow_lifecycle = FlowLifecycle::RegisteredUnconfirmed;
         let adapter = LiveNexusDelivery::with_paths(&flow_socket, &herdr_program);
 
         assert_eq!(
@@ -1038,22 +1252,23 @@ esac
                 rkyv::from_bytes::<FlowQuery, rkyv::rancor::Error>(&body).unwrap(),
                 FlowQuery::ResolveRecipient("da1e3f".into())
             );
-            let response = FlowResponse::RecipientResolved(FlowNode {
-                flow_id: "da1e3f".into(),
-                session_id: "da1e3f9d-full".into(),
-                harness_kind: HarnessKind::Claude,
-                endpoint_selection: EndpointSelection::Available(Available_Data {
-                    endpoint_path: "/tmp/control.sock".into(),
-                    route_readiness: RouteReadiness::Ready,
-                }),
-                herdr_route_selection: HerdrRouteSelection::Unavailable,
-                origin_clue: OriginClue {
-                    flow_id: "origin".into(),
-                    session_id: "session".into(),
-                    turn_id: "turn".into(),
-                },
-                flow_lifecycle: FlowLifecycle::Active,
-            });
+            let response =
+                FlowResponse::RecipientDispositioned(RecipientDisposition::Deliverable(FlowNode {
+                    flow_id: "da1e3f".into(),
+                    session_id: "da1e3f9d-full".into(),
+                    harness_kind: HarnessKind::Claude,
+                    endpoint_selection: EndpointSelection::Available(Available_Data {
+                        endpoint_path: "/tmp/control.sock".into(),
+                        route_readiness: RouteReadiness::Ready,
+                    }),
+                    herdr_route_selection: HerdrRouteSelection::Unavailable,
+                    origin_clue: OriginClue {
+                        flow_id: "origin".into(),
+                        session_id: "session".into(),
+                        turn_id: "turn".into(),
+                    },
+                    flow_lifecycle: FlowLifecycle::Ready,
+                }));
             let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&response).unwrap();
             peer.write_all(&(bytes.len() as u32).to_be_bytes()).unwrap();
             peer.write_all(&bytes).unwrap();
