@@ -18,8 +18,8 @@ use std::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use sha1::{Digest as _, Sha1};
 use signal_flow::{
-    EndpointSelection, FlowNode, HarnessKind, HerdrRoute, HerdrRouteSelection, Query as FlowQuery,
-    Response as FlowResponse, RouteReadiness,
+    EndpointSelection, FlowLifecycle, FlowNode, HarnessKind, HerdrRoute, HerdrRouteSelection,
+    Query as FlowQuery, Response as FlowResponse, RouteReadiness,
 };
 use signal_message::{ClusterMessage, ReceiptKind};
 
@@ -110,6 +110,9 @@ impl LiveNexusDelivery {
         node: &FlowNode,
         message: &ClusterMessage,
     ) -> Result<ReceiptKind, String> {
+        if node.flow_lifecycle != FlowLifecycle::Active {
+            return Ok(ReceiptKind::Parked);
+        }
         if let HerdrRouteSelection::Available(route) = &node.herdr_route_selection {
             let datom = crate::text::write(message);
             self.deliver_herdr(node, route, &datom)?;
@@ -817,6 +820,26 @@ esac
             std::fs::read_to_string(directory.path().join("prompt")).unwrap(),
             crate::text::write(&message)
         );
+    }
+
+    #[test]
+    fn pending_flow_with_available_herdr_route_is_parked_without_transport() {
+        let directory = tempdir().unwrap();
+        let herdr_program = directory.path().join("herdr-must-not-run");
+        let flow_socket = directory.path().join("flow-must-not-connect.sock");
+        let mut node = flow_node(
+            HarnessKind::Claude,
+            HerdrRouteSelection::Available(herdr_route()),
+        );
+        node.flow_lifecycle = FlowLifecycle::Pending;
+        let adapter = LiveNexusDelivery::with_paths(&flow_socket, &herdr_program);
+
+        assert_eq!(
+            adapter.deliver(&node, &peer_message()).unwrap(),
+            ReceiptKind::Parked
+        );
+        assert!(!herdr_program.exists());
+        assert!(!flow_socket.exists());
     }
 
     #[test]
