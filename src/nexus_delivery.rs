@@ -21,9 +21,36 @@ use signal_flow::{
     EndpointSelection, FlowLifecycle, FlowNode, HarnessKind, HerdrRoute, HerdrRouteSelection,
     Query as FlowQuery, Response as FlowResponse, RouteReadiness,
 };
-use signal_message::{ClusterMessage, ReceiptKind};
+use signal_message::{
+    ClusterMessage, PeerRecipientPresentation, ReceiptKind, RecipientPresentation,
+    RelayRecipientPresentation,
+};
 
 const FLOW_SOCKET: &str = "/run/user/1001/flow/flow.sock";
+
+/// The target sees human-relevant provenance and body only. Integrity fields
+/// stay in the durable ClusterMessage and delivery ledger.
+fn recipient_presentation(message: &ClusterMessage) -> String {
+    let presentation = match message {
+        ClusterMessage::Peer(peer) => RecipientPresentation::Peer(PeerRecipientPresentation {
+            peer_sender: peer.peer_sender.clone(),
+            source_event_identifier: peer.source_event_identifier.clone(),
+            peer_source_path: peer.peer_source_path.clone(),
+            peer_body: peer.peer_body.clone(),
+        }),
+        ClusterMessage::Relay(relay) => RecipientPresentation::Relay(RelayRecipientPresentation {
+            flow_identifier: relay.flow_identifier.clone(),
+            session_identifier: relay.session_identifier.clone(),
+            transcript_path: relay.transcript_path.clone(),
+            what_living_said: relay.context.what_living_said.clone(),
+            context_about: relay.context.context_about.clone(),
+            context_answered: relay.context.context_answered.clone(),
+            context_corrected: relay.context.context_corrected.clone(),
+            timestamp_nanos: relay.timestamp_nanos,
+        }),
+    };
+    crate::text::write(&presentation)
+}
 
 #[derive(Clone, Debug)]
 pub struct FlowResolver {
@@ -114,7 +141,7 @@ impl LiveNexusDelivery {
             return Ok(ReceiptKind::Parked);
         }
         if let HerdrRouteSelection::Available(route) = &node.herdr_route_selection {
-            let datom = crate::text::write(message);
+            let datom = recipient_presentation(message);
             self.deliver_herdr(node, route, &datom)?;
             return Ok(ReceiptKind::Accepted);
         }
@@ -816,10 +843,18 @@ esac
             std::fs::read_to_string(directory.path().join("commands")).unwrap(),
             "get\nread\nprompt\nget\n"
         );
+        let prompt = std::fs::read_to_string(directory.path().join("prompt")).unwrap();
         assert_eq!(
-            std::fs::read_to_string(directory.path().join("prompt")).unwrap(),
-            crate::text::write(&message)
+            prompt,
+            "Peer.{ { source-flow source-session } event-1 flows/source/reports/exact.md «exact body» }"
         );
+        assert!(prompt.contains("source-flow source-session"));
+        assert!(prompt.contains("event-1 flows/source/reports/exact.md"));
+        assert!(prompt.contains("«exact body»"));
+        assert!(
+            !prompt.contains("a1e4e331d40278d0c2c1fdf2cdabd1690682bd13c1fd49dadd40c9df3dc6d6ad")
+        );
+        assert!(!prompt.contains("attempt"));
     }
 
     #[test]
@@ -971,6 +1006,16 @@ esac
             assert_eq!(
                 std::fs::read_to_string(directory.path().join("commands")).unwrap(),
                 expected_commands
+            );
+
+            let record = MessengerTables::open(&store)
+                .unwrap()
+                .nexus_delivery(&format!("durable-{prompt_exit}\0flow-a"))
+                .unwrap()
+                .expect("delivery record must survive before reopen");
+            assert!(
+                crate::text::write(&record.cluster_message)
+                    .contains("a1e4e331d40278d0c2c1fdf2cdabd1690682bd13c1fd49dadd40c9df3dc6d6ad")
             );
 
             std::fs::remove_file(&socket).ok();
