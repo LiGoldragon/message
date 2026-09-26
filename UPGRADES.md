@@ -1,5 +1,34 @@
 # UPGRADES
 
+## 0.13.0 -> 0.14.0 -- Flow resolution repinned on signal-flow 6.1.0
+
+`message` reached Flow Nexus over `signal-flow` **1.1.0** (`968ae3b0`) while
+the deployed Flow Nexus spoke 5.1.0, five breaking wire versions apart: the
+rkyv archive `FlowResolver` wrote could not be read by the Nexus it was
+sending it to, so Flow-resolved delivery could not have been working. This
+release pins the current ordinary Flow contract, signal-flow 6.1.0
+(`a8cdd5ccfc9de4469d7ba5f886dc2ab2affff083`), which is what Flow 0.13.0
+serves.
+
+### What changes
+
+- `signal-flow` moves from `968ae3b0` (1.1.0) to `a8cdd5cc` (6.1.0). Nothing
+  in this repository's own wire, store or command-line text changes.
+- The eight `signal_flow` names `nexus_delivery` uses -- `EndpointSelection`,
+  `FlowNode`, `HarnessKind`, `HerdrRoute`, `HerdrRouteSelection`, `Query`,
+  `Response`, `RouteReadiness` -- are the same in 6.1.0, so no source change
+  was needed. The repin compiles and the whole suite passes unchanged.
+- `FlowLifecycle` gained `Retired` in 6.0.0. `message` only ever constructs
+  `Active` in its fixtures and never matches the lifecycle exhaustively, so
+  the new variant reaches it only as a value Flow itself already refuses to
+  resolve as a recipient.
+
+### Operationally
+
+`message-daemon` must be deployed together with Flow 0.13.0. A `message` on
+this pin cannot talk to a Flow Nexus older than 0.13.0, and the old pin could
+not talk to any Flow Nexus in service.
+
 ## 0.11.1 → 0.12.0 — Datom stack, new wire, new store schema
 
 This release changes the wire, the command-line text, and the durable store
