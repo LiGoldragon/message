@@ -46,7 +46,7 @@ protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "87a54b0a1cbc9aa02f9ff62e46c6ffca52f9ec25", features = ["datom"] }
 signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
 signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "7f2fc2d44b7b1a5e59c32b8071c56a4822310ed8", features = ["datom"] }
-signal-flow = { git = "https://github.com/LiGoldragon/signal-flow.git", rev = "a8cdd5ccfc9de4469d7ba5f886dc2ab2affff083" }
+signal-flow = { git = "https://github.com/LiGoldragon/signal-flow.git", rev = "e9e243c75cce0ff3534149b6ff43af06d97c60db" }
 signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
 rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 redb           = "4.1"
