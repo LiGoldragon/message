@@ -87,6 +87,16 @@ fn a_letter_reaches_flow_with_its_priority_head_and_the_peers_name() {
         panic!("the Priority is the head: {:?}", typed[0].message);
     };
     assert_eq!(letter.sender, Sender::Flow(SENDER.into()));
+    // The id Flow types after the head is the one Acknowledge takes, so a
+    // recipient can answer from what it reads in its own pane and nothing
+    // else. Anything narrower (the DeliveryId, which carries the attempt)
+    // would not be acknowledgeable.
+    assert_eq!(letter.message_id, submission.message_id);
+    flow.set_peer(Some(FakeFlow::caller(RECIPIENT, FlowAspect::Mind)));
+    assert_eq!(
+        nexus.ask(&Query::Acknowledge(letter.message_id.clone())),
+        Response::Acknowledged(submission.message_id.clone())
+    );
 }
 
 #[test]

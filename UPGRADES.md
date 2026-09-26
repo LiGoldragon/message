@@ -1,5 +1,21 @@
 # UPGRADES
 
+## 0.15.0 -> 0.16.0 -- the letter names the message it may be acknowledged by
+
+Repins on meta-signal-flow 10.0.0 (cbea31e), signal-message 7.0.0 (63e11b4)
+and meta-signal-message 0.7.1 (18bf4af). 0.15.0 was never deployed, so this
+supersedes it rather than following it in the field.
+
+- `Letter` gained `MessageId` as its first position, so the pane text Flow
+  types is now `Soft.{ m-7f3a2c Flow.e167d8 Text.«...» }`. Message fills it
+  from the record's own id -- the one `Acknowledge` takes -- so a recipient
+  reading its pane can answer Read from what it read and nothing else. Before
+  this the letter named its sender and its content and no message, and no
+  recipient could Acknowledge at all.
+- `MessageId` is now declared in meta-signal-flow, where Flow renders it, and
+  imported here; `signal_message::MessageId` still names it.
+- Nothing else on Message's wire, ledger or store changed.
+
 ## 0.14.0 -> 0.15.0 -- Message through Flow (e167d8 stage S2)
 
 A rewrite onto signal-message 6.0.0, meta-signal-message 0.7.0, signal-flow

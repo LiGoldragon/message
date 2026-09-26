@@ -27,9 +27,13 @@ use signal_message::{Grade, Priority, Receipt};
 use std::sync::Arc;
 
 impl MessageRecord {
-    /// The typed Message Flow renders: the Priority is its head.
+    /// The typed Message Flow renders: the Priority is its head, then the
+    /// MessageId. The id is what the recipient reads in its own pane and
+    /// answers with `Acknowledge`, which is the only source of Read; without
+    /// it a recipient had no way to name what it had just been handed.
     pub fn flow_message(&self) -> Message {
         let letter = Letter {
+            message_id: self.message_id.clone(),
             sender: self.sender.clone(),
             content: self.content.clone(),
         };
