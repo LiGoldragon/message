@@ -30,6 +30,8 @@ pub enum Pane {
     Uncertain,
     /// A permission dialog is up.
     Blocked,
+    /// The seat left Herdr; Flow lists the flow Exited.
+    Exited,
 }
 
 #[derive(Default)]
@@ -145,6 +147,7 @@ impl FakeFlow {
             Pane::Working => AgentState::Working,
             Pane::Blocked => AgentState::Blocked,
             Pane::Idle | Pane::ComposerOccupied | Pane::Uncertain => AgentState::Idle,
+            Pane::Exited => AgentState::Unknown,
         }
     }
 
@@ -164,6 +167,9 @@ impl FakeFlow {
         let state = self.state.0.lock().unwrap();
         if !state.panes.contains_key(&request.flow_id) {
             return Err(DeliveryRejection::UnknownFlow);
+        }
+        if state.panes[&request.flow_id] == Pane::Exited {
+            return Err(DeliveryRejection::FlowExited);
         }
         match Self::refusal(request) {
             Some(refusal) => Err(DeliveryRejection::BodyRefused(refusal)),
@@ -191,6 +197,7 @@ impl FakeFlow {
             Pane::Blocked => {
                 return MetaResponse::DeliveryRejected(DeliveryRejection::RecipientBlocked);
             }
+            Pane::Exited => unreachable!("vet refuses an Exited flow"),
             Pane::Working => DeliveryGrade::Transported,
             Pane::Idle => DeliveryGrade::Presented,
             Pane::Uncertain => DeliveryGrade::Uncertain,

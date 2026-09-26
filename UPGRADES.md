@@ -1,5 +1,14 @@
 # UPGRADES
 
+## 0.16.0 -> 0.17.0 -- a refusal names a Retired or Exited flow
+
+Repins on meta-signal-flow 11.0.0 (2ac045c), signal-message 8.0.0 (d574200)
+and meta-signal-message 0.8.0 (14f5759). A Send to a flow Flow lists as
+Exited was refused `RecipientRefused.{ <flow> FlowStopped }`; Flow now
+answers `FlowExited` (and `FlowRetired` for a retired flow), and Message
+passes it through. Deploy with Flow 0.17.0: an older Message cannot decode
+either refusal and would answer `FlowUnreachable`.
+
 ## 0.15.0 -> 0.16.0 -- the letter names the message it may be acknowledged by
 
 Repins on meta-signal-flow 10.0.0 (cbea31e), signal-message 7.0.0 (63e11b4)

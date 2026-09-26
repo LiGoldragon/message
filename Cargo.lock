@@ -264,7 +264,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "message"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "datom-codec 0.31.0",
  "protos 0.31.0",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "message-meta"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "datom-codec 0.31.0",
  "meta-signal-message",
@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "message-nexus"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "meta-signal-flow",
  "meta-signal-message",
@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-flow"
-version = "10.0.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=cbea31ef6b22324e5385b17affb81deb0f2d2ce5#cbea31ef6b22324e5385b17affb81deb0f2d2ce5"
+version = "11.0.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=2ac045c2cb776325ddfcb311be2f28405ae5f973#2ac045c2cb776325ddfcb311be2f28405ae5f973"
 dependencies = [
  "datom-codec 0.31.0",
  "ethos-zero 13.0.0",
@@ -312,8 +312,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-message"
-version = "0.7.1"
-source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=18bf4af9b6208d05d9f0def700c4736e6c308e3c#18bf4af9b6208d05d9f0def700c4736e6c308e3c"
+version = "0.8.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=14f57596fc235941af081bec50d5d79449bc813a#14f57596fc235941af081bec50d5d79449bc813a"
 dependencies = [
  "datom-codec 0.31.0",
  "ethos-zero 13.0.0",
@@ -551,8 +551,8 @@ dependencies = [
 
 [[package]]
 name = "signal-message"
-version = "7.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message?rev=63e11b4affef6a79fd2930f0a00c080889538e59#63e11b4affef6a79fd2930f0a00c080889538e59"
+version = "8.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message?rev=d5742005597088764adfaff9bbcc47ce97180a35#d5742005597088764adfaff9bbcc47ce97180a35"
 dependencies = [
  "datom-codec 0.31.0",
  "ethos-zero 13.0.0",

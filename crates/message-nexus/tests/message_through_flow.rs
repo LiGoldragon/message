@@ -13,8 +13,8 @@ use meta_signal_message::{
 };
 use signal_flow::FlowAspect;
 use signal_message::{
-    BodyRefused_Data, Grade, MessageRejection, Priority, Query, Receipt, Response, SendRejection,
-    SendRequest, Submission,
+    BodyRefused_Data, Grade, MessageRejection, Priority, Query, Receipt, RecipientRefused_Data,
+    Response, SendRejection, SendRequest, Submission,
 };
 use support::{
     NexusProcess,
@@ -128,6 +128,22 @@ fn one_refused_recipient_fails_the_whole_send_and_nothing_is_typed() {
         Response::SendRejected(SendRejection::BodyRefused(BodyRefused_Data {
             flow_id: RECIPIENT.into(),
             body_refusal: BodyRefusal::HarnessCommand("/compact".into()),
+        }))
+    );
+    assert!(flow.typed().is_empty());
+}
+
+/// e167d8 sandbox: a Send to a flow Flow lists as Exited came back naming
+/// FlowStopped. The refusal now carries Flow's own word for it.
+#[test]
+fn a_send_to_an_exited_flow_names_it_exited() {
+    let (flow, nexus) = started();
+    flow.set_pane(RECIPIENT, Pane::Exited);
+    assert_eq!(
+        nexus.ask(&send(Priority::Soft, "anyone there")),
+        Response::SendRejected(SendRejection::RecipientRefused(RecipientRefused_Data {
+            flow_id: RECIPIENT.into(),
+            delivery_rejection: DeliveryRejection::FlowExited,
         }))
     );
     assert!(flow.typed().is_empty());
