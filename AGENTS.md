@@ -21,19 +21,18 @@ Beauty and elegant, extensible logic win every trade-off.
   generation, daemon-shape policy, or a second Signal/Nexus/SEMA contract.
 - The bootstrap generator is provisional: strict producer Types are generated;
   current behavior and roles are handwritten until Logos can express them.
-- Public text is Datom, read and written only through `datom-codec` by way of
-  `src/text.rs`. Do not restore retired readers, aliases, feature gates, or
-  file formats.
+- Public text is Datom, read and written only by the CLIs through
+  `datom-codec`. The Nexus compiles its contracts without datom.
 - The portable Signal frame is imported from `signal`, never declared here: a
   second copy is a different Rust type, which forks the wire.
 - Old surfaces die outright. Do not add legacy readers, names, aliases, or
   feature-gated resurrection paths.
-- `message-daemon` reads one binary configuration path from argv. It does not
-  read control-plane environment variables.
-- `message` uses `MESSAGE_SOCKET`; `meta-message` uses
+- `message-nexus` starts with no arguments; its defaults come from HOME and
+  XDG_RUNTIME_DIR, and meta Configure changes them.
+- `message` uses `MESSAGE_SOCKET`; `message-meta` uses
   `MESSAGE_META_SOCKET`. Each accepts exactly one inline Datom value.
-- `messenger.sema` is the component's durable store. Preserve its fail-closed
-  version discipline and bounded ledger.
+- `message.sema` is the component's durable store.
+- Flow is the only pane writer. Message never runs Herdr.
 
 ## Work and history
 

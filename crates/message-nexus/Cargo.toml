@@ -1,0 +1,35 @@
+[package]
+name        = "message-nexus"
+description = "Message Nexus: durable messages and receipts, delivered through Flow."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+publish.workspace      = true
+
+[lib]
+name = "message_nexus"
+path = "src/lib.rs"
+
+[[bin]]
+name = "message-nexus"
+path = "src/main.rs"
+
+# The Nexus thinks in typed values: it compiles its contracts without datom.
+[dependencies]
+signal-message.workspace      = true
+meta-signal-message.workspace = true
+signal-flow.workspace         = true
+meta-signal-flow.workspace    = true
+rkyv.workspace                = true
+rustix      = { version = "1", features = ["net"] }
+sema-engine = { git = "https://github.com/LiGoldragon/sema-engine", rev = "516f01fe0b03157efc6cc3d38b588f0ca123ac94" }
+thiserror   = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unused    = { level = "warn", priority = -1 }
+dead_code = "warn"

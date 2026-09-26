@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Flow is the only pane writer. Message reaches a pane only through Flow's
+# Deliver, so no Message source may run Herdr or type keys itself.
+set -euo pipefail
+
+root="${1:?repository root required}"
+
+if rg --line-number --glob '*.rs' --glob '!**/tests/**' \
+  '"herdr"|Command::new\("herdr|send-keys|agent prompt|HERDR_SOCKET' \
+  "$root"
+then
+  printf 'Message must not invoke herdr: deliver through Flow.\n' >&2
+  exit 1
+fi

@@ -1,61 +1,29 @@
 # Message architecture
 
-Message has one structural boundary and one behavioral center.
+One Nexus (`crates/message-nexus`), two thin CLIs (`crates/message`,
+`crates/message-meta`). The Nexus compiles its contracts without datom; the
+CLIs enable it.
 
-The structural boundary is producer-owned:
+- `configuration` — the no-argument defaults (store, own sockets, Flow's).
+- `store` — the Sema ledger: `MessageRecord`, append-only `ReceiptRecord`,
+  `ParkRecord` (present while a recipient is Submitted or Parked, so a restart
+  resumes it), `ConfigurationRecord`.
+- `ledger` — appends grades and tells Observe subscribers.
+- `flow_edge` — the Message→Flow edge: meta `ResolvePeer Vet Deliver`,
+  ordinary `Observe.Agent`.
+- `delivery` — one Deliver as a grade, parking, the Observe.Agent watch of
+  each parked recipient, resumption.
+- `service` — Send, Withdraw, Acknowledge, QueryReceipts, Redeliver,
+  Configure.
+- `listener` — the two sockets and the meta gate.
+- `peer` — `SO_PEERCRED` plus the process start time, the identity Flow
+  resolves.
 
-- `signal-message` owns ordinary `Input`, `Output`, their payload Types, and
-  contract 1 / revision 2 bound frames.
-- `meta-signal-message` owns owner requests, replies, and contract 2 / revision
-  2 bound frames.
-- Triad Runtime supplies only the length-prefixed transport envelope.
+Grades are never upgraded into one another: Submitted, Parked, Transported,
+Presented, Uncertain, Read (the recipient's Acknowledge only), Withdrawn,
+Refused.<Flow's DeliveryRejection>.
 
-Message never translates those contracts into a second local vocabulary.
-Clients encode producer requests directly; listeners decode producer frames
-directly; the engine matches producer inputs and returns producer outputs.
-
-The behavioral center is component-owned:
-
-- `MessageEngine` decides ordinary requests.
-- `MessengerTables` owns the bounded `messenger.sema` ledger, inbox, thread,
-  agent-registry, and delivery-outbox arrangements.
-- `OriginPolicy` derives sender and ingress facts from the connection.
-- `DeliveryRunner` delivers producer-owned inbox entries through harness Signal
-  or terminal Datom.
-- `FlowResolver` asks Flow Nexus for the recipient's current session, harness,
-  endpoint, and readiness immediately before direct delivery.
-- the Nexus delivery family binds one immutable payload fingerprint to each
-  source event and one durable attempt to each event/target pair. A resolution
-  park is retryable; an attempt becomes non-retryable before the external
-  write, and only a positive harness acknowledgment becomes `Accepted`.
-- `MessageDaemon` serves ordinary and owner sockets. Owner Configure currently
-  returns the producer's typed `OperationUnimplemented(NotBuiltYet)` reply.
-
-Startup configuration embeds the exact producer-owned daemon configuration and
-adds only two private runtime values: the durable database path and fallback
-owner label. It is archived as binary state; the writer helper accepts one
-inline Datom request.
-
-Text and binary remain deliberately separate:
-
-- Humans, agents, harnesses, and GUIs see Datom.
-- Component connections carry the producer's bound archived frames.
-- Durable private arrangements are rkyv records inside `messenger.sema`.
-
-The component contains no structural source directory, build-time generator,
-generated daemon spine, local frame wrapper, compatibility reader, or retired
-text feature.
-
-## Proof surface
-
-- direct producer-bound frame round trip;
-- zero component structural ownership inputs;
-- registry seat/bind and unknown-agent rejection;
-- durable inbox/thread write and read;
-- durable delivery parking and Datom terminal injection;
-- current-store reopen without repair or identity loss;
-- live ordinary and owner daemon listeners;
-- ordinary `Deliver` Signal with a durable typed receipt and event-wide
-  collision rejection;
-- direct Flow resolution plus Claude attach and Codex app-server adapters;
-- default and binary-only Cargo matrices plus Nix flake checks.
+The meta socket answers the owner (a process in no flow's pane) and flows whose
+aspect is in `MetaAspects` (default Psyche). Same-UID sockets make this an
+accident-grade gate, not a security boundary. While Flow is unreachable only
+Configure is answered, so the owner can repair the Flow socket paths.

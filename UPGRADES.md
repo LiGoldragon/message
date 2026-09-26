@@ -1,5 +1,27 @@
 # UPGRADES
 
+## 0.14.0 -> 0.15.0 -- Message through Flow (e167d8 stage S2)
+
+A rewrite onto signal-message 6.0.0, meta-signal-message 0.7.0, signal-flow
+7.0.0 and meta-signal-flow 9.0.0. Message no longer writes panes: every
+delivery is Flow's `Deliver`, over Flow's meta socket.
+
+### What breaks
+
+- Executables: `message-daemon`, `meta-message`, `relay`, `message-cluster`,
+  `message-validate-output` and `message-write-configuration` are gone. The
+  Nexus is `message-nexus` with **no arguments**; the meta CLI is
+  `message-meta`.
+- Store: `~/.local/state/message/message.sema`, new record kinds. The old
+  `messenger.sema` is never opened; move it aside, nothing is migrated.
+- Wire: the whole ordinary and meta vocabulary (see the contracts' UPGRADES).
+  Inbox, threads, the agent registry, the cluster relay and the flow-delivery
+  park are retired.
+- Flow must admit Message on its meta socket: run Message outside any flow's
+  pane (it then resolves as the owner), and configure Flow's
+  `MessageNexusPath` to the `message-nexus` executable.
+
+
 ## 0.13.0 -> 0.14.0 -- Flow resolution repinned on signal-flow 6.2.0
 
 `message` reached Flow Nexus over `signal-flow` **1.1.0** (`968ae3b0`) while

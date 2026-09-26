@@ -1,72 +1,20 @@
-[package]
-name         = "message"
-version      = "0.14.0"
+[workspace]
+members  = ["crates/message-nexus", "crates/message", "crates/message-meta"]
+resolver = "3"
+
+[workspace.package]
+version      = "0.15.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/message"
-description  = "Message surface, durable messenger, and supervised ingress daemon."
-autobins      = false
+publish      = false
 
-[lib]
-name = "message"
-path = "src/lib.rs"
-
-[[bin]]
-name = "message"
-path = "src/main.rs"
-
-[[bin]]
-name = "message-daemon"
-path = "src/bin/message_daemon.rs"
-
-[[bin]]
-name = "message-nexus"
-path = "src/bin/message_daemon.rs"
-
-[[bin]]
-name = "meta-message"
-path = "src/bin/meta_message.rs"
-
-[[bin]]
-name = "message-meta"
-path = "src/bin/meta_message.rs"
-
-[[bin]]
-name = "message-validate-output"
-path = "src/bin/message_validate_output.rs"
-
-[[bin]]
-name = "message-write-configuration"
-path = "src/bin/message_write_configuration.rs"
-
-[dependencies]
-datom-codec    = { git = "https://github.com/LiGoldragon/datom-codec", rev = "6dccc76b75918a91d3370a9d4fe88aa7dd567876" }
-protos         = { git = "https://github.com/LiGoldragon/protos", rev = "171b21f65337983ab624b7b906397a4f1f92c5a3" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message.git", rev = "87a54b0a1cbc9aa02f9ff62e46c6ffca52f9ec25", features = ["datom"] }
-signal = { git = "https://github.com/LiGoldragon/signal", rev = "7bcb0949cdaa4501651ed519625eba48e283fac0", features = ["datom"] }
-signal-message = { git = "https://github.com/LiGoldragon/signal-message.git", rev = "7f2fc2d44b7b1a5e59c32b8071c56a4822310ed8", features = ["datom"] }
-signal-flow = { git = "https://github.com/LiGoldragon/signal-flow.git", rev = "e9e243c75cce0ff3534149b6ff43af06d97c60db" }
-signal-harness = { git = "https://github.com/LiGoldragon/signal-harness.git", rev = "17bdd58bebe230548ff278ee394f89bbecc6ce86", features = ["datom"] }
-rkyv           = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-redb           = "4.1"
-sema           = { git = "https://github.com/LiGoldragon/sema.git", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }
-sema-engine    = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "516f01fe0b03157efc6cc3d38b588f0ca123ac94" }
-serde          = { version = "1", features = ["derive"] }
-serde_json     = "1"
-sha2           = "0.10"
-sha1           = "0.10"
-base64         = "0.22"
-thiserror      = "2"
-time           = { version = "0.3", features = ["parsing"] }
-tokio          = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync"] }
-triad-runtime  = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "2abec17849fe270755bb04a13d052e1edbb2a7ab" }
-
-[dev-dependencies]
-redb = "4.1"
-rustix = { version = "1", features = ["process"] }
-tempfile = "3"
-
-[lints.rust]
-unused = "warn"
-dead_code = "warn"
+[workspace.dependencies]
+datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "09e2a9d52bf7f2f11e51d15cb6c3177f72c6c927" }
+protos              = { git = "https://github.com/LiGoldragon/protos", rev = "1febca7836bf8d5f5973a302fdd50aa9c84c159b" }
+signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "1bc5d800c1d761445c84bc4f789fbeeee7ebee4a" }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "75263ab254ba78c6365844a7a7837c617bcbb28d" }
+signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "1c9e4b306e2686a2aa7088e461ff6b2f22b45064" }
+meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "f395bdca287736395dd68a415abba596d6e3ee0a" }
+rkyv                = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }

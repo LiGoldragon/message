@@ -1,16 +1,11 @@
 # Message harness surface
 
-Harnesses perceive Message through the same producer-owned Types as every
-other reader.
+Harnesses perceive Message through the producer-owned Types.
 
-- Ordinary requests and replies are `signal-message` Datom values at the CLI
-  and bound contract 1 / revision 2 frames on the socket.
-- Owner requests and replies are `meta-signal-message` Datom values at the CLI
-  and bound contract 2 / revision 2 frames on the owner socket.
-- `message` reads one inline Datom value and uses `MESSAGE_SOCKET`.
-- `meta-message` reads one inline Datom value and uses
+- `message` reads one inline `signal-message` datom and uses `MESSAGE_SOCKET`.
+- `message-meta` reads one inline `meta-signal-message` datom and uses
   `MESSAGE_META_SOCKET`.
-- Terminal delivery renders the producer-owned inbox entry directly in Datom.
-
-Do not teach a harness a component-local request language or legacy reader.
-The producer contract is the thinking and display surface.
+- What lands in a recipient's pane is Flow's rendering of the typed Message:
+  `Soft.{ Flow.<sender> Text.«…» }`, the Priority first.
+- A recipient acknowledges with `message 'Acknowledge.<MessageId>'` from its
+  own pane; that alone makes a receipt Read.

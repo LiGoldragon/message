@@ -1,61 +1,44 @@
-# Message
+# message
 
-Message is the behavioral consumer of the ordinary and owner Message
-interfaces. `signal-message` owns every public ordinary Type and
-`meta-signal-message` owns every public owner Type; this repository imports
-those Types by identity.
+The Message Nexus: durable messages and receipts, delivered through Flow.
 
-Query one known delivery with:
+A message is just a message: `Send.{ [ recipients ] Priority Content }`.
+Message owns the record, the Priority, the sender (named from the peer through
+Flow's `ResolvePeer`, never from the payload), the ledger of receipts with every
+grade kept separate, parking until Flow shows a recipient at rest, and the
+recipient's own Read. Flow is the only pane writer: Message reaches a pane only
+through Flow's typed `Deliver`, and never runs Herdr.
 
+## Executables
+
+- `message-nexus` — the Nexus. Starts with no arguments. Store
+  `~/.local/state/message/message.sema`; sockets
+  `$XDG_RUNTIME_DIR/message/message.sock` (ordinary) and `message-owner.sock`
+  (meta), both `0600`; it reaches Flow at `$XDG_RUNTIME_DIR/flow/flow.sock` and
+  `flow-meta.sock` until meta `Configure` says otherwise.
+- `message` — one inline `signal-message` datom (socket `MESSAGE_SOCKET`).
+- `message-meta` — one inline `meta-signal-message` datom (socket
+  `MESSAGE_META_SOCKET`).
+
+```sh
+message 'Send.{ [ 7d41e0 ] Soft Text.«Stage 1 is deployed; run the tier tests.» }'
+# Submitted.{ m-18a8… [ { 7d41e0 NotRequested Parked } ] }
+message 'Observe.m-18a8…'          # Receipts on open, then ReceiptObserved per change
+message 'Acknowledge.m-18a8…'      # from the recipient's own pane: Read
+message-meta 'Send.{ [ 7d41e0 ] HardAbrupt Text.«Stop the build.» }'   # stamped Owner
+message-meta 'Redeliver.{ m-18a8… 7d41e0 }'                            # out of Uncertain
 ```
-message 'QueryDeliveryReceipts.{ event-42 [ target-a target-b ] }'
-```
 
-The query and `Deliver` share one address domain: a nonempty source identifier
-other than `event`, plus 1–64 unique, nonempty target identifiers, with no NUL
-in either identifier. `Recorded` reports the persisted receipt kind and its
-retryability; `Missing` means that exact key has no record. `Accepted` means
-transport submission only. Querying never retries or sends anything: it only
-observes persisted retryability. The durable values do not retain an index of
-their keys, so global receipt discovery is intentionally unavailable.
-Existing v6 rows remain unchanged: lookup rejects pre-existing ambiguous
-addresses and, for a valid address, reports the stored status without
-validating or repairing the historical delivery.
+## Delivery
 
-The source identifier `event` is reserved for the messenger's event-identity
-sentinel. This protects against identical valid Relay payloads under different
-source-event identifiers aliasing the sentinel as a `FileOnly` event record.
+Send vets every recipient with Flow's `Vet` (the first refusal fails the whole
+Send), records the message and a `Submitted` receipt per recipient, then calls
+Flow's `Deliver` per recipient with DeliveryId `<MessageId>:<FlowId>:<attempt>`.
+`RecipientWorking` (Soft) and `ComposerOccupied` (any Priority) park the
+recipient: Message holds Flow's `Observe.Agent` for it and delivers again, under
+the same DeliveryId, on each frame showing Idle, Done or Gone. Flow keeps a
+typed delivery by its DeliveryId, so a repeat after a crash types nothing. Only
+`Redeliver`, out of `Uncertain`, opens a new attempt. A restarted Nexus resumes
+every recipient still `Submitted` or `Parked`.
 
-It provides:
-
-- `message`, a one-value Datom client for the ordinary interface (argv or stdin);
-- `message-meta`, the privileged one-value Datom client;
-- `message-nexus`, the two-listener runtime;
-- `message-write-configuration`, a Datom-to-binary startup helper;
-- `messenger.sema`, the bounded durable ledger, inbox, thread index, agent
-  registry, delivery outbox, and event-scoped Nexus receipt store.
-
-`Deliver` carries `ClusterMessage.Peer` or `ClusterMessage.Relay` through the
-ordinary socket. The Nexus resolves each target through Flow Nexus, persists
-the source-event identity and target attempt before crossing a harness
-boundary, and returns `DeliveryRecorded` with typed recipient receipts. Claude
-delivery uses the daemon attach protocol; Codex delivery uses app-server
-`turn/start`. Both receive the canonical ClusterMessage Datom directly.
-
-The compatibility binary names `meta-message` and `message-daemon` remain
-available during deployment migration. There is no cluster delivery wrapper
-or adapter CLI. The Nexus receives one binary
-configuration path as its only argument. The
-ordinary CLI connects through `MESSAGE_SOCKET`; the owner CLI connects through
-`MESSAGE_META_SOCKET`. Both CLIs accept exactly one inline Datom value and
-print the producer-owned reply in Datom.
-
-The wire is a 4-byte big-endian length prefix over the bare rkyv archive of
-the producer-owned contract root — no envelope, because one connection carries
-one request and one reply. The portable frame itself comes from `signal`, so
-every component speaks one frame type.
-
-There is no component-local structural language, generated Rust, build script,
-frame model, or compatibility vocabulary. The producer contracts are the
-surface seen by humans, agents, harnesses, and GUIs; Message supplies the
-behavior behind them.
+Run `nix flake check -L` for the complete proof matrix.

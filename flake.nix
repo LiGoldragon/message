@@ -1,5 +1,5 @@
 {
-  description = "Message surface, durable messenger, and ingress daemon.";
+  description = "Message Nexus: durable messages and receipts, delivered through Flow.";
 
   inputs = {
     nixpkgs.url = "github:LiGoldragon/nixpkgs?ref=main";
@@ -45,6 +45,8 @@
           };
           commonArgs = {
             inherit src;
+            pname = "message-workspace";
+            version = "0.15.0";
             strictDeps = true;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -58,27 +60,6 @@
 
               touch "$out"
             '';
-          cargoTestFile =
-            testFile: testName: craneLib.cargoTest (
-              commonArgs
-              // {
-                inherit cargoArtifacts;
-                nativeBuildInputs = [ pkgs.ripgrep ];
-                preCheck = ''
-                  rg --fixed-strings ${pkgs.lib.escapeShellArg "fn ${testName}("} \
-                    tests/${testFile}.rs
-                '';
-                cargoTestExtraArgs = "--test ${testFile} ${testName} -- --exact";
-              }
-            );
-          cargoLibTest =
-            testName: craneLib.cargoTest (
-              commonArgs
-              // {
-                inherit cargoArtifacts;
-                cargoTestExtraArgs = "--lib ${testName} -- --exact";
-              }
-            );
           context = {
             inherit
               pkgs
@@ -87,8 +68,6 @@
               commonArgs
               cargoArtifacts
               sourceConstraintCheck
-              cargoTestFile
-              cargoLibTest
               ;
           };
         in
@@ -101,10 +80,6 @@
           context = mkContext system;
         in
         {
-          test-basic = context.pkgs.writeShellScriptBin "message-test-basic" ''
-            export PATH=${context.pkgs.lib.makeBinPath [ context.toolchain context.pkgs.nix ]}:$PATH
-            exec ${context.pkgs.bash}/bin/bash ${./scripts/test-basic} "$@"
-          '';
           default = context.craneLib.buildPackage (
             context.commonArgs
             // {
@@ -126,10 +101,6 @@
             type = "app";
             program = "${packages.default}/bin/message";
           };
-          test-basic = {
-            type = "app";
-            program = "${packages.test-basic}/bin/message-test-basic";
-          };
         }
       );
 
@@ -139,6 +110,8 @@
           context = mkContext system;
         in
         {
+          # The workspace tests: the contracts' CLI parsing, and the Message
+          # Nexus as a process against a scripted Flow.
           default = context.craneLib.cargoTest (
             context.commonArgs
             // {
@@ -149,75 +122,16 @@
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoClippyExtraArgs = "--all-targets --all-features -- -D warnings";
+              cargoClippyExtraArgs = "--all-targets -- -D warnings";
             }
           );
           fmt = context.craneLib.cargoFmt { inherit (context.commonArgs) src; };
-          doc = context.craneLib.cargoDoc (
-            context.commonArgs
-            // {
-              inherit (context) cargoArtifacts;
-              RUSTDOCFLAGS = "-D warnings";
-            }
-          );
+          message-cannot-invoke-herdr =
+            context.sourceConstraintCheck "message-cannot-invoke-herdr" ./scripts/message-cannot-invoke-herdr;
           message-runtime-cannot-reference-retired-terminal-brand =
             context.sourceConstraintCheck "message-runtime-cannot-reference-retired-terminal-brand" ./scripts/message-runtime-cannot-reference-retired-terminal-brand;
           message-component-cannot-own-local-ledger =
             context.sourceConstraintCheck "message-component-cannot-own-local-ledger" ./scripts/message-component-cannot-own-local-ledger;
-          message-daemon-reads-no-control-plane-environment-variables =
-            context.sourceConstraintCheck "message-daemon-reads-no-control-plane-environment-variables" ./scripts/message-daemon-reads-no-control-plane-environment-variables;
-          message-request-frame-is-a-bare-length-prefixed-archive =
-            context.cargoTestFile "contract_convergence"
-              "a_request_frame_is_a_length_prefix_over_a_bare_contract_archive";
-          message-roots-are-distinct-on-the-wire =
-            context.cargoTestFile "contract_convergence"
-              "a_reply_archive_is_not_readable_as_a_request";
-          message-daemon-executes-both-producer-contracts =
-            context.cargoTestFile "process_boundary"
-              "daemon_executes_both_producer_owned_contracts";
-          message-daemon-isolates-flow-marker-home =
-            context.cargoTestFile "process_boundary"
-              "isolated_nexus_socket_parks_then_drains_on_a_typed_flow_idle_witness";
-          message-pty-delivery-speaks-producer-datom =
-            context.cargoTestFile "pty_end_to_end"
-              "pty_leg_sends_the_producer_inbox_entry_as_datom";
-          message-startup-request-round-trips-as-datom =
-            context.cargoTestFile "startup_configuration"
-              "the_startup_request_round_trips_through_its_own_datom_text";
-          message-startup-request-writes-a-loadable-configuration =
-            context.cargoTestFile "startup_configuration"
-              "writing_the_startup_request_produces_a_configuration_the_daemon_loads";
-          message-flow-delivery-parks-until-the-flow-is-idle =
-            context.cargoTestFile "flow_delivery"
-              "a_delivery_to_a_known_flow_parks_and_is_acknowledged_queued";
-          message-flow-delivery-lands-on-idle-with-a-compact-receipt =
-            context.cargoTestFile "flow_delivery"
-              "an_idle_announce_lands_the_parked_delivery_with_a_compact_receipt";
-          message-flow-delivery-repeated-idle-is-idempotent =
-            context.cargoTestFile "flow_delivery"
-              "repeated_idle_queries_are_acknowledged_without_relanding";
-          message-delivery-receipt-query = context.cargoTestFile "delivery_receipts"
-            "receipt_queries_preserve_recorded_states_after_reopen_and_order_missing_targets";
-          message-delivery-address-domain = context.cargoTestFile "delivery_receipts"
-            "invalid_address_selections_are_typed_and_cannot_mutate_or_resolve";
-          message-delivery-receipt-public-socket = context.cargoTestFile "process_boundary"
-            "ordinary_socket_accepts_the_public_receipt_query_datom";
-          message-herdr-route-submits-canonical-datom-once = context.cargoLibTest
-            "nexus_delivery::tests::herdr_delivery_submits_the_canonical_datom_once";
-          message-herdr-route-refuses-unready-composers = context.cargoLibTest
-            "nexus_delivery::tests::herdr_guard_refuses_busy_nonblank_wrong_terminal_unready_and_missing_status";
-          message-stale-herdr-route-never-falls-back-to-native = context.cargoLibTest
-            "nexus_delivery::tests::stale_herdr_route_with_parked_native_endpoint_never_falls_back";
-          message-native-only-direct-protocol-remains-routable = context.cargoLibTest
-            "nexus_delivery::tests::flow_resolution_and_claude_delivery_use_direct_protocols";
-          message-herdr-uncertain-delivery-is-durable-without-retry = context.cargoLibTest
-            "nexus_delivery::tests::accepted_and_ambiguous_parked_v6_rows_reopen_without_retry";
-          message-relay-busy-delivery-is-durable-before-socket-write =
-            context.cargoTestFile "relay_fixture"
-              "busy_delivery_is_persisted_before_any_socket_write";
-          message-previous-store-schema-fails-closed =
-            context.cargoTestFile "store_migration"
-              "a_store_from_the_previous_schema_is_refused_rather_than_re_stamped";
         }
       );
 
