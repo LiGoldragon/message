@@ -4,7 +4,7 @@
 use datom_codec::{Actualizing, Budget, Datomizable, Potential};
 use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use meta_signal_message::{Query, Response};
-use protos::{Protosizable, ReaderBudget, Textualizable};
+use protos::{Compactable, Protosizable, ReaderBudget};
 use std::{
     env,
     io::{Read, Write},
@@ -98,7 +98,7 @@ fn main() -> ExitCode {
     let client = MessageMetaClient::from_environment();
     let outcome = client.parse(&arguments).and_then(|query| {
         client.call(&query, &mut |reply| {
-            println!("{}", reply.datomize(vec![]).protosize().textualize());
+            println!("{}", reply.datomize(vec![]).protosize().compact());
         })
     });
     match outcome {
