@@ -264,7 +264,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "message"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "datom-codec 0.31.0",
  "message-defaults",
@@ -275,11 +275,11 @@ dependencies = [
 
 [[package]]
 name = "message-defaults"
-version = "0.17.0"
+version = "0.17.1"
 
 [[package]]
 name = "message-meta"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "datom-codec 0.31.0",
  "message-defaults",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "message-nexus"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "message-defaults",
  "meta-signal-flow",

@@ -1,10 +1,13 @@
 # Message architecture
 
 One Nexus (`crates/message-nexus`), two thin CLIs (`crates/message`,
-`crates/message-meta`). The Nexus compiles its contracts without datom; the
-CLIs enable it.
+`crates/message-meta`), and `crates/message-defaults`, the one home of the
+default layout derived from `HOME` and `XDG_RUNTIME_DIR` that the Nexus seeds a
+new store from and the CLIs find its sockets by. The Nexus compiles its
+contracts without datom; the CLIs enable it. `fn main()` is the only free
+function and every method lives in a trait (`checks/`).
 
-- `configuration` — the no-argument defaults (store, own sockets, Flow's).
+- `configuration` — the defaults as the Configure value a new store is seeded with.
 - `store` — the Sema ledger: `MessageRecord`, append-only `ReceiptRecord`,
   `ParkRecord` (present while a recipient is Submitted or Parked, so a restart
   resumes it), `ConfigurationRecord`.

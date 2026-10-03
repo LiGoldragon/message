@@ -1,5 +1,50 @@
 # UPGRADES
 
+## 0.17.0 -> 0.17.1 -- defaults in one crate, every method in a trait
+
+No wire, store or command-line change. A 0.17.0 store opens unchanged and
+resumes the configuration it holds.
+
+- New crate `message-defaults` holds the default layout (store, both
+  sockets, Flow's sockets) derived from `HOME` and `XDG_RUNTIME_DIR`. The
+  Nexus seeds a new store from it; `message` and `message-meta` reach its
+  sockets when `MESSAGE_SOCKET` / `MESSAGE_META_SOCKET` are unset.
+- The clients' fallback without `XDG_RUNTIME_DIR` is `/run/user/<uid>` of the
+  calling user; it was `/run/user/1001` for everyone. The Nexus's fallback
+  without `HOME` is the password database's home; it was `/`.
+- The checks `no-free-functions` and `no-inherent-methods` hold the code to
+  `fn main()` as the only free function and every method in a trait.
+
+### What the deployer changes
+
+From 0.15.0 on nothing changes: the unit (CriomOS-home
+`flow-message-next.nix`, `messageNexusUnit`) runs `message-nexus` with no
+arguments and `HOME` plus `XDG_RUNTIME_DIR` in its environment, and the
+configuration changes only through `message-meta 'Configure.{ ... }'`.
+
+A unit still on the 0.14.0 shape (CriomOS-home `message.nix`, unit
+`message-daemon`) must change:
+
+- `ExecStart`: `message-daemon <state>/message-daemon.signal` becomes
+  `message-nexus`, with **no argument**. Given any argument the Nexus exits
+  non-zero before it opens a store or binds a socket.
+- `ExecStartPre`: drop `message-write-configuration`; the executable owns the
+  defaults, persists them in `~/.local/state/message/message.sema` on first
+  start and resumes them after. `message-daemon.signal` and `messenger.sema`
+  are never read.
+- Environment: `HOME` and `XDG_RUNTIME_DIR` (systemd user units have both).
+  No other variable reaches the Nexus: `MESSAGE_SOCKET`, `MESSAGE_META_SOCKET`,
+  `FLOW_SOCKET` and `FLOW_META_SOCKET` are ignored by it. Its sockets are
+  `$XDG_RUNTIME_DIR/message/message.sock` and `message-owner.sock`; Flow's are
+  expected at `$XDG_RUNTIME_DIR/flow/flow.sock` and `flow-meta.sock`.
+- Any other socket or Flow path is set once with
+  `message-meta 'Configure.{ <ordinary> <meta> <flow> <flow-meta> [ Psyche ] }'`
+  from outside any flow's pane; moving Message's own sockets answers
+  `NexusRestartRequired`, and the restarted Nexus binds the stored paths.
+- Client wrappers: `meta-message` is now `message-meta`; the wrappers may keep
+  setting `MESSAGE_SOCKET` / `MESSAGE_META_SOCKET`, which only select which
+  Nexus a client reaches.
+
 ## 0.16.0 -> 0.17.0 -- a refusal names a Retired or Exited flow
 
 Repins on meta-signal-flow 11.0.0 (2ac045c), signal-message 8.0.0 (d574200)
