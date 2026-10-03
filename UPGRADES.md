@@ -1,5 +1,21 @@
 # UPGRADES
 
+## 0.18.0 -> 0.19.0 -- speaks to Flow 0.22.0 (signal 8.0.0, signal-flow 10.0.0, meta-signal-flow 14.0.0)
+
+Message 0.19.0 holds exactly the contract revisions Flow 0.22.0 holds:
+signal-message 10.0.0 (b94d907c), meta-signal-message 0.10.0 (81e12b23),
+signal-flow 10.0.0 (f95034de), meta-signal-flow 14.0.0 (54eb5618), and
+signal 8.0.0 (f35460de) through them, with one datom-codec and one protos,
+0.32.2. No Message source changed: signal-flow 9.0.0's `Started` to
+`Launched` rename and meta-signal-flow 13.0.0's `ReadEvents` touch nothing
+Message names.
+
+The wire Message speaks is unchanged from 0.18.0 (every contract's
+generated module is byte-identical to its previous release, so every
+contract digest is too), and no stored record's archive changes: a 0.18.x
+store opens unchanged. Deploy with Flow 0.22.0: rebuild both, start Flow
+first, then Message. No unit, store or configuration change.
+
 ## 0.17.1 -> 0.18.0 -- speaks to Flow 0.19.0 (signal 7.0.0, signal-flow 8.0.0, meta-signal-flow 12.0.0)
 
 Message 0.18.0 and Flow 0.19.0 are deployed together. Neither reads the
