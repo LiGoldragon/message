@@ -50,6 +50,16 @@
             strictDeps = true;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          # The trait-law checks read every `.rs` file plus the shell they are
+          # written in, a different set from what crane compiles.
+          lawSource = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter =
+              path: type:
+              (type == "directory")
+              || (type == "regular" && pkgs.lib.hasSuffix ".rs" path)
+              || (type == "regular" && pkgs.lib.hasSuffix ".sh" path);
+          };
           sourceConstraintCheck =
             name: script:
             pkgs.runCommand name { } ''
@@ -68,6 +78,7 @@
               commonArgs
               cargoArtifacts
               sourceConstraintCheck
+              lawSource
               ;
           };
         in
@@ -125,6 +136,14 @@
               cargoClippyExtraArgs = "--all-targets -- -D warnings";
             }
           );
+          # `fn main()` is the only production free function, and every
+          # production method lives in a trait.
+          no-free-functions =
+            context.pkgs.runCommand "message-no-free-functions" { src = context.lawSource; }
+              (builtins.readFile ./checks/no-free-functions.sh);
+          no-inherent-methods =
+            context.pkgs.runCommand "message-no-inherent-methods" { src = context.lawSource; }
+              (builtins.readFile ./checks/no-inherent-methods.sh);
           fmt = context.craneLib.cargoFmt { inherit (context.commonArgs) src; };
           message-cannot-invoke-herdr =
             context.sourceConstraintCheck "message-cannot-invoke-herdr" ./scripts/message-cannot-invoke-herdr;
