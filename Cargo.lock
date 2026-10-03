@@ -267,16 +267,22 @@ name = "message"
 version = "0.17.0"
 dependencies = [
  "datom-codec 0.31.0",
+ "message-defaults",
  "protos 0.31.0",
  "rkyv",
  "signal-message",
 ]
 
 [[package]]
+name = "message-defaults"
+version = "0.17.0"
+
+[[package]]
 name = "message-meta"
 version = "0.17.0"
 dependencies = [
  "datom-codec 0.31.0",
+ "message-defaults",
  "meta-signal-message",
  "protos 0.31.0",
  "rkyv",
@@ -286,6 +292,7 @@ dependencies = [
 name = "message-nexus"
 version = "0.17.0"
 dependencies = [
+ "message-defaults",
  "meta-signal-flow",
  "meta-signal-message",
  "rkyv",

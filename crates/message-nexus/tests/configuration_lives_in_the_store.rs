@@ -56,7 +56,10 @@ fn a_nexus_given_a_configuration_file_argument_does_not_start() {
     let home = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let status = Command::new(env!("CARGO_BIN_EXE_message-nexus"))
-        .arg(home.path().join(".local/state/message/message-daemon.signal"))
+        .arg(
+            home.path()
+                .join(".local/state/message/message-daemon.signal"),
+        )
         .env_clear()
         .env("HOME", home.path())
         .env("XDG_RUNTIME_DIR", runtime.path())
@@ -64,7 +67,12 @@ fn a_nexus_given_a_configuration_file_argument_does_not_start() {
         .expect("message-nexus runs");
     assert!(!status.success());
     assert!(!runtime.path().join("message/message.sock").exists());
-    assert!(!home.path().join(".local/state/message/message.sema").exists());
+    assert!(
+        !home
+            .path()
+            .join(".local/state/message/message.sema")
+            .exists()
+    );
 }
 
 #[test]
@@ -113,8 +121,7 @@ fn a_restarted_nexus_listens_where_configure_moved_its_sockets() {
     );
     let (home, runtime) = nexus.stop();
     let default_ordinary = runtime.path().join("message/message.sock");
-    let nexus =
-        NexusProcess::start_listening_at(home, runtime, moved_ordinary, moved_meta, &[]);
+    let nexus = NexusProcess::start_listening_at(home, runtime, moved_ordinary, moved_meta, &[]);
     assert!(!default_ordinary.exists());
     assert!(matches!(
         nexus.ask_meta(&MetaQuery::Configure(configuration(
@@ -152,7 +159,10 @@ fn environment_variables_beyond_the_anchors_do_not_configure_the_nexus() {
             ("FLOW_META_SOCKET", &decoy_meta),
         ],
     );
-    assert!(matches!(nexus.ask(&send("by default")), Response::Submitted(_)));
+    assert!(matches!(
+        nexus.ask(&send("by default")),
+        Response::Submitted(_)
+    ));
     assert_eq!(flow.typed().len(), 1);
     assert!(decoy.typed().is_empty());
 }

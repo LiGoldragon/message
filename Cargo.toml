@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/message-nexus", "crates/message", "crates/message-meta"]
+members  = ["crates/message-defaults", "crates/message-nexus", "crates/message", "crates/message-meta"]
 resolver = "3"
 
 [workspace.package]
@@ -11,6 +11,7 @@ repository   = "https://github.com/LiGoldragon/message"
 publish      = false
 
 [workspace.dependencies]
+message-defaults    = { path = "crates/message-defaults" }
 datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "09e2a9d52bf7f2f11e51d15cb6c3177f72c6c927" }
 protos              = { git = "https://github.com/LiGoldragon/protos", rev = "1febca7836bf8d5f5973a302fdd50aa9c84c159b" }
 signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "d5742005597088764adfaff9bbcc47ce97180a35" }

@@ -2,10 +2,11 @@
 //! watching what.
 
 use crate::{
-    configuration::DefaultConfiguration,
+    configuration::SeedsConfiguration,
     flow_edge::FlowEdge,
-    store::{KeepsLedger, MessageStore, StoreError},
+    store::{KeepsLedger, MessageStore, OpensStore, StoreError},
 };
+use message_defaults::{DefaultConfiguration, LaysOutDefaults};
 use meta_signal_message::MessageConfiguration;
 use signal_flow::FlowId;
 use signal_message::{MessageId, Receipt};
@@ -38,11 +39,15 @@ pub struct MessageNexus {
     pub(crate) bound: MessageConfiguration,
 }
 
-// Exception, noted here: the constructor and the clock are inherent; every
-// behavior of the running Nexus lives in a trait.
-impl MessageNexus {
-    /// Opens the store at the default location, seeding a new one.
-    pub fn open(defaults: &DefaultConfiguration) -> Result<Self, StoreError> {
+/// Opens the running Nexus over its store.
+pub trait OpensNexus: Sized {
+    /// Opens the store at the default location, seeding a new one with the
+    /// defaults and resuming a populated one as it stands.
+    fn open(defaults: &DefaultConfiguration) -> Result<Self, StoreError>;
+}
+
+impl OpensNexus for MessageNexus {
+    fn open(defaults: &DefaultConfiguration) -> Result<Self, StoreError> {
         let store = MessageStore::open(&defaults.store_path(), defaults.message_configuration())?;
         let bound = store.configuration()?;
         Ok(Self {
@@ -54,10 +59,16 @@ impl MessageNexus {
             bound,
         })
     }
+}
 
-    pub(crate) fn now() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+/// A moment as the ledger stamps it: nanoseconds since the Unix epoch.
+pub trait StampsLedger {
+    fn ledger_stamp(&self) -> i64;
+}
+
+impl StampsLedger for SystemTime {
+    fn ledger_stamp(&self) -> i64 {
+        self.duration_since(UNIX_EPOCH)
             .map(|elapsed| i64::try_from(elapsed.as_nanos()).unwrap_or(i64::MAX))
             .unwrap_or(0)
     }

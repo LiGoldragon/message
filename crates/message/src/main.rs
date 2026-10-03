@@ -3,6 +3,7 @@
 //! printing a line per grade change until the Nexus or the reader leaves.
 
 use datom_codec::{Actualizing, Budget, Datomizable, Potential};
+use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use protos::{Protosizable, ReaderBudget, Textualizable};
 use signal_message::{Query, Response};
 use std::{
@@ -21,12 +22,22 @@ trait CallsMessageNexus {
     fn call(&self, query: &Query, each: &mut dyn FnMut(&Response)) -> Result<(), String>;
 }
 
-impl MessageClient {
+/// Finds the Nexus socket this client speaks to: `MESSAGE_SOCKET` when the
+/// caller chose one (a wrapper selecting a slot), else the socket Message's
+/// defaults name under this user's runtime directory.
+trait FindsNexusSocket {
+    fn from_environment() -> Self;
+}
+
+impl FindsNexusSocket for MessageClient {
     fn from_environment() -> Self {
-        let runtime = env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/run/user/1001".into());
         Self {
-            socket: env::var("MESSAGE_SOCKET")
-                .unwrap_or_else(|_| format!("{runtime}/message/message.sock")),
+            socket: env::var("MESSAGE_SOCKET").unwrap_or_else(|_| {
+                DefaultConfiguration::from_environment()
+                    .ordinary_socket_path()
+                    .to_string_lossy()
+                    .into_owned()
+            }),
         }
     }
 }

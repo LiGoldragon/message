@@ -1,4 +1,6 @@
-use message_nexus::{DefaultConfiguration, ListensOnSockets, MessageNexus};
+use message_nexus::{
+    DefaultConfiguration, LaysOutDefaults, ListensOnSockets, MessageNexus, OpensNexus, ReadsAnchors,
+};
 use std::{process::ExitCode, sync::Arc};
 
 fn main() -> ExitCode {

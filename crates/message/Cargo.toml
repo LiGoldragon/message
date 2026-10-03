@@ -13,6 +13,7 @@ name = "message"
 path = "src/main.rs"
 
 [dependencies]
+message-defaults.workspace = true
 datom-codec.workspace = true
 protos.workspace      = true
 rkyv.workspace        = true

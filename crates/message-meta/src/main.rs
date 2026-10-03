@@ -2,6 +2,7 @@
 //! its Signal to the Message Nexus meta socket, the reply out as a datom.
 
 use datom_codec::{Actualizing, Budget, Datomizable, Potential};
+use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use meta_signal_message::{Query, Response};
 use protos::{Protosizable, ReaderBudget, Textualizable};
 use std::{
@@ -20,12 +21,22 @@ trait CallsMessageNexus {
     fn call(&self, query: &Query, each: &mut dyn FnMut(&Response)) -> Result<(), String>;
 }
 
-impl MessageMetaClient {
+/// Finds the Nexus socket this client speaks to: `MESSAGE_META_SOCKET` when the
+/// caller chose one (a wrapper selecting a slot), else the socket Message's
+/// defaults name under this user's runtime directory.
+trait FindsNexusSocket {
+    fn from_environment() -> Self;
+}
+
+impl FindsNexusSocket for MessageMetaClient {
     fn from_environment() -> Self {
-        let runtime = env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/run/user/1001".into());
         Self {
-            socket: env::var("MESSAGE_META_SOCKET")
-                .unwrap_or_else(|_| format!("{runtime}/message/message-owner.sock")),
+            socket: env::var("MESSAGE_META_SOCKET").unwrap_or_else(|_| {
+                DefaultConfiguration::from_environment()
+                    .meta_socket_path()
+                    .to_string_lossy()
+                    .into_owned()
+            }),
         }
     }
 }

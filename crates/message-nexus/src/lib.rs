@@ -18,6 +18,6 @@ pub mod peer;
 pub mod service;
 pub mod store;
 
-pub use configuration::DefaultConfiguration;
 pub use listener::ListensOnSockets;
-pub use nexus::MessageNexus;
+pub use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
+pub use nexus::{MessageNexus, OpensNexus};

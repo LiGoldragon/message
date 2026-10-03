@@ -1,5 +1,8 @@
 //! A real message-nexus process against a scripted Flow, in a private
 //! home and runtime directory.
+//!
+//! Each test binary compiles this module and uses only part of it.
+#![allow(dead_code)]
 
 pub mod fake_flow;
 
