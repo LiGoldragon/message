@@ -62,15 +62,9 @@ pub struct ReceiptRecord {
     pub stamped_at: i64,
 }
 
-impl ReceiptRecord {
-    fn key_of(message_id: &str, sequence: i64) -> RecordKey {
-        RecordKey::new(format!("{message_id}/{sequence:012}"))
-    }
-}
-
 impl EngineRecord for ReceiptRecord {
     fn record_key(&self) -> RecordKey {
-        Self::key_of(&self.message_id, self.sequence)
+        RecordKey::new(format!("{}/{:012}", self.message_id, self.sequence))
     }
 }
 
@@ -127,9 +121,20 @@ pub trait KeepsLedger {
     fn configure(&self, configuration: MessageConfiguration) -> Result<(), StoreError>;
 }
 
-impl MessageStore {
+/// Opens the store.
+pub trait OpensStore: Sized {
     /// Opens the store; a new one is seeded with the given configuration.
-    pub fn open(path: &Path, defaults: MessageConfiguration) -> Result<Self, StoreError> {
+    fn open(path: &Path, defaults: MessageConfiguration) -> Result<Self, StoreError>;
+}
+
+/// The reads the ledger's writes rest on.
+trait ReadsRows {
+    fn configuration_records(&self) -> Result<Vec<ConfigurationRecord>, StoreError>;
+    fn park_present(&self, park: &ParkRecord) -> Result<bool, StoreError>;
+}
+
+impl OpensStore for MessageStore {
+    fn open(path: &Path, defaults: MessageConfiguration) -> Result<Self, StoreError> {
         let mut engine = Engine::open(EngineOpen::new(path, SchemaVersion::new(1)))?;
         let messages = engine.register_table(TableDescriptor::new(
             MESSAGE_TABLE,
@@ -168,7 +173,9 @@ impl MessageStore {
         }
         Ok(store)
     }
+}
 
+impl ReadsRows for MessageStore {
     fn configuration_records(&self) -> Result<Vec<ConfigurationRecord>, StoreError> {
         Ok(self
             .engine

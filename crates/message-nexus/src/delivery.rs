@@ -13,8 +13,8 @@
 //! timer: a recipient that never changes state is never tried again.
 
 use crate::{
-    flow_edge::{CallsFlowMeta, EdgeFailure, ObservesFlowAgent},
-    ledger::{Grading, RecordsReceipts},
+    flow_edge::{CallsFlowMeta, EdgeFailure, ObservesFlowAgent, StreamsAgentStates},
+    ledger::{Grading, RecordsReceipts, ReportsReceipt},
     nexus::{Addressee, HoldsNexusState, MessageNexus},
     store::{KeepsLedger, MessageRecord, StoreError},
 };
@@ -26,12 +26,18 @@ use signal_flow::AgentState;
 use signal_message::{Grade, Priority, Receipt};
 use std::sync::Arc;
 
-impl MessageRecord {
+/// A message as Flow is asked to deliver it.
+pub trait RequestsFlowDelivery {
     /// The typed Message Flow renders: the Priority is its head, then the
     /// MessageId. The id is what the recipient reads in its own pane and
     /// answers with `Acknowledge`, which is the only source of Read; without
     /// it a recipient had no way to name what it had just been handed.
-    pub fn flow_message(&self) -> Message {
+    fn flow_message(&self) -> Message;
+    fn delivery_request(&self, delivery_id: DeliveryId, flow_id: &str) -> DeliveryRequest;
+}
+
+impl RequestsFlowDelivery for MessageRecord {
+    fn flow_message(&self) -> Message {
         let letter = Letter {
             message_id: self.message_id.clone(),
             sender: self.sender.clone(),
@@ -44,7 +50,7 @@ impl MessageRecord {
         }
     }
 
-    pub fn delivery_request(&self, delivery_id: DeliveryId, flow_id: &str) -> DeliveryRequest {
+    fn delivery_request(&self, delivery_id: DeliveryId, flow_id: &str) -> DeliveryRequest {
         DeliveryRequest {
             delivery_id,
             flow_id: flow_id.to_owned(),
@@ -53,15 +59,25 @@ impl MessageRecord {
     }
 }
 
-impl Addressee {
-    pub fn delivery_id(&self, attempt: u64) -> DeliveryId {
+/// Names each delivery attempt to one recipient.
+pub trait AddressesAttempts {
+    fn delivery_id(&self, attempt: u64) -> DeliveryId;
+}
+
+impl AddressesAttempts for Addressee {
+    fn delivery_id(&self, attempt: u64) -> DeliveryId {
         format!("{}:{}:{attempt}", self.message_id, self.flow_id)
     }
+}
 
-    /// The attempt a DeliveryId names.
-    pub fn attempt_of(delivery_id: &str) -> u64 {
-        delivery_id
-            .rsplit(':')
+/// The attempt a DeliveryId names.
+pub trait NamesAttempt {
+    fn attempt(&self) -> u64;
+}
+
+impl NamesAttempt for str {
+    fn attempt(&self) -> u64 {
+        self.rsplit(':')
             .next()
             .and_then(|attempt| attempt.parse().ok())
             .unwrap_or(0)

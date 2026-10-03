@@ -2,15 +2,23 @@
 //! and every Observe subscriber of the message hears it.
 
 use crate::{
-    nexus::{Addressee, HoldsNexusState, MessageNexus},
+    nexus::{Addressee, HoldsNexusState, MessageNexus, StampsLedger},
     store::{KeepsLedger, ReceiptRecord, StoreError},
 };
 use meta_signal_flow::{DeliveryId, InterruptWitness};
 use signal_message::{Grade, MessageId, Receipt, Submission};
-use std::sync::{atomic::Ordering, mpsc};
+use std::{
+    sync::{atomic::Ordering, mpsc},
+    time::SystemTime,
+};
 
-impl ReceiptRecord {
-    pub fn receipt(&self) -> Receipt {
+/// A ledger row as the wire reports it.
+pub trait ReportsReceipt {
+    fn receipt(&self) -> Receipt;
+}
+
+impl ReportsReceipt for ReceiptRecord {
+    fn receipt(&self) -> Receipt {
         Receipt {
             flow_id: self.flow_id.clone(),
             interrupt_witness: self.interrupt_witness.clone(),
@@ -43,7 +51,11 @@ pub trait RecordsReceipts {
 impl RecordsReceipts for MessageNexus {
     fn new_message_id(&self) -> MessageId {
         let count = self.message_count.fetch_add(1, Ordering::Relaxed);
-        format!("m-{:x}{:03x}", Self::now(), count % 0x1000)
+        format!(
+            "m-{:x}{:03x}",
+            SystemTime::now().ledger_stamp(),
+            count % 0x1000
+        )
     }
 
     fn latest_receipts(&self, message_id: &str) -> Result<Vec<ReceiptRecord>, StoreError> {
@@ -86,7 +98,7 @@ impl RecordsReceipts for MessageNexus {
                 delivery_id: grading.delivery_id,
                 interrupt_witness: grading.interrupt_witness,
                 grade: grading.grade,
-                stamped_at: Self::now(),
+                stamped_at: SystemTime::now().ledger_stamp(),
             };
             store.append_receipt(record.clone())?;
             record
@@ -106,7 +118,7 @@ impl RecordsReceipts for MessageNexus {
             receipt_vector: self
                 .latest_receipts(message_id)?
                 .iter()
-                .map(ReceiptRecord::receipt)
+                .map(ReportsReceipt::receipt)
                 .collect(),
         })
     }

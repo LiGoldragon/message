@@ -57,7 +57,13 @@ impl ListensOnSockets for MessageNexus {
     }
 }
 
-impl Socket {
+/// Opens one socket and answers each connection on its own thread.
+trait ServesSocket {
+    fn bind(self, path: &str) -> io::Result<UnixListener>;
+    fn accept(self, listener: UnixListener, nexus: Arc<MessageNexus>);
+}
+
+impl ServesSocket for Socket {
     fn bind(self, path: &str) -> io::Result<UnixListener> {
         let path = Path::new(path);
         if let Some(directory) = path.parent() {

@@ -65,7 +65,12 @@ pub trait ObservesFlowAgent {
     fn observe_agent(&self, flow_id: &FlowId) -> Result<AgentWatch, EdgeFailure>;
 }
 
-impl FlowEdge {
+/// One request and its reply over Flow's meta socket.
+trait ExchangesWithFlowMeta {
+    fn meta_exchange(&self, query: &MetaQuery) -> Result<MetaResponse, EdgeFailure>;
+}
+
+impl ExchangesWithFlowMeta for FlowEdge {
     fn meta_exchange(&self, query: &MetaQuery) -> Result<MetaResponse, EdgeFailure> {
         let mut stream = UnixStream::connect(&self.flow_meta_socket_path)
             .map_err(|_| EdgeFailure::Unreachable)?;
@@ -134,17 +139,23 @@ pub struct AgentWatch {
     stream: UnixStream,
 }
 
-impl AgentWatch {
+/// Reads an open Observe.Agent subscription.
+pub trait StreamsAgentStates {
     /// The next state Flow announces; None once the subscription ends.
-    pub fn next_state(&mut self) -> Option<AgentState> {
+    fn next_state(&mut self) -> Option<AgentState>;
+    /// A handle that ends the subscription from another thread.
+    fn closer(&self) -> Option<UnixStream>;
+}
+
+impl StreamsAgentStates for AgentWatch {
+    fn next_state(&mut self) -> Option<AgentState> {
         match self.stream.read_frame::<Response>() {
             Ok(Response::AgentObserved(AgentObservation { agent_state, .. })) => Some(agent_state),
             Ok(_) | Err(FrameError::Closed) | Err(_) => None,
         }
     }
 
-    /// A handle that ends the subscription from another thread.
-    pub fn closer(&self) -> Option<UnixStream> {
+    fn closer(&self) -> Option<UnixStream> {
         self.stream.try_clone().ok()
     }
 }

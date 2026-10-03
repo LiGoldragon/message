@@ -1,10 +1,13 @@
 //! What each request does.
 
 use crate::{
-    delivery::{DeliversThroughFlow, WatchesParkedRecipient},
+    delivery::{
+        AddressesAttempts, DeliversThroughFlow, NamesAttempt, RequestsFlowDelivery,
+        WatchesParkedRecipient,
+    },
     flow_edge::{CallsFlowMeta, EdgeFailure, PeerName},
     ledger::{Grading, RecordsReceipts},
-    nexus::{Addressee, HoldsNexusState, MessageNexus},
+    nexus::{Addressee, HoldsNexusState, MessageNexus, StampsLedger},
     store::{KeepsLedger, MessageRecord, ReceiptRecord},
 };
 use meta_signal_flow::{DeliveryRejection, InterruptWitness, ProcessIdentity, Sender};
@@ -14,7 +17,7 @@ use signal_message::{
     BodyRefused_Data, Grade, MessageId, MessageRejection, RecipientRefused_Data, SendRejection,
     SendRequest, Submission,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
 /// Whom a connection's peer is, as a message's sender or recipient.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +112,7 @@ impl ServesMessages for MessageNexus {
             flow_id_vector: recipients.clone(),
             priority: request.priority,
             content: request.content,
-            stamped_at: Self::now(),
+            stamped_at: SystemTime::now().ledger_stamp(),
         };
         let edge = self.flow_edge().map_err(|_| SendRejection::StoreRefused)?;
         let addressees: Vec<Addressee> = recipients
@@ -280,7 +283,7 @@ impl ServesMessages for MessageNexus {
         if latest.grade != Grade::Uncertain {
             return Err(MessageRejection::NotUncertain);
         }
-        let attempt = Addressee::attempt_of(&latest.delivery_id) + 1;
+        let attempt = latest.delivery_id.attempt() + 1;
         self.settle(&addressee, addressee.delivery_id(attempt))
             .map_err(|_| MessageRejection::StoreRefused)
     }
