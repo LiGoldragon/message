@@ -231,7 +231,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "message"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "datom-codec",
  "message-defaults",
@@ -242,11 +242,11 @@ dependencies = [
 
 [[package]]
 name = "message-defaults"
-version = "0.19.0"
+version = "0.19.1"
 
 [[package]]
 name = "message-meta"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "datom-codec",
  "message-defaults",
@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "message-nexus"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "message-defaults",
  "meta-signal-flow",
@@ -481,8 +481,8 @@ dependencies = [
 
 [[package]]
 name = "sema-engine"
-version = "0.16.0"
-source = "git+https://github.com/LiGoldragon/sema-engine?rev=516f01fe0b03157efc6cc3d38b588f0ca123ac94#516f01fe0b03157efc6cc3d38b588f0ca123ac94"
+version = "0.18.0"
+source = "git+https://github.com/LiGoldragon/sema-engine?rev=9884905ff9c660ad97a35c524e42532d5c7bac90#9884905ff9c660ad97a35c524e42532d5c7bac90"
 dependencies = [
  "blake3",
  "rkyv",
