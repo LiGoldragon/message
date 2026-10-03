@@ -15,22 +15,39 @@ pub struct NexusProcess {
     child: Child,
     home: Option<tempfile::TempDir>,
     runtime: Option<tempfile::TempDir>,
-    runtime_path: PathBuf,
+    ordinary_socket: PathBuf,
+    meta_socket: PathBuf,
 }
 
 impl NexusProcess {
     /// Starts the Nexus with no arguments and waits until its ordinary
     /// socket answers a connection.
     pub fn start(home: tempfile::TempDir, runtime: tempfile::TempDir) -> Self {
+        let ordinary = runtime.path().join("message/message.sock");
+        let meta = runtime.path().join("message/message-owner.sock");
+        Self::start_listening_at(home, runtime, ordinary, meta, &[])
+    }
+
+    /// Starts the Nexus with no arguments and the given extra environment,
+    /// and waits until it answers on the two sockets named here.
+    pub fn start_listening_at(
+        home: tempfile::TempDir,
+        runtime: tempfile::TempDir,
+        ordinary_socket: PathBuf,
+        meta_socket: PathBuf,
+        environment: &[(&str, &str)],
+    ) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_message-nexus"))
             .env_clear()
             .env("HOME", home.path())
             .env("XDG_RUNTIME_DIR", runtime.path())
+            .envs(environment.iter().copied())
             .spawn()
             .expect("message-nexus starts");
         let process = Self {
             child,
-            runtime_path: runtime.path().to_path_buf(),
+            ordinary_socket,
+            meta_socket,
             home: Some(home),
             runtime: Some(runtime),
         };
@@ -39,11 +56,11 @@ impl NexusProcess {
     }
 
     pub fn ordinary_socket(&self) -> PathBuf {
-        self.runtime_path.join("message/message.sock")
+        self.ordinary_socket.clone()
     }
 
     pub fn meta_socket(&self) -> PathBuf {
-        self.runtime_path.join("message/message-owner.sock")
+        self.meta_socket.clone()
     }
 
     fn wait_for_socket(&self) {
