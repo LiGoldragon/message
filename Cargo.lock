@@ -270,6 +270,7 @@ dependencies = [
 name = "message-nexus"
 version = "0.19.1"
 dependencies = [
+ "datom-codec",
  "ethos-zero",
  "message-defaults",
  "meta-signal-flow",
