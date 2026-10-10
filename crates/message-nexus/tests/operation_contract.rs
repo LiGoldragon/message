@@ -1,6 +1,6 @@
 //! Message's typed operation failures retain Flow's exact result.
 
-use message_nexus::generated::{Failed_Data, Outcome, Unknown_Data};
+use message_nexus::generated::{Failed_Data, Failed_Data_Unknown_Data, Outcome};
 use signal_message::{Address, Aspect, Layer, Lock};
 
 fn archived(outcome: &Outcome) -> Outcome {
@@ -22,8 +22,8 @@ fn reachable_flow_failures_keep_their_distinct_payloads() {
     };
 
     for outcome in [
-        Outcome::Failed(Failed_Data::Unknown(Unknown_Data::Address(address.clone()))),
-        Outcome::Failed(Failed_Data::Unknown(Unknown_Data::Lock(lock.clone()))),
+        Outcome::Failed(Failed_Data::Unknown(Failed_Data_Unknown_Data::Address(address.clone()))),
+        Outcome::Failed(Failed_Data::Unknown(Failed_Data_Unknown_Data::Lock(lock.clone()))),
         Outcome::Failed(Failed_Data::Ended(address)),
         Outcome::Failed(Failed_Data::Held(lock)),
         Outcome::Failed(Failed_Data::Asleep),

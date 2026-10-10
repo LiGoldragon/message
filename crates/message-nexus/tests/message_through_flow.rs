@@ -2,7 +2,6 @@
 
 mod support;
 
-use message_nexus::frame::FramedStream;
 use signal_flow::{Address, Aspect, Layer, Recipient, Request};
 use signal_message::{Query, Response, Send_Data};
 use support::{NexusProcess, fake_flow::FakeFlow};

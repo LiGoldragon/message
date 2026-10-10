@@ -18,8 +18,13 @@ name = "message-nexus"
 path = "src/main.rs"
 
 # The Nexus thinks in typed values: it compiles its contracts without datom.
+[features]
+default = []
+datom = ["dep:datom-codec"]
+
 [dependencies]
 message-defaults.workspace = true
+datom-codec = { workspace = true, optional = true }
 signal-message.workspace      = true
 meta-signal-message.workspace = true
 signal-flow.workspace         = true

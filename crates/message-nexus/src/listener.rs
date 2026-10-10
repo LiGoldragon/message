@@ -94,9 +94,7 @@ impl AnswersConnection for MessageNexus {
 
     fn answer_meta(&self, mut stream: UnixStream) -> Result<(), FrameError> {
         let query = stream.read_frame::<MetaQuery>()?;
-        let configuration = match query {
-            MetaQuery::Configure(configuration) => configuration,
-        };
+        let MetaQuery::Configure(configuration) = query;
         let response = match self.configure(configuration, true) {
             Ok(true) => MetaResponse::RestartRequired,
             Ok(false) => MetaResponse::Configured,
