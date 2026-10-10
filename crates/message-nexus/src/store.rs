@@ -2,8 +2,8 @@
 
 use crate::{generated::memory::Standard, message_library::Configuration};
 use sema_engine::{
-    Engine, EngineOpen, EngineRecord, FamilyName, KeyedMutation, QueryPlan, RecordKey, SchemaHash,
-    SchemaVersion, TableDescriptor, TableName, TableReference,
+    Engine, EngineOpen, EngineRecord, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan,
+    RecordKey, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
 };
 use std::path::Path;
 
@@ -52,7 +52,7 @@ impl OpensStore for MessageStore {
         ))?;
         let store = Self { engine, standard };
         if store.standards()?.is_empty() {
-            store.engine.mutate_keyed(KeyedMutation::new(
+            store.engine.assert_keyed(KeyedAssertion::new(
                 store.standard,
                 RecordKey::new(STANDARD_KEY),
                 seed,
