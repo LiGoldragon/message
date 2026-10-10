@@ -157,8 +157,8 @@ checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "flow-ethos"
-version = "0.25.0"
-source = "git+https://github.com/LiGoldragon/flow?rev=a3173348498ecce704359dd42abaea763c09705b#a3173348498ecce704359dd42abaea763c09705b"
+version = "0.26.0"
+source = "git+https://github.com/LiGoldragon/flow?rev=074437a66de48a5ef3e7af6a14407652c0ab861d#074437a66de48a5ef3e7af6a14407652c0ab861d"
 dependencies = [
  "datom-codec",
  "ethos-zero",
@@ -285,8 +285,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-flow"
-version = "16.0.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=991859f5f121789c6966d542264baccafd000268#991859f5f121789c6966d542264baccafd000268"
+version = "18.0.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=6d07b7bb077da8755eae7d1146d9dfd64d7b7d7c#6d07b7bb077da8755eae7d1146d9dfd64d7b7d7c"
 dependencies = [
  "ethos-zero",
  "flow-ethos",
@@ -298,7 +298,7 @@ dependencies = [
 [[package]]
 name = "meta-signal-message"
 version = "0.12.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=8daefef1eae30dd9e4f56cd27d713199f7df7f4e#8daefef1eae30dd9e4f56cd27d713199f7df7f4e"
+source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=40d16cec552ef90b0ef7d4f09151b3127a2ee4a0#40d16cec552ef90b0ef7d4f09151b3127a2ee4a0"
 dependencies = [
  "datom-codec",
  "ethos-zero",
@@ -521,8 +521,8 @@ dependencies = [
 
 [[package]]
 name = "signal-flow"
-version = "12.0.0"
-source = "git+https://github.com/LiGoldragon/signal-flow?rev=a991c1499b201ad75a084a6542d2f110c46720ce#a991c1499b201ad75a084a6542d2f110c46720ce"
+version = "15.0.0"
+source = "git+https://github.com/LiGoldragon/signal-flow?rev=d1358d396e96934795a5b2ae2192499b3eaff9c3#d1358d396e96934795a5b2ae2192499b3eaff9c3"
 dependencies = [
  "datom-codec",
  "ethos-zero",
@@ -535,7 +535,7 @@ dependencies = [
 [[package]]
 name = "signal-message"
 version = "13.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message?rev=289d399c912821ea945d08da303bda50d11e1aca#289d399c912821ea945d08da303bda50d11e1aca"
+source = "git+https://github.com/LiGoldragon/signal-message?rev=eb901423cdd693b6d6164ca8706c894a3df8078d#eb901423cdd693b6d6164ca8706c894a3df8078d"
 dependencies = [
  "datom-codec",
  "ethos-zero",
