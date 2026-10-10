@@ -66,10 +66,7 @@ impl ReadsRows for MessageStore {
     fn standards(&self) -> Result<Vec<Standard>, StoreError> {
         Ok(self
             .engine
-            .match_records(QueryPlan::key(
-                self.standard,
-                RecordKey::new(STANDARD_KEY),
-            ))?
+            .match_records(QueryPlan::key(self.standard, RecordKey::new(STANDARD_KEY)))?
             .records()
             .to_vec())
     }

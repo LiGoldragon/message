@@ -109,12 +109,9 @@ mod tests {
         let client = MessageMetaClient {
             socket: "unused".into(),
         };
-        let configuration = match client
+        let Query::Configure(configuration) = client
             .parse(&["Configure.{ /r/m.sock /r/mo.sock /r/f.sock }".into()])
-            .expect("configure parses")
-        {
-            Query::Configure(configuration) => configuration,
-        };
+            .expect("configure parses");
         assert_eq!(configuration.ordinary, "/r/m.sock");
         assert_eq!(configuration.meta, "/r/mo.sock");
         assert_eq!(configuration.flow, "/r/f.sock");

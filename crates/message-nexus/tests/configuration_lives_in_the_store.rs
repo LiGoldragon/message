@@ -31,7 +31,9 @@ fn configuration_is_stored_and_meta_closes_the_ordinary_path() {
         Response::Configured
     );
     assert_eq!(
-        nexus.ask_meta(&meta_signal_message::Query::Configure(configuration.clone())),
+        nexus.ask_meta(&meta_signal_message::Query::Configure(
+            configuration.clone()
+        )),
         meta_signal_message::Response::Configured
     );
     assert_eq!(

@@ -73,10 +73,7 @@ impl NexusProcess {
         stream.read_frame().unwrap()
     }
 
-    pub fn ask_meta(
-        &self,
-        query: &meta_signal_message::Query,
-    ) -> meta_signal_message::Response {
+    pub fn ask_meta(&self, query: &meta_signal_message::Query) -> meta_signal_message::Response {
         let mut stream = UnixStream::connect(self.meta_socket()).unwrap();
         stream.write_frame(query).unwrap();
         stream.read_frame().unwrap()

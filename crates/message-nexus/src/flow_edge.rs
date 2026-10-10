@@ -1,9 +1,9 @@
 //! The typed ordinary-socket operations Message sends to Flow.
 
-use crate::frame::{FrameError, FramedStream};
+use crate::frame::FramedStream;
 use signal_flow::{
-    Address, Bind_Data, Deliver_Data, FlowId, Lock, Lock_Data, Process, Query, Recipient,
-    Refusal, Response, Request, Sender,
+    Address, Bind_Data, Deliver_Data, FlowId, Lock, Lock_Data, Process, Query, Recipient, Refusal,
+    Request, Response, Sender,
 };
 use std::os::unix::net::UnixStream;
 
@@ -32,8 +32,8 @@ trait ExchangesWithFlow {
 
 impl ExchangesWithFlow for FlowEdge {
     fn exchange(&self, query: &Query) -> Result<Response, EdgeFailure> {
-        let mut stream = UnixStream::connect(&self.socket_path)
-            .map_err(|_| EdgeFailure::Unreachable)?;
+        let mut stream =
+            UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
         stream
             .write_frame(query)
             .map_err(|_| EdgeFailure::Unreachable)?;

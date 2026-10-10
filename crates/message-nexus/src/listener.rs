@@ -4,7 +4,7 @@ use crate::{
     frame::{FrameError, FramedStream},
     nexus::{HoldsNexusState, MessageNexus},
     peer::IdentifiesPeer,
-    service::{ConfiguresMessage, ConfigureFailure, ServesMessages},
+    service::{ConfigureFailure, ConfiguresMessage, ServesMessages},
 };
 use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
 use signal_message::Query;

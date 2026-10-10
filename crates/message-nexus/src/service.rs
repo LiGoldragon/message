@@ -7,9 +7,7 @@ use crate::{
 };
 use message_library::Configuration;
 use signal_flow::{Process, Refusal, Unknown_Data as FlowUnknown};
-use signal_message::{
-    Query, Response, SendRefusal, Unknown_Data as MessageUnknown,
-};
+use signal_message::{Query, Response, SendRefusal, Unknown_Data as MessageUnknown};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, thiserror::Error)]
@@ -21,11 +19,8 @@ pub enum ConfigureFailure {
 }
 
 pub trait ConfiguresMessage {
-    fn configure(
-        &self,
-        configuration: Configuration,
-        meta: bool,
-    ) -> Result<bool, ConfigureFailure>;
+    fn configure(&self, configuration: Configuration, meta: bool)
+    -> Result<bool, ConfigureFailure>;
 }
 
 impl ConfiguresMessage for MessageNexus {
@@ -68,19 +63,11 @@ impl ServesMessages for MessageNexus {
 }
 
 trait SendsMessage {
-    fn send(
-        &self,
-        process: Process,
-        request: signal_message::Send_Data,
-    ) -> Response;
+    fn send(&self, process: Process, request: signal_message::Send_Data) -> Response;
 }
 
 impl SendsMessage for MessageNexus {
-    fn send(
-        &self,
-        process: Process,
-        request: signal_message::Send_Data,
-    ) -> Response {
+    fn send(&self, process: Process, request: signal_message::Send_Data) -> Response {
         let edge = match self.flow_edge() {
             Ok(edge) => edge,
             Err(error) => {
@@ -102,13 +89,14 @@ impl SendsMessage for MessageNexus {
             Ok(DeliveryOutcome::Delivered) => Response::Delivered,
             Ok(DeliveryOutcome::Queued) => Response::Queued,
             Ok(DeliveryOutcome::Woken) => Response::Woken,
-            Err(failure @ (EdgeFailure::Unreachable | EdgeFailure::Broken | EdgeFailure::Unexpected)) => {
+            Err(
+                failure
+                @ (EdgeFailure::Unreachable | EdgeFailure::Broken | EdgeFailure::Unexpected),
+            ) => {
                 let _ = edge.release(lock);
                 Response::Refused(failure.for_message())
             }
-            Err(failure @ EdgeFailure::Refused(_)) => {
-                Response::Refused(failure.for_message())
-            }
+            Err(failure @ EdgeFailure::Refused(_)) => Response::Refused(failure.for_message()),
         }
     }
 }
@@ -120,13 +108,16 @@ trait ReportsMessageRefusal {
 impl ReportsMessageRefusal for EdgeFailure {
     fn for_message(self) -> SendRefusal {
         match self {
-            Self::Refused(refusal) => refusal.for_message().unwrap_or_else(|| {
-                eprintln!("message-nexus: Flow refused outside the Send contract: {refusal:?}");
-                SendRefusal::FlowUnreachable
-            }),
-            Self::Unreachable | Self::Broken | Self::Unexpected => {
-                SendRefusal::FlowUnreachable
+            Self::Refused(refusal) => {
+                let diagnostic = format!("{refusal:?}");
+                refusal.for_message().unwrap_or_else(|| {
+                    eprintln!(
+                        "message-nexus: Flow refused outside the Send contract: {diagnostic}"
+                    );
+                    SendRefusal::FlowUnreachable
+                })
             }
+            Self::Unreachable | Self::Broken | Self::Unexpected => SendRefusal::FlowUnreachable,
         }
     }
 }
