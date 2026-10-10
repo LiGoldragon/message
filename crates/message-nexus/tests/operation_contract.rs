@@ -4,10 +4,8 @@ use message_nexus::generated::{Failed_Data, Outcome, Unknown_Data};
 use signal_message::{Address, Aspect, Layer, Lock};
 
 fn archived(outcome: &Outcome) -> Outcome {
-    let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(outcome)
-        .expect("archives operation outcome");
-    rkyv::from_bytes::<Outcome, rkyv::rancor::Error>(&bytes)
-        .expect("restores operation outcome")
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(outcome).expect("archives operation outcome");
+    rkyv::from_bytes::<Outcome, rkyv::rancor::Error>(&bytes).expect("restores operation outcome")
 }
 
 #[test]
@@ -24,9 +22,7 @@ fn reachable_flow_failures_keep_their_distinct_payloads() {
     };
 
     for outcome in [
-        Outcome::Failed(Failed_Data::Unknown(Unknown_Data::Address(
-            address.clone(),
-        ))),
+        Outcome::Failed(Failed_Data::Unknown(Unknown_Data::Address(address.clone()))),
         Outcome::Failed(Failed_Data::Unknown(Unknown_Data::Lock(lock.clone()))),
         Outcome::Failed(Failed_Data::Ended(address)),
         Outcome::Failed(Failed_Data::Held(lock)),

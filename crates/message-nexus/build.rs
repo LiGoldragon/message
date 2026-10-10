@@ -19,9 +19,7 @@ fn check(root: &std::path::Path, stem: &str) {
 }
 
 fn main() {
-    let root = std::path::PathBuf::from(
-        std::env::var_os("CARGO_MANIFEST_DIR").expect("manifest"),
-    );
+    let root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("manifest"));
     check(&root, "memory");
     check(&root, "operation");
 }

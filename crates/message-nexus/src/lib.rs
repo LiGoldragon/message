@@ -3,11 +3,11 @@
 //! Message retains only its configuration. Flow owns recipient resolution,
 //! queueing and the waking rule; Message never writes a pane or runs Herdr.
 
-pub mod generated;
 pub mod configuration;
 pub mod delivery;
 pub mod flow_edge;
 pub mod frame;
+pub mod generated;
 pub mod ledger;
 pub mod listener;
 pub mod nexus;
