@@ -1,31 +1,43 @@
-//! The process at the other end of a connection, as the kernel names it.
-//!
-//! Message never takes a sender from a payload. It reads its peer's
-//! credentials (`SO_PEERCRED`) and the process's start time, and asks Flow
-//! (`ResolvePeer`) which flow that exact process runs in. The start time
-//! makes the identity name one process, never a reused process ID.
+//! Reads Flow's process identity from the connection peer.
 
-use meta_signal_flow::ProcessIdentity;
-use std::{fs, os::unix::net::UnixStream};
+use signal_flow::Process;
+use std::{fs, io, os::unix::net::UnixStream};
 
-/// Names the peer process of a connection.
+pub trait ReadsProcess {
+    fn for_pid(process_id: i64) -> io::Result<Process>;
+    fn this_process() -> io::Result<Process>;
+}
+
+impl ReadsProcess for Process {
+    fn for_pid(process_id: i64) -> io::Result<Process> {
+        let stat = fs::read_to_string(format!("/proc/{process_id}/stat"))?;
+        let (_, fields) = stat
+            .rsplit_once(") ")
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "malformed process stat"))?;
+        let started = fields
+            .split_whitespace()
+            .nth(19)
+            .and_then(|field| field.parse::<i64>().ok())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing process start"))?;
+        Ok(Process {
+            pid: process_id,
+            started,
+        })
+    }
+
+    fn this_process() -> io::Result<Process> {
+        Self::for_pid(i64::from(std::process::id()))
+    }
+}
+
 pub trait IdentifiesPeer {
-    fn peer_identity(&self) -> Option<ProcessIdentity>;
+    fn peer_process(&self) -> Option<Process>;
 }
 
 impl IdentifiesPeer for UnixStream {
-    fn peer_identity(&self) -> Option<ProcessIdentity> {
+    fn peer_process(&self) -> Option<Process> {
         let credentials = rustix::net::sockopt::socket_peercred(self).ok()?;
         let process_id = i64::from(credentials.pid.as_raw_nonzero().get());
-        let process_user_id = i64::from(credentials.uid.as_raw());
-        let stat = fs::read_to_string(format!("/proc/{process_id}/stat")).ok()?;
-        // Field 22 of /proc/<pid>/stat, counted after the command name.
-        let (_, fields) = stat.rsplit_once(") ")?;
-        let process_start_token = fields.split_whitespace().nth(19)?.to_owned();
-        Some(ProcessIdentity {
-            process_id,
-            process_user_id,
-            process_start_token,
-        })
+        Process::for_pid(process_id).ok()
     }
 }

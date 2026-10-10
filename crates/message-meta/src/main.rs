@@ -71,8 +71,8 @@ impl CallsMessageNexus for MessageMetaClient {
         }
         let mut reply = vec![0; length];
         peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
-        let reply = rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply)
-            .map_err(|e| e.to_string())?;
+        let reply =
+            rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply).map_err(|e| e.to_string())?;
         each(&reply);
         Ok(())
     }
@@ -109,11 +109,11 @@ mod tests {
         let client = MessageMetaClient {
             socket: "unused".into(),
         };
-        let Query::Configure(configuration) = client
+        let configuration = match client
             .parse(&["Configure.{ /r/m.sock /r/mo.sock /r/f.sock }".into()])
             .expect("configure parses")
-        else {
-            panic!("Configure datom must stay a Configure query");
+        {
+            Query::Configure(configuration) => configuration,
         };
         assert_eq!(configuration.ordinary, "/r/m.sock");
         assert_eq!(configuration.meta, "/r/mo.sock");

@@ -71,8 +71,8 @@ impl CallsMessageNexus for MessageClient {
         }
         let mut reply = vec![0; length];
         peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
-        let reply = rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply)
-            .map_err(|e| e.to_string())?;
+        let reply =
+            rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply).map_err(|e| e.to_string())?;
         each(&reply);
         Ok(())
     }
@@ -110,9 +110,7 @@ mod tests {
             socket: "unused".into(),
         };
         let Query::Send(request) = client
-            .parse(&[
-                "Send.{ Address.{ Mind flow Secondary } Question.«What is current?» }".into(),
-            ])
+            .parse(&["Send.{ Address.{ Mind flow Secondary } Question.«What is current?» }".into()])
             .expect("send parses")
         else {
             panic!("Send datom must stay a Send query");
@@ -125,7 +123,10 @@ mod tests {
                 layer: Layer::Secondary,
             })
         );
-        assert_eq!(request.request, Request::Question("What is current?".into()));
+        assert_eq!(
+            request.request,
+            Request::Question("What is current?".into())
+        );
     }
 
     #[test]

@@ -1,111 +1,81 @@
-//! The running Message Nexus: its store, its edge to Flow, and who is
-//! watching what.
+//! The running Message Nexus and its configuration store.
 
 use crate::{
     configuration::SeedsConfiguration,
-    flow_edge::FlowEdge,
-    store::{KeepsLedger, MessageStore, OpensStore, StoreError},
+    flow_edge::{CallsFlow, FlowEdge},
+    generated::memory::Standard,
+    peer::ReadsProcess,
+    store::{KeepsStandard, MessageStore, OpensStore, StoreError},
 };
 use message_defaults::{DefaultConfiguration, LaysOutDefaults};
-use meta_signal_message::MessageConfiguration;
-use signal_flow::FlowId;
-use signal_message::{MessageId, Receipt};
-use std::{
-    collections::HashMap,
-    os::unix::net::UnixStream,
-    sync::{Mutex, MutexGuard, atomic::AtomicU64, mpsc},
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-/// One recipient of one message.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Addressee {
-    pub message_id: MessageId,
-    pub flow_id: FlowId,
-}
+use message_library::Configuration;
+use signal_flow::{Address, Aspect, Layer};
+use std::sync::{Mutex, MutexGuard};
 
 pub struct MessageNexus {
     pub(crate) store: Mutex<MessageStore>,
-    /// Observe subscribers, by the message they watch.
-    pub(crate) observers: Mutex<HashMap<MessageId, Vec<mpsc::Sender<Receipt>>>>,
-    /// The open Observe.Agent subscription of each parked recipient, kept
-    /// so a Withdraw can end it.
-    pub(crate) agent_watches: Mutex<HashMap<Addressee, UnixStream>>,
-    /// Held while a recipient's grade is checked and moved on, so a landing
-    /// parked delivery and a Withdraw never cross.
-    pub(crate) settling: Mutex<()>,
-    pub(crate) message_count: AtomicU64,
-    /// The socket paths the listeners were bound to at start.
-    pub(crate) bound: MessageConfiguration,
+    pub(crate) bound: Configuration,
 }
 
-/// Opens the running Nexus over its store.
+#[derive(Debug, thiserror::Error)]
+pub enum NexusError {
+    #[error("message store: {0}")]
+    Store(#[from] StoreError),
+    #[error("cannot read this process identity: {0}")]
+    Process(#[from] std::io::Error),
+    #[error("Flow bind failed: {0:?}")]
+    Flow(crate::flow_edge::EdgeFailure),
+}
+
 pub trait OpensNexus: Sized {
-    /// Opens the store at the default location, seeding a new one with the
-    /// defaults and resuming a populated one as it stands.
-    fn open(defaults: &DefaultConfiguration) -> Result<Self, StoreError>;
+    fn open(defaults: &DefaultConfiguration) -> Result<Self, NexusError>;
 }
 
 impl OpensNexus for MessageNexus {
-    fn open(defaults: &DefaultConfiguration) -> Result<Self, StoreError> {
-        let store = MessageStore::open(&defaults.store_path(), defaults.message_configuration())?;
-        let bound = store.configuration()?;
+    fn open(defaults: &DefaultConfiguration) -> Result<Self, NexusError> {
+        let seed = Standard {
+            configuration: defaults.message_configuration(),
+            meta_configured: false,
+        };
+        let store = MessageStore::open(&defaults.store_path(), seed)?;
+        let standard = store.standard()?;
+        let edge = FlowEdge {
+            socket_path: standard.configuration.flow.clone(),
+        };
+        let process = signal_flow::Process::this_process()?;
+        let address = Address {
+            aspect: Aspect::Field,
+            topic: "message".into(),
+            layer: Layer::Primary,
+        };
+        edge.bind(address, process).map_err(NexusError::Flow)?;
         Ok(Self {
             store: Mutex::new(store),
-            observers: Mutex::new(HashMap::new()),
-            agent_watches: Mutex::new(HashMap::new()),
-            settling: Mutex::new(()),
-            message_count: AtomicU64::new(0),
-            bound,
+            bound: standard.configuration,
         })
     }
 }
 
-/// A moment as the ledger stamps it: nanoseconds since the Unix epoch.
-pub trait StampsLedger {
-    fn ledger_stamp(&self) -> i64;
-}
-
-impl StampsLedger for SystemTime {
-    fn ledger_stamp(&self) -> i64 {
-        self.duration_since(UNIX_EPOCH)
-            .map(|elapsed| i64::try_from(elapsed.as_nanos()).unwrap_or(i64::MAX))
-            .unwrap_or(0)
-    }
-}
-
-/// The shared state every request reaches through.
 pub trait HoldsNexusState {
-    fn bound_configuration(&self) -> &MessageConfiguration;
     fn store(&self) -> MutexGuard<'_, MessageStore>;
-    fn settling(&self) -> MutexGuard<'_, ()>;
-    /// The Flow sockets as configured now: a Configure applies on the next
-    /// call.
+    fn bound_configuration(&self) -> &Configuration;
     fn flow_edge(&self) -> Result<FlowEdge, StoreError>;
 }
 
 impl HoldsNexusState for MessageNexus {
-    fn bound_configuration(&self) -> &MessageConfiguration {
-        &self.bound
-    }
-
     fn store(&self) -> MutexGuard<'_, MessageStore> {
         self.store
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn settling(&self) -> MutexGuard<'_, ()> {
-        self.settling
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    fn bound_configuration(&self) -> &Configuration {
+        &self.bound
     }
 
     fn flow_edge(&self) -> Result<FlowEdge, StoreError> {
-        let configuration = self.store().configuration()?;
         Ok(FlowEdge {
-            flow_socket_path: configuration.flow_socket_path,
-            flow_meta_socket_path: configuration.flow_meta_socket_path,
+            socket_path: self.store().standard()?.configuration.flow,
         })
     }
 }
