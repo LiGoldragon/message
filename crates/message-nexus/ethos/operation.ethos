@@ -1,0 +1,41 @@
+; Message's typed effects on Flow and its own Memory.
+;
+; Every refusal retains Flow's exact kind and payload. Message's own
+; persistence failure is StoreRefused; Flow's failure is Store.String.
+
+Operation
+[ signal_flow:[ FlowId Address Request Lock Sender Recipient Process ]
+  message_library:Configuration ]
+[ Bind.{ Address                ; register the Message process
+         Process }
+  Identify.Process              ; name the caller's metaflow
+  Lock.{ Sender                 ; resolve Up relative to Sender
+         Recipient }
+  Deliver.{ Lock                ; hand Flow the request under lock
+            Request }
+  Release.Lock                  ; return the lock after failure
+  Store.Configuration ]         ; write Memory
+[ Bound.FlowId
+  Identified.Address
+  Locked.Lock
+  Delivered
+  Woken.FlowId
+  Queued
+  Released
+  Stored
+  Failed.[ Unidentified.Process
+           Taken.Address
+           NotMessage
+           NoneAbove
+           Unknown.[ Address.Address Lock.Lock ]
+           Ended.Address
+           Asleep
+           OffRoute
+           Held.Lock
+           Locked
+           NoLayer
+           Lapsed
+           FlowUnreachable
+           StoreRefused
+           Store.String ] ]
+[]
