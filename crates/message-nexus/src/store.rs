@@ -128,10 +128,15 @@ impl RecognizesStore for MessageStore {
         // an in-memory snapshot for recognition, never an unknown original.
         // Keep the source shared-locked until all identity checks have passed.
         let mut _snapshot_guard = None;
+        let ordinary_database;
+        let recovered_database;
         let read = match redb::ReadOnlyDatabase::open(path) {
-            Ok(database) => database
-                .begin_read()
-                .map_err(|error| reject(error.to_string()))?,
+            Ok(database) => {
+                ordinary_database = database;
+                ordinary_database
+                    .begin_read()
+                    .map_err(|error| reject(error.to_string()))?
+            }
             Err(redb::DatabaseError::RepairAborted) => {
                 use redb::StorageBackend;
                 use std::io::Read;
@@ -151,10 +156,10 @@ impl RecognizesStore for MessageStore {
                 StorageBackend::write(&backend, 0, &bytes)
                     .map_err(|error| reject(error.to_string()))?;
                 _snapshot_guard = Some(source);
-                let database = redb::Database::builder()
+                recovered_database = redb::Database::builder()
                     .create_with_backend(backend)
                     .map_err(|error| reject(error.to_string()))?;
-                database
+                recovered_database
                     .begin_read()
                     .map_err(|error| reject(error.to_string()))?
             }
