@@ -183,7 +183,7 @@ impl RecognizesStore for MessageStore {
             return Err(reject("missing Standard2 family".into()));
         }
         let standards = read
-            .open_table(redb::TableDefinition::<&str, &[u8]>::new(
+            .open_table(redb::TableDefinition::<String, &[u8]>::new(
                 "message_nexus_standard",
             ))
             .map_err(|error| reject(error.to_string()))?;
