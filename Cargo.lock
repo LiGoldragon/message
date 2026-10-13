@@ -275,6 +275,7 @@ dependencies = [
  "message-defaults",
  "meta-signal-flow",
  "meta-signal-message",
+ "redb",
  "rkyv",
  "rustix",
  "sema-engine",

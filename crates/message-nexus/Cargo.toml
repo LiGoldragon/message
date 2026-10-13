@@ -33,6 +33,7 @@ rkyv.workspace                = true
 rustix      = { version = "1", features = ["net", "time"] }
 sema-engine = { git = "https://github.com/LiGoldragon/sema-engine", rev = "9884905ff9c660ad97a35c524e42532d5c7bac90" }
 thiserror   = "2"
+redb = "4"
 
 [dev-dependencies]
 tempfile = "3"
