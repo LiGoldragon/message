@@ -124,11 +124,42 @@ impl RecognizesStore for MessageStore {
             path: path.display().to_string(),
             reason,
         };
-        let database =
-            redb::ReadOnlyDatabase::open(path).map_err(|error| reject(error.to_string()))?;
-        let read = database
-            .begin_read()
-            .map_err(|error| reject(error.to_string()))?;
+        // A killed writer leaves redb's allocator recovery pending. Repair only
+        // an in-memory snapshot for recognition, never an unknown original.
+        // Keep the source shared-locked until all identity checks have passed.
+        let mut _snapshot_guard = None;
+        let read = match redb::ReadOnlyDatabase::open(path) {
+            Ok(database) => database
+                .begin_read()
+                .map_err(|error| reject(error.to_string()))?,
+            Err(redb::DatabaseError::RepairAborted) => {
+                use redb::StorageBackend;
+                use std::io::Read;
+                let mut source =
+                    std::fs::File::open(path).map_err(|error| reject(error.to_string()))?;
+                source
+                    .try_lock_shared()
+                    .map_err(|error| reject(error.to_string()))?;
+                let mut bytes = Vec::new();
+                source
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| reject(error.to_string()))?;
+                let backend = redb::backends::InMemoryBackend::new();
+                backend
+                    .set_len(bytes.len() as u64)
+                    .map_err(|error| reject(error.to_string()))?;
+                StorageBackend::write(&backend, 0, &bytes)
+                    .map_err(|error| reject(error.to_string()))?;
+                _snapshot_guard = Some(source);
+                let database = redb::Database::builder()
+                    .create_with_backend(backend)
+                    .map_err(|error| reject(error.to_string()))?;
+                database
+                    .begin_read()
+                    .map_err(|error| reject(error.to_string()))?
+            }
+            Err(error) => return Err(reject(error.to_string())),
+        };
         let metadata = read
             .open_table(redb::TableDefinition::<&str, u64>::new("__sema_meta"))
             .map_err(|error| reject(error.to_string()))?;
@@ -245,6 +276,59 @@ mod recognition_tests {
                 Err(StoreError::Unrecognized { .. })
             ));
             assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+    }
+    // Child-only crash fixture: exit without dropping the Engine, exactly as an
+    // externally terminated Nexus does. The parent owns all temporary paths.
+    #[test]
+    fn crash_writer() {
+        let Some(path) = std::env::var_os("MESSAGE_TEST_CRASH_STORE") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        if std::env::var_os("MESSAGE_TEST_FOREIGN_STORE").is_some() {
+            let _engine = Engine::open(EngineOpen::new(&path, SchemaVersion::new(5))).unwrap();
+            std::process::exit(0);
+        }
+        let store = MessageStore::open(&path, seed()).unwrap();
+        let mut configured = store.standard().unwrap();
+        configured.meta_configured = true;
+        store.replace_standard(configured).unwrap();
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn crash_recognition_preserves_original_and_rejects_foreign_store() {
+        for foreign in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("message.sema");
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", "store::recognition_tests::crash_writer"])
+                .env("MESSAGE_TEST_CRASH_STORE", &path)
+                .env_remove("MESSAGE_TEST_FOREIGN_STORE");
+            if foreign {
+                command.env("MESSAGE_TEST_FOREIGN_STORE", "1");
+            }
+            assert!(command.status().unwrap().success());
+            assert!(matches!(
+                redb::ReadOnlyDatabase::open(&path),
+                Err(redb::DatabaseError::RepairAborted)
+            ));
+            let before = std::fs::read(&path).unwrap();
+            if foreign {
+                assert!(matches!(
+                    MessageStore::open(&path, seed()),
+                    Err(StoreError::Unrecognized { .. })
+                ));
+            } else {
+                MessageStore::recognize(&path).unwrap();
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            if !foreign {
+                let reopened = MessageStore::open(&path, seed()).unwrap();
+                assert!(reopened.standard().unwrap().meta_configured);
+            }
         }
     }
 }
