@@ -34,6 +34,15 @@ impl ExchangesWithFlow for FlowEdge {
     fn exchange(&self, query: &Query) -> Result<Response, EdgeFailure> {
         let mut stream =
             UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
+        // Bound an unavailable peer so shutdown can join an in-flight handler.
+        // A timeout is a failed exchange, never permission to replay a delivery.
+        let timeout = Some(std::time::Duration::from_secs(2));
+        stream
+            .set_read_timeout(timeout)
+            .map_err(|_| EdgeFailure::Broken)?;
+        stream
+            .set_write_timeout(timeout)
+            .map_err(|_| EdgeFailure::Broken)?;
         stream
             .write_frame(query)
             .map_err(|_| EdgeFailure::Unreachable)?;

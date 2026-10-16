@@ -23,6 +23,7 @@ default = []
 datom = ["dep:datom-codec"]
 
 [dependencies]
+libc = "0.2"
 message-defaults.workspace = true
 datom-codec = { workspace = true, optional = true }
 signal-message.workspace      = true

@@ -272,6 +272,7 @@ version = "0.19.1"
 dependencies = [
  "datom-codec",
  "ethos-zero",
+ "libc",
  "message-defaults",
  "meta-signal-flow",
  "meta-signal-message",

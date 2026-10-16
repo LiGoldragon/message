@@ -12,6 +12,22 @@ fn main() -> ExitCode {
         eprintln!("message-nexus: a Nexus starts with no arguments");
         return ExitCode::FAILURE;
     }
+    // Block before opening the Engine: its threads must inherit this mask.
+    // The listener consumes these signals through signalfd, outside a handler.
+    let signal_error = unsafe {
+        let mut mask: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut mask);
+        libc::sigaddset(&mut mask, libc::SIGTERM);
+        libc::sigaddset(&mut mask, libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &mask, std::ptr::null_mut())
+    };
+    if signal_error != 0 {
+        eprintln!(
+            "message-nexus: block shutdown signals: {}",
+            std::io::Error::from_raw_os_error(signal_error)
+        );
+        return ExitCode::FAILURE;
+    }
     let defaults = DefaultConfiguration::from_environment();
     if let Err(error) = std::fs::create_dir_all(defaults.state_directory()) {
         eprintln!("message-nexus: state directory: {error}");
