@@ -35,6 +35,47 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
                 .spawn()
                 .unwrap(),
         );
+        // Opening Message's store includes a Flow Bind exchange before either
+        // Message listener is created. Complete it on every start, including
+        // the reopen, before waiting for socket readiness.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut startup = loop {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "Nexus exited before Bind"
+            );
+            match flow.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("Flow startup accept: {error}"),
+            }
+            assert!(Instant::now() < deadline, "Message did not bind to Flow");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        startup
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        startup
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let signal_flow::Query::Bind(binding) = startup.read_frame::<signal_flow::Query>().unwrap()
+        else {
+            panic!("Message startup must send Bind");
+        };
+        assert_eq!(
+            binding.address,
+            Address {
+                aspect: Aspect::Field,
+                topic: "message".into(),
+                layer: Layer::Primary,
+            }
+        );
+        startup
+            .write_frame(&signal_flow::Response::Bound(signal_flow::FlowId::from(
+                "message-shutdown-fixture",
+            )))
+            .unwrap();
+        drop(startup);
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut connection = loop {
             assert!(
