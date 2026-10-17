@@ -302,8 +302,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-flow"
-version = "22.0.1"
-source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=5d1ac92f122c0b8ef2ffa0af01185763aca5f46a#5d1ac92f122c0b8ef2ffa0af01185763aca5f46a"
+version = "23.0.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=dacb3fdd26c23f6aa3f78cbc37389d25f7ac97ee#dacb3fdd26c23f6aa3f78cbc37389d25f7ac97ee"
 dependencies = [
  "ethos-zero 17.0.0",
  "flow-ethos",
