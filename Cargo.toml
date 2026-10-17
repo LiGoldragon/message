@@ -14,8 +14,8 @@ publish      = false
 message-defaults    = { path = "crates/message-defaults" }
 datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "4dff16b4f7412febc3b71aac8b49680cd20988cb" }
 protos              = { git = "https://github.com/LiGoldragon/protos", rev = "15b41da8f2579e73ead59bc0c2b97529b8ac32d3" }
-signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "b3c09f56b2f10f6278a0c40fda1a019d1ee9b319" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "a3f2b73634c63e90cf6bd1657f93a2c5efeb2ece" }
-signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "37a410141822cdbe823d69609e4891d01a6bb9c6" }
-meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "a0f8d075223f946e3d1a4029fa0dba178b080106" }
+signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "8a27180ce1e42ad1a679c9d8b43afe96b19142c2" }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "115a62dd2974b372e4b932b7ce1ff5df00514107" }
+signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "6a49664652e31ff32648f2152b596a76b241019a" }
+meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "a918b7dbca09538abc9b8fce75f61ba8abe6093c" }
 rkyv                = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
