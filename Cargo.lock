@@ -232,6 +232,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -255,8 +261,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "memchr"
+version = "2.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
 name = "message"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "datom-codec",
  "message-defaults",
@@ -267,11 +279,25 @@ dependencies = [
 
 [[package]]
 name = "message-defaults"
-version = "0.19.1"
+version = "0.20.0"
+
+[[package]]
+name = "message-mcp-send"
+version = "0.20.0"
+dependencies = [
+ "datom-codec",
+ "message-defaults",
+ "protos",
+ "rkyv",
+ "rustix",
+ "serde_json",
+ "signal-message",
+ "tempfile",
+]
 
 [[package]]
 name = "message-meta"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "datom-codec",
  "message-defaults",
@@ -282,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "message-nexus"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "datom-codec",
  "ethos-zero 16.0.0",
@@ -302,8 +328,8 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-flow"
-version = "24.0.1"
-source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=a918b7dbca09538abc9b8fce75f61ba8abe6093c#a918b7dbca09538abc9b8fce75f61ba8abe6093c"
+version = "28.0.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=efccfb5c11ea56ef6495675e8906dbff8a709713#efccfb5c11ea56ef6495675e8906dbff8a709713"
 dependencies = [
  "ethos-zero 17.0.0",
  "flow-ethos",
@@ -314,11 +340,11 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-message"
-version = "0.12.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=115a62dd2974b372e4b932b7ce1ff5df00514107#115a62dd2974b372e4b932b7ce1ff5df00514107"
+version = "0.13.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=f1ddba8488d109d1dbbfb12715953bd26fbe1738#f1ddba8488d109d1dbbfb12715953bd26fbe1738"
 dependencies = [
  "datom-codec",
- "ethos-zero 16.0.0",
+ "ethos-zero 17.0.0",
  "protos",
  "rkyv",
  "signal",
@@ -518,6 +544,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "serde_core"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.154"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
+dependencies = [
+ "itoa",
+ "memchr",
+ "serde",
+ "serde_core",
+ "zmij",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,8 +606,8 @@ dependencies = [
 
 [[package]]
 name = "signal-flow"
-version = "20.0.0"
-source = "git+https://github.com/LiGoldragon/signal-flow?rev=6a49664652e31ff32648f2152b596a76b241019a#6a49664652e31ff32648f2152b596a76b241019a"
+version = "22.0.0"
+source = "git+https://github.com/LiGoldragon/signal-flow?rev=e6ccbddbcc69079203c4bb5e841298ff9ee6cb81#e6ccbddbcc69079203c4bb5e841298ff9ee6cb81"
 dependencies = [
  "datom-codec",
  "ethos-zero 17.0.0",
@@ -551,11 +619,11 @@ dependencies = [
 
 [[package]]
 name = "signal-message"
-version = "13.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message?rev=8a27180ce1e42ad1a679c9d8b43afe96b19142c2#8a27180ce1e42ad1a679c9d8b43afe96b19142c2"
+version = "14.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message?rev=f51821454aadccd7ccf782e836738d80cd14ebd0#f51821454aadccd7ccf782e836738d80cd14ebd0"
 dependencies = [
  "datom-codec",
- "ethos-zero 16.0.0",
+ "ethos-zero 17.0.0",
  "flow-ethos",
  "protos",
  "rkyv",
@@ -720,3 +788,9 @@ checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
 ]
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"

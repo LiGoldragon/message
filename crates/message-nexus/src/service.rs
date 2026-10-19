@@ -48,7 +48,15 @@ pub trait ServesMessages {
 impl ServesMessages for MessageNexus {
     fn serve_query(&self, process: Process, query: Query) -> Response {
         match query {
-            Query::Send(request) => self.send(process, request),
+            Query::Send(request) => self.send(process, request, None),
+            Query::SendThread(request) => self.send(
+                process,
+                signal_message::Send_Data {
+                    recipient: request.recipient,
+                    request: request.request,
+                },
+                Some(request.native_session_id),
+            ),
             Query::Configure(configuration) => match self.configure(configuration, false) {
                 Ok(_) => Response::Configured,
                 Err(ConfigureFailure::AlreadyConfigured) => {
@@ -63,18 +71,32 @@ impl ServesMessages for MessageNexus {
 }
 
 trait SendsMessage {
-    fn send(&self, process: Process, request: signal_message::Send_Data) -> Response;
+    fn send(
+        &self,
+        process: Process,
+        request: signal_message::Send_Data,
+        thread: Option<String>,
+    ) -> Response;
 }
 
 impl SendsMessage for MessageNexus {
-    fn send(&self, process: Process, request: signal_message::Send_Data) -> Response {
+    fn send(
+        &self,
+        process: Process,
+        request: signal_message::Send_Data,
+        thread: Option<String>,
+    ) -> Response {
         let edge = match self.flow_edge() {
             Ok(edge) => edge,
             Err(error) => {
                 return Response::Refused(SendRefusal::Store(error.to_string()));
             }
         };
-        let sender = match edge.identify(process) {
+        let identified = match thread {
+            Some(thread) => edge.identify_thread(process, thread),
+            None => edge.identify(process),
+        };
+        let sender = match identified {
             Ok(sender) => sender,
             Err(failure) => return Response::Refused(failure.for_message()),
         };
@@ -144,9 +166,11 @@ impl MapsFlowRefusal for Refusal {
             Self::OffRoute => SendRefusal::OffRoute,
             Self::NoneAbove => SendRefusal::NoneAbove,
             Self::NotMessage => SendRefusal::NotMessage,
+            Self::NotConfigured => SendRefusal::NotConfigured,
+            Self::NotSendServer(process) => SendRefusal::NotSendServer(process),
             Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Store(error) => SendRefusal::Store(error),
-            Self::Unknown(_) | Self::Awake(_) | Self::NotConfigured | Self::Taken(_) => {
+            Self::Unknown(_) | Self::Awake(_) | Self::Taken(_) => {
                 return None;
             }
         })

@@ -2,8 +2,8 @@
 
 use crate::frame::FramedStream;
 use signal_flow::{
-    Address, Bind_Data, Deliver_Data, FlowId, Lock, Lock_Data, Process, Query, Recipient, Refusal,
-    Request, Response, Sender,
+    Address, Bind_Data, Deliver_Data, FlowId, IdentifyThread_Data, Lock, Lock_Data, Process, Query,
+    Recipient, Refusal, Request, Response, Sender,
 };
 use std::os::unix::net::UnixStream;
 
@@ -55,6 +55,11 @@ impl ExchangesWithFlow for FlowEdge {
 pub trait CallsFlow {
     fn bind(&self, address: Address, process: Process) -> Result<FlowId, EdgeFailure>;
     fn identify(&self, process: Process) -> Result<Address, EdgeFailure>;
+    fn identify_thread(
+        &self,
+        process: Process,
+        native_session_id: String,
+    ) -> Result<Address, EdgeFailure>;
     fn lock(&self, sender: Sender, recipient: Recipient) -> Result<Lock, EdgeFailure>;
     fn deliver(&self, lock: Lock, request: Request) -> Result<DeliveryOutcome, EdgeFailure>;
     fn release(&self, lock: Lock) -> Result<(), EdgeFailure>;
@@ -71,6 +76,21 @@ impl CallsFlow for FlowEdge {
 
     fn identify(&self, process: Process) -> Result<Address, EdgeFailure> {
         match self.exchange(&Query::Identify(process))? {
+            Response::Identified(address) => Ok(address),
+            Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
+            _ => Err(EdgeFailure::Unexpected),
+        }
+    }
+
+    fn identify_thread(
+        &self,
+        process: Process,
+        native_session_id: String,
+    ) -> Result<Address, EdgeFailure> {
+        match self.exchange(&Query::IdentifyThread(IdentifyThread_Data {
+            process,
+            native_session_id,
+        }))? {
             Response::Identified(address) => Ok(address),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),

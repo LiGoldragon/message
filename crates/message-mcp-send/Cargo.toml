@@ -1,0 +1,19 @@
+[package]
+name = "message-mcp-send"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+message-defaults.workspace = true
+signal-message = { workspace = true, features = ["datom"] }
+datom-codec.workspace = true
+protos.workspace = true
+rkyv.workspace = true
+serde_json = "1"
+
+[dev-dependencies]
+rustix = { version = "1", features = ["net"] }
+tempfile = "3"

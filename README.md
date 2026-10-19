@@ -42,3 +42,27 @@ typed delivery by its DeliveryId, so a repeat after a crash types nothing. Only
 every recipient still `Submitted` or `Parked`.
 
 Run `nix flake check -L` for the complete proof matrix.
+
+
+## Codex MCP sender
+
+The workspace installs `message-mcp-send` beside the ordinary Message tools.
+It is an MCP stdio process, launched directly by the selected Codex app-server.
+Its only tool, `send`, accepts a `query` containing an ordinary `Send` datom.
+The native thread comes exclusively from the call's `params._meta.threadId`,
+never from tool arguments, environment variables, a caller PID, or a model's
+claimed sender. The adapter converts this to the producer-owned `SendThread`
+operation and connects directly to Message; it does not launch a CLI child.
+Message reads the socket peer from the kernel, then asks Flow IdentifyThread.
+Flow must have the actual app-server/MCP executable pair configured and the
+thread recorded as the unique live Awake Codex flow. This does not adopt an
+unregistered legacy thread or provide adversarial same-user isolation.
+
+The deployment owner registers the package's `bin/message-mcp-send` as a
+stdio `mcp_servers` command using a derivation reference and configures the
+same executable identity in Flow. A wrapper or intermediary process that
+changes the direct parent must be qualified, not accepted by weakening Flow.
+No credential copy or additional server is required. Missing thread metadata
+refuses before connection. An uncertain response is reported without retry.
+The fresh native process-tree, tool metadata and sender-attribution witnesses
+remain deployment gates; source tests cannot establish those properties.

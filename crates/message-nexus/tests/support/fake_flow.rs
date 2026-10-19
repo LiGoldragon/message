@@ -15,6 +15,7 @@ use std::{
 struct State {
     bound: Vec<(Address, Process)>,
     delivered: Vec<Deliver_Data>,
+    identified_threads: Vec<signal_flow::IdentifyThread_Data>,
 }
 
 #[derive(Clone)]
@@ -51,6 +52,10 @@ impl FakeFlow {
         self.state.lock().unwrap().delivered.clone()
     }
 
+    pub fn identified_threads(&self) -> Vec<signal_flow::IdentifyThread_Data> {
+        self.state.lock().unwrap().identified_threads.clone()
+    }
+
     pub fn bound(&self) -> Vec<(Address, Process)> {
         self.state.lock().unwrap().bound.clone()
     }
@@ -80,6 +85,19 @@ impl FakeFlow {
                 Response::Bound(FlowId::from("message-flow"))
             }
             Query::Identify(_) => Response::Identified(self.sender()),
+            Query::IdentifyThread(request) => {
+                self.state
+                    .lock()
+                    .unwrap()
+                    .identified_threads
+                    .push(request.clone());
+                match request.native_session_id.as_str() {
+                    "not-configured" => Response::Refused(Refusal::NotConfigured),
+                    "not-send-server" => Response::Refused(Refusal::NotSendServer(request.process)),
+                    "unknown" => Response::Refused(Refusal::Unidentified(request.process)),
+                    _ => Response::Identified(self.sender()),
+                }
+            }
             Query::Lock(Lock_Data { sender, recipient }) => {
                 let address = self.resolve(recipient, &sender);
                 Response::Locked(Lock {
