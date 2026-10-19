@@ -162,8 +162,6 @@ impl MapsFlowRefusal for Refusal {
                 SendRefusal::Unknown(MessageUnknown::Lock(lock))
             }
             Self::NoLayer => SendRefusal::NoLayer,
-            Self::Ended(address) => SendRefusal::Ended(address),
-            Self::OffRoute => SendRefusal::OffRoute,
             Self::NoneAbove => SendRefusal::NoneAbove,
             Self::NotMessage => SendRefusal::NotMessage,
             Self::NotConfigured => SendRefusal::NotConfigured,
