@@ -191,13 +191,12 @@ fn main() -> ExitCode {
                 json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}),
             ),
         };
-        if let Some(reply) = reply {
-            if writeln!(output, "{reply}")
+        if let Some(reply) = reply
+            && writeln!(output, "{reply}")
                 .and_then(|()| output.flush())
                 .is_err()
-            {
-                return ExitCode::from(2);
-            }
+        {
+            return ExitCode::from(2);
         }
     }
 }
