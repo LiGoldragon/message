@@ -1,5 +1,13 @@
 # UPGRADES
 
+## 0.20.1 -> 0.20.2 -- speaks to Flow 0.38.0 (signal-flow 25.0.0, meta-signal-flow 32.0.0)
+
+Message 0.20.2 holds the contract revisions Flow 0.38.0 holds: signal-flow
+25.0.0 (c67e561f), meta-signal-flow 32.0.0 (c494af46), and through them
+signal-message 16.0.0 (638f3acb) and meta-signal-message 0.15.0
+(79be60c1). Flow's `Refusal.OffRoute` answers only Flow's own `Send`, never a
+Deliver Message makes, so Message reads it as outside the Send contract.
+
 ## 0.18.0 -> 0.19.0 -- speaks to Flow 0.22.0 (signal 8.0.0, signal-flow 10.0.0, meta-signal-flow 14.0.0)
 
 Message 0.19.0 holds exactly the contract revisions Flow 0.22.0 holds:

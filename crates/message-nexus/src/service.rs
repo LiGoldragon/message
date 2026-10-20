@@ -168,7 +168,7 @@ impl MapsFlowRefusal for Refusal {
             Self::NotSendServer(process) => SendRefusal::NotSendServer(process),
             Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Store(error) => SendRefusal::Store(error),
-            Self::Unknown(_) | Self::Awake(_) | Self::Taken(_) => {
+            Self::Unknown(_) | Self::Awake(_) | Self::Taken(_) | Self::OffRoute => {
                 return None;
             }
         })
