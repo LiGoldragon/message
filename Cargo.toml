@@ -15,7 +15,7 @@ message-defaults    = { path = "crates/message-defaults" }
 datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "4dff16b4f7412febc3b71aac8b49680cd20988cb" }
 protos              = { git = "https://github.com/LiGoldragon/protos", rev = "15b41da8f2579e73ead59bc0c2b97529b8ac32d3" }
 signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "ff8d2154ba9bb0e46580239570674445257c86f2" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "2114534444251eea96dbf863cd95e7bcaf20db62" }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "9fb06f70ac3a5777ac9c57c08dc310cdacee3a6b" }
 signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "c7dcc074b174695de048d5770f651af549408db1" }
 meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "2b03b506613d0e4375826927d2f5bea77d329be8" }
 rkyv                = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
