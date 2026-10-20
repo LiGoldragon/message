@@ -1,16 +1,13 @@
-//! Message Nexus.
+//! Message Nexus: typed requests delivered through Flow.
 //!
-//! Message owns everything durable about a message: the record, its
-//! Priority, the sender (named from the peer, never the payload), the
-//! ledger of receipts with every grade kept separate, parking until Flow
-//! shows the recipient at rest, and the recipient's own Read. Flow is the
-//! only pane writer: Message reaches a pane only through Flow's typed
-//! Deliver, and never runs Herdr.
+//! Message retains only its configuration. Flow owns recipient resolution,
+//! queueing and the waking rule; Message never writes a pane or runs Herdr.
 
 pub mod configuration;
 pub mod delivery;
 pub mod flow_edge;
 pub mod frame;
+pub mod generated;
 pub mod ledger;
 pub mod listener;
 pub mod nexus;

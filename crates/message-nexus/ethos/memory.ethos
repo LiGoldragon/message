@@ -1,0 +1,5 @@
+Memory
+[ message_library:Configuration ]
+[ Standard.{
+     Configuration
+     MetaConfigured.Boolean } ]

@@ -63,29 +63,18 @@ impl CallsMessageNexus for MessageMetaClient {
         peer.write_all(&(bytes.len() as u32).to_be_bytes())
             .and_then(|()| peer.write_all(&bytes))
             .map_err(|e| e.to_string())?;
-        let streams = false;
-        loop {
-            let mut length = [0; 4];
-            match peer.read_exact(&mut length) {
-                Ok(()) => {}
-                Err(error) if streams && error.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    return Ok(());
-                }
-                Err(error) => return Err(error.to_string()),
-            }
-            let length = u32::from_be_bytes(length) as usize;
-            if length > 1024 * 1024 {
-                return Err("Signal frame exceeds 1 MiB".into());
-            }
-            let mut reply = vec![0; length];
-            peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
-            let reply = rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply)
-                .map_err(|e| e.to_string())?;
-            each(&reply);
-            if !streams {
-                return Ok(());
-            }
+        let mut length = [0; 4];
+        peer.read_exact(&mut length).map_err(|e| e.to_string())?;
+        let length = u32::from_be_bytes(length) as usize;
+        if length > 1024 * 1024 {
+            return Err("Signal frame exceeds 1 MiB".into());
         }
+        let mut reply = vec![0; length];
+        peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
+        let reply = rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply)
+            .map_err(|e| e.to_string())?;
+        each(&reply);
+        Ok(())
     }
 }
 
@@ -116,21 +105,19 @@ mod tests {
     use meta_signal_message::Query;
 
     #[test]
-    fn configure_and_redeliver_are_one_inline_datom_each() {
+    fn configure_is_one_inline_datom() {
         let client = MessageMetaClient {
             socket: "unused".into(),
         };
         let Query::Configure(configuration) = client
-            .parse(&["Configure.{ /r/m.sock /r/mo.sock /r/f.sock /r/fm.sock [ Psyche ] }".into()])
+            .parse(&["Configure.{ /r/m.sock /r/mo.sock /r/f.sock }".into()])
             .expect("configure parses")
         else {
             panic!("Configure datom must stay a Configure query");
         };
-        assert_eq!(configuration.flow_meta_socket_path, "/r/fm.sock");
-        assert!(matches!(
-            client.parse(&["Redeliver.{ m-1 7d41e0 }".into()]),
-            Ok(Query::Redeliver(_))
-        ));
+        assert_eq!(configuration.ordinary, "/r/m.sock");
+        assert_eq!(configuration.meta, "/r/mo.sock");
+        assert_eq!(configuration.flow, "/r/f.sock");
         assert!(client.parse(&["--send".into()]).is_err());
     }
 }

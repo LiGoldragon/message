@@ -37,6 +37,16 @@
           sourceFilter = path: type:
             type == "directory"
             || (craneLib.filterCargoSources path type)
+            # build.rs checks these authored Nexus contract sources.
+            || (
+              type == "regular"
+              && builtins.any
+                (suffix: nixpkgs.lib.hasSuffix suffix (toString path))
+                [
+                  "crates/message-nexus/ethos/memory.ethos"
+                  "crates/message-nexus/ethos/operation.ethos"
+                ]
+            )
             || nixpkgs.lib.hasInfix "/tests/fixtures/" (toString path);
           src = pkgs.lib.cleanSourceWith {
             src = ./.;

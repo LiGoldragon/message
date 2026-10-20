@@ -1,12 +1,13 @@
 [package]
 name        = "message-nexus"
-description = "Message Nexus: durable messages and receipts, delivered through Flow."
+description = "Message Nexus: typed requests delivered through Flow."
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
 publish.workspace      = true
+build = "build.rs"
 
 [lib]
 name = "message_nexus"
@@ -30,6 +31,9 @@ thiserror   = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+[build-dependencies]
+ethos-zero = { git = "https://github.com/LiGoldragon/ethos-zero", rev = "c2653dd82adbdb1f1f2f654405c6620e0d06fd58" }
 
 [lints.rust]
 unused    = { level = "warn", priority = -1 }
