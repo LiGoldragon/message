@@ -1,5 +1,12 @@
 # UPGRADES
 
+## 0.20.2 -> 0.20.3 -- preserves oversized Flow Send refusal
+
+Pins signal-flow 27.0.0 (`cc524c8`) and signal-message 17.0.0
+(`10e0901`). Message carries the Flow `Oversized` refusal and its typed
+actual/maximum byte counts through its public response.
+
+
 ## 0.20.1 -> 0.20.2 -- speaks to Flow 0.38.0 (signal-flow 25.0.0, meta-signal-flow 32.0.0)
 
 Message 0.20.2 holds the contract revisions Flow 0.38.0 holds: signal-flow

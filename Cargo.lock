@@ -268,22 +268,22 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "message"
-version = "0.20.2"
+version = "0.20.3"
 dependencies = [
  "datom-codec",
  "message-defaults",
  "protos",
  "rkyv",
- "signal-message",
+ "signal-message 17.0.0 (git+https://github.com/LiGoldragon/signal-message?rev=10e0901)",
 ]
 
 [[package]]
 name = "message-defaults"
-version = "0.20.2"
+version = "0.20.3"
 
 [[package]]
 name = "message-mcp-send"
-version = "0.20.2"
+version = "0.20.3"
 dependencies = [
  "datom-codec",
  "message-defaults",
@@ -291,13 +291,13 @@ dependencies = [
  "rkyv",
  "rustix",
  "serde_json",
- "signal-message",
+ "signal-message 17.0.0 (git+https://github.com/LiGoldragon/signal-message?rev=10e0901)",
  "tempfile",
 ]
 
 [[package]]
 name = "message-meta"
-version = "0.20.2"
+version = "0.20.3"
 dependencies = [
  "datom-codec",
  "message-defaults",
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "message-nexus"
-version = "0.20.2"
+version = "0.20.3"
 dependencies = [
  "datom-codec",
  "ethos-zero 16.0.0",
@@ -320,8 +320,8 @@ dependencies = [
  "rkyv",
  "rustix",
  "sema-engine",
- "signal-flow",
- "signal-message",
+ "signal-flow 27.0.0",
+ "signal-message 17.0.0 (git+https://github.com/LiGoldragon/signal-message?rev=10e0901)",
  "tempfile",
  "thiserror",
 ]
@@ -335,20 +335,20 @@ dependencies = [
  "flow-ethos",
  "rkyv",
  "signal",
- "signal-flow",
+ "signal-flow 25.0.0",
 ]
 
 [[package]]
 name = "meta-signal-message"
-version = "0.15.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=79be60c1c9f593b1626cf37567efb594a68eb156#79be60c1c9f593b1626cf37567efb594a68eb156"
+version = "0.16.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=b447b56#b447b5661f7434efa9cc9b034d6cd9746555972e"
 dependencies = [
  "datom-codec",
  "ethos-zero 17.0.0",
  "protos",
  "rkyv",
  "signal",
- "signal-message",
+ "signal-message 17.0.0 (git+https://github.com/LiGoldragon/signal-message?rev=10e0901e)",
 ]
 
 [[package]]
@@ -609,6 +609,17 @@ name = "signal-flow"
 version = "25.0.0"
 source = "git+https://github.com/LiGoldragon/signal-flow?rev=c67e561f32a9019801fc43d245b4b25474f68ed2#c67e561f32a9019801fc43d245b4b25474f68ed2"
 dependencies = [
+ "ethos-zero 17.0.0",
+ "flow-ethos",
+ "rkyv",
+ "signal",
+]
+
+[[package]]
+name = "signal-flow"
+version = "27.0.0"
+source = "git+https://github.com/LiGoldragon/signal-flow?rev=cc524c807047d39967d213917308d928c2685129#cc524c807047d39967d213917308d928c2685129"
+dependencies = [
  "datom-codec",
  "ethos-zero 17.0.0",
  "flow-ethos",
@@ -619,8 +630,8 @@ dependencies = [
 
 [[package]]
 name = "signal-message"
-version = "16.0.0"
-source = "git+https://github.com/LiGoldragon/signal-message?rev=638f3acb635f44cd8c6bc80824aabeac6d21bfdc#638f3acb635f44cd8c6bc80824aabeac6d21bfdc"
+version = "17.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message?rev=10e0901#10e0901e23c6e7723922b6b76b0e39fde8d2f948"
 dependencies = [
  "datom-codec",
  "ethos-zero 17.0.0",
@@ -628,7 +639,21 @@ dependencies = [
  "protos",
  "rkyv",
  "signal",
- "signal-flow",
+ "signal-flow 27.0.0",
+]
+
+[[package]]
+name = "signal-message"
+version = "17.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message?rev=10e0901e#10e0901e23c6e7723922b6b76b0e39fde8d2f948"
+dependencies = [
+ "datom-codec",
+ "ethos-zero 17.0.0",
+ "flow-ethos",
+ "protos",
+ "rkyv",
+ "signal",
+ "signal-flow 27.0.0",
 ]
 
 [[package]]

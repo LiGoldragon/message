@@ -168,6 +168,7 @@ impl MapsFlowRefusal for Refusal {
             Self::NotSendServer(process) => SendRefusal::NotSendServer(process),
             Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Store(error) => SendRefusal::Store(error),
+            Self::Oversized(size) => SendRefusal::Oversized(size),
             Self::Unknown(_) | Self::Awake(_) | Self::Taken(_) | Self::OffRoute => {
                 return None;
             }
@@ -184,5 +185,31 @@ impl ReadsUnixTime for SystemTime {
         self.duration_since(UNIX_EPOCH)
             .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
             .unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReportsMessageRefusal;
+    use crate::flow_edge::EdgeFailure;
+    use signal_flow::SendPayloadSize;
+    use signal_message::SendRefusal;
+
+    #[test]
+    fn oversized_flow_refusal_keeps_its_typed_byte_counts() {
+        let refusal = EdgeFailure::Refused(signal_flow::Refusal::Oversized(
+            SendPayloadSize {
+                actual_bytes: 65_537,
+                maximum_bytes: 65_536,
+            },
+        ))
+        .for_message();
+        assert_eq!(
+            refusal,
+            SendRefusal::Oversized(SendPayloadSize {
+                actual_bytes: 65_537,
+                maximum_bytes: 65_536,
+            })
+        );
     }
 }
