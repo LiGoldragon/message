@@ -1,7 +1,7 @@
 //! Exercise actual process termination, not an in-process store drop.
 use message_nexus::frame::FramedStream;
-use signal_flow::{Address, Aspect, Layer, Recipient, Request};
-use signal_message::{Query, Send_Data};
+use signal_flow::{Address, Aspect, Delivery, Layer, Message, Recipient, Request, SendRequest};
+use signal_message::Query;
 use std::{
     os::unix::net::{UnixListener, UnixStream},
     process::{Child, Command},
@@ -92,13 +92,14 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
         // an idle accepted client supplies no frame at all.
         let _flow_connection = if iteration == 0 {
             connection
-                .write_frame(&Query::Send(Send_Data {
+                .write_frame(&Query::Send(SendRequest {
                     recipient: Recipient::Address(Address {
                         aspect: Aspect::Mind,
                         topic: "shutdown-test".into(),
                         layer: Layer::Secondary,
                     }),
-                    request: Request::Question("fixture".into()),
+                    delivery: Delivery::Wake,
+                    message: Message::MiddleAbrupt(Request::Question("fixture".into())),
                 }))
                 .unwrap();
             let deadline = Instant::now() + Duration::from_secs(10);

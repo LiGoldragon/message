@@ -4,6 +4,7 @@
 use datom_codec::{Actualizing, Budget, Datomizable, Potential};
 use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use protos::{Compactable, Protosizable, ReaderBudget};
+use signal_flow::DeliveryState;
 use signal_message::{Query, Response};
 use std::{
     env,
@@ -63,18 +64,48 @@ impl CallsMessageNexus for MessageClient {
         peer.write_all(&(bytes.len() as u32).to_be_bytes())
             .and_then(|()| peer.write_all(&bytes))
             .map_err(|e| e.to_string())?;
-        let mut length = [0; 4];
-        peer.read_exact(&mut length).map_err(|e| e.to_string())?;
-        let length = u32::from_be_bytes(length) as usize;
-        if length > 1024 * 1024 {
-            return Err("Signal frame exceeds 1 MiB".into());
+        let mut accepted_id = None;
+        loop {
+            let mut length = [0; 4];
+            peer.read_exact(&mut length).map_err(|e| e.to_string())?;
+            let length = u32::from_be_bytes(length) as usize;
+            if length > 1024 * 1024 {
+                return Err("Signal frame exceeds 1 MiB".into());
+            }
+            let mut reply = vec![0; length];
+            peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
+            let reply = rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply)
+                .map_err(|e| e.to_string())?;
+            let terminal = match &reply {
+                Response::SendAccepted(accepted) => {
+                    accepted_id = Some(accepted.logical_delivery_id.clone());
+                    false
+                }
+                Response::SendsObserved(observation) => accepted_id.as_deref().is_some_and(|id| {
+                    observation.delivery_snapshot_vector.iter().any(|snapshot| {
+                        snapshot.logical_delivery_id == id
+                            && matches!(
+                                snapshot.delivery_state,
+                                DeliveryState::Delivered(_) | DeliveryState::Failed(_)
+                            )
+                    })
+                }),
+                Response::SendChanged(snapshot) => {
+                    accepted_id.as_deref() == Some(snapshot.logical_delivery_id.as_str())
+                        && matches!(
+                            snapshot.delivery_state,
+                            DeliveryState::Delivered(_) | DeliveryState::Failed(_)
+                        )
+                }
+                Response::ObservationInterrupted(_)
+                | Response::Refused(_)
+                | Response::Configured => true,
+            };
+            each(&reply);
+            if terminal {
+                return Ok(());
+            }
         }
-        let mut reply = vec![0; length];
-        peer.read_exact(&mut reply).map_err(|e| e.to_string())?;
-        let reply =
-            rkyv::from_bytes::<Response, rkyv::rancor::Error>(&reply).map_err(|e| e.to_string())?;
-        each(&reply);
-        Ok(())
     }
 }
 
@@ -102,15 +133,16 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{CallsMessageNexus, MessageClient};
-    use signal_message::{Address, Aspect, Layer, Query, Recipient, Request};
+    use signal_flow::{Address, Aspect, Delivery, Layer, Message, Recipient};
+    use signal_message::Query;
 
     #[test]
-    fn a_send_has_typed_recipient_and_request() {
+    fn a_send_has_typed_recipient_delivery_and_message() {
         let client = MessageClient {
             socket: "unused".into(),
         };
         let Query::Send(request) = client
-            .parse(&["Send.{ Address.{ Mind flow Secondary } Question.«What is current?» }".into()])
+            .parse(&["Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«What is current?» }".into()])
             .expect("send parses")
         else {
             panic!("Send datom must stay a Send query");
@@ -123,9 +155,10 @@ mod tests {
                 layer: Layer::Secondary,
             })
         );
+        assert_eq!(request.delivery, Delivery::Wake);
         assert_eq!(
-            request.request,
-            Request::Question("What is current?".into())
+            request.message,
+            Message::MiddleAbrupt(signal_flow::Request::Question("What is current?".into()))
         );
     }
 

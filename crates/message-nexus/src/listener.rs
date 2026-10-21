@@ -1,15 +1,18 @@
 //! The ordinary and owner-only Message sockets.
 
 use crate::{
+    flow_edge::ReadsFlowSubscription,
     frame::{FrameError, FramedStream},
     nexus::{HoldsNexusState, MessageNexus},
     peer::IdentifiesPeer,
-    service::{ConfigureFailure, ConfiguresMessage, ServesMessages},
+    service::{AcceptedSend, ConfigureFailure, ConfiguresMessage, ServesMessages},
 };
 use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
-use signal_message::Query;
+use signal_flow::{DeliveryState, LogicalDeliveryId, Response as FlowResponse};
+use signal_message::{Query, Response};
 use std::{
-    fs, io,
+    fs,
+    io::{self, Read},
     net::Shutdown,
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
     os::unix::{fs::PermissionsExt, net::UnixListener, net::UnixStream},
@@ -87,11 +90,22 @@ impl ListensOnSockets for MessageNexus {
                             }
                         };
                         let nexus = Arc::clone(&self);
+                        let completion = match control.try_clone() {
+                            Ok(completion) => completion,
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
+                        };
                         let worker = std::thread::spawn(move || {
                             let result = match socket {
                                 Socket::Ordinary => nexus.answer_ordinary(stream),
                                 Socket::Meta => nexus.answer_meta(stream),
                             };
+                            // The listener retains the control handle until its
+                            // next event reaps this worker. Close the response
+                            // half now so clients observe completion promptly.
+                            let _ = completion.shutdown(Shutdown::Write);
                             if let Err(error) = result
                                 && !matches!(error, FrameError::Closed)
                             {
@@ -162,6 +176,26 @@ impl ServesSocket for Socket {
 trait AnswersConnection {
     fn answer_ordinary(&self, stream: UnixStream) -> Result<(), FrameError>;
     fn answer_meta(&self, stream: UnixStream) -> Result<(), FrameError>;
+    fn answer_send(
+        &self,
+        stream: &mut UnixStream,
+        process: signal_flow::Process,
+        request: signal_flow::SendRequest,
+        thread: Option<String>,
+    ) -> Result<(), FrameError>;
+    fn answer_observation(
+        &self,
+        stream: &mut UnixStream,
+        process: signal_flow::Process,
+        thread: Option<String>,
+        cursor: Option<signal_flow::DeliveryCursor>,
+    ) -> Result<(), FrameError>;
+    fn forward_subscription(
+        &self,
+        stream: &mut UnixStream,
+        subscription: &mut crate::flow_edge::FlowSubscription,
+        terminal_id: Option<LogicalDeliveryId>,
+    ) -> Result<(), FrameError>;
 }
 
 impl AnswersConnection for MessageNexus {
@@ -173,7 +207,144 @@ impl AnswersConnection for MessageNexus {
                 "cannot read the peer process identity",
             )));
         };
-        stream.write_frame(&self.serve_query(process, query))
+        match query {
+            Query::Send(request) => self.answer_send(&mut stream, process, request, None),
+            Query::SendThread(request) => self.answer_send(
+                &mut stream,
+                process,
+                request.send_request,
+                Some(request.native_session_id),
+            ),
+            Query::ObserveSends(cursor) => {
+                self.answer_observation(&mut stream, process, None, cursor)
+            }
+            Query::ObserveThread(request) => self.answer_observation(
+                &mut stream,
+                process,
+                Some(request.native_session_id),
+                request.delivery_cursor_option,
+            ),
+            query => stream.write_frame(&self.serve_query(process, query)),
+        }
+    }
+
+    fn answer_send(
+        &self,
+        stream: &mut UnixStream,
+        process: signal_flow::Process,
+        request: signal_flow::SendRequest,
+        thread: Option<String>,
+    ) -> Result<(), FrameError> {
+        match self.accept_send(process, request, thread) {
+            Err(response) => stream.write_frame(response.as_ref()),
+            Ok(AcceptedSend {
+                acceptance: accepted,
+                subscription,
+            }) => {
+                stream.write_frame(&Response::SendAccepted(accepted.clone()))?;
+                match subscription {
+                    Ok(mut subscription) => self.forward_subscription(
+                        stream,
+                        &mut subscription,
+                        Some(accepted.logical_delivery_id),
+                    ),
+                    Err(response) => stream.write_frame(response.as_ref()),
+                }
+            }
+        }
+    }
+
+    fn answer_observation(
+        &self,
+        stream: &mut UnixStream,
+        process: signal_flow::Process,
+        thread: Option<String>,
+        cursor: Option<signal_flow::DeliveryCursor>,
+    ) -> Result<(), FrameError> {
+        match self.observe_sends(process, thread, cursor) {
+            Err(response) => stream.write_frame(response.as_ref()),
+            Ok(mut subscription) => self.forward_subscription(stream, &mut subscription, None),
+        }
+    }
+
+    fn forward_subscription(
+        &self,
+        stream: &mut UnixStream,
+        subscription: &mut crate::flow_edge::FlowSubscription,
+        terminal_id: Option<LogicalDeliveryId>,
+    ) -> Result<(), FrameError> {
+        let flow_control = subscription.interrupt_handle().map_err(|_| {
+            FrameError::Io(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "cannot monitor Flow subscription",
+            ))
+        })?;
+        let mut client_control = stream.try_clone()?;
+        let watcher = std::thread::spawn(move || {
+            let mut byte = [0; 1];
+            loop {
+                match client_control.read(&mut byte) {
+                    Ok(0) | Err(_) => {
+                        let _ = flow_control.shutdown(Shutdown::Both);
+                        break;
+                    }
+                    Ok(_) => {}
+                }
+            }
+        });
+        let result = (|| {
+            let mut last_cursor = None;
+            loop {
+                let response = match subscription.next() {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return stream.write_frame(&Response::ObservationInterrupted(
+                            signal_message::ObservationInterrupted_Data {
+                                delivery_cursor_option: last_cursor,
+                                string: format!("Flow status stream ended: {error:?}"),
+                            },
+                        ));
+                    }
+                };
+                let (message_response, finished) = match response {
+                    FlowResponse::SendsObserved(observation) => {
+                        last_cursor = Some(observation.delivery_cursor);
+                        let finished = terminal_id.as_deref().is_some_and(|id| {
+                            observation.delivery_snapshot_vector.iter().any(|item| {
+                                item.logical_delivery_id.as_str() == id
+                                    && item.delivery_state.is_terminal()
+                            })
+                        });
+                        (Response::SendsObserved(observation), finished)
+                    }
+                    FlowResponse::SendChanged(snapshot) => {
+                        last_cursor = Some(snapshot.delivery_cursor);
+                        let finished = terminal_id.as_deref()
+                            == Some(snapshot.logical_delivery_id.as_str())
+                            && snapshot.delivery_state.is_terminal();
+                        (Response::SendChanged(snapshot), finished)
+                    }
+                    other => {
+                        return stream.write_frame(&Response::ObservationInterrupted(
+                            signal_message::ObservationInterrupted_Data {
+                                delivery_cursor_option: last_cursor,
+                                string: format!("Unexpected Flow status response: {other:?}"),
+                            },
+                        ));
+                    }
+                };
+                stream.write_frame(&message_response)?;
+                if finished {
+                    return Ok(());
+                }
+            }
+        })();
+        // The request has been fully consumed. Shutting down only this
+        // connection's receive half releases the EOF watcher while preserving
+        // delivery of the final response to the client.
+        let _ = stream.shutdown(Shutdown::Read);
+        let _ = watcher.join();
+        result
     }
 
     fn answer_meta(&self, mut stream: UnixStream) -> Result<(), FrameError> {
@@ -187,5 +358,15 @@ impl AnswersConnection for MessageNexus {
             }
         };
         stream.write_frame(&response)
+    }
+}
+
+trait TerminalDeliveryState {
+    fn is_terminal(&self) -> bool;
+}
+
+impl TerminalDeliveryState for DeliveryState {
+    fn is_terminal(&self) -> bool {
+        matches!(self, Self::Delivered(_) | Self::Failed(_))
     }
 }

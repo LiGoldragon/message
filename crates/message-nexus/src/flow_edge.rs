@@ -2,8 +2,9 @@
 
 use crate::frame::FramedStream;
 use signal_flow::{
-    Address, Bind_Data, Deliver_Data, FlowId, IdentifyThread_Data, Lock, Lock_Data, Process, Query,
-    Recipient, Refusal, Request, Response, Sender,
+    Address, Bind_Data, Deliver_Data, DeliveryCursor, FlowId, IdentifyThread_Data, Lock, Lock_Data,
+    ObserveSender_Data, Process, Query, Recipient, Refusal, Response, SendAcceptance, SendRequest,
+    Sender,
 };
 use std::os::unix::net::UnixStream;
 
@@ -15,15 +16,27 @@ pub enum EdgeFailure {
     Unexpected,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeliveryOutcome {
-    Delivered,
-    Queued,
-    Woken,
-}
-
 pub struct FlowEdge {
     pub socket_path: String,
+}
+
+pub struct FlowSubscription {
+    stream: UnixStream,
+}
+
+pub trait ReadsFlowSubscription {
+    fn next(&mut self) -> Result<Response, EdgeFailure>;
+    fn interrupt_handle(&self) -> Result<UnixStream, EdgeFailure>;
+}
+
+impl ReadsFlowSubscription for FlowSubscription {
+    fn next(&mut self) -> Result<Response, EdgeFailure> {
+        self.stream.read_frame().map_err(|_| EdgeFailure::Broken)
+    }
+
+    fn interrupt_handle(&self) -> Result<UnixStream, EdgeFailure> {
+        self.stream.try_clone().map_err(|_| EdgeFailure::Broken)
+    }
 }
 
 trait ExchangesWithFlow {
@@ -61,7 +74,13 @@ pub trait CallsFlow {
         native_session_id: String,
     ) -> Result<Address, EdgeFailure>;
     fn lock(&self, sender: Sender, recipient: Recipient) -> Result<Lock, EdgeFailure>;
-    fn deliver(&self, lock: Lock, request: Request) -> Result<DeliveryOutcome, EdgeFailure>;
+    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<SendAcceptance, EdgeFailure>;
+    fn observe_sender(
+        &self,
+        process: Process,
+        native_session_id: Option<String>,
+        cursor: Option<DeliveryCursor>,
+    ) -> Result<FlowSubscription, EdgeFailure>;
     fn release(&self, lock: Lock) -> Result<(), EdgeFailure>;
 }
 
@@ -105,14 +124,38 @@ impl CallsFlow for FlowEdge {
         }
     }
 
-    fn deliver(&self, lock: Lock, request: Request) -> Result<DeliveryOutcome, EdgeFailure> {
-        match self.exchange(&Query::Deliver(Deliver_Data { lock, request }))? {
-            Response::Delivered => Ok(DeliveryOutcome::Delivered),
-            Response::Queued => Ok(DeliveryOutcome::Queued),
-            Response::Woken(_) => Ok(DeliveryOutcome::Woken),
+    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<SendAcceptance, EdgeFailure> {
+        match self.exchange(&Query::Deliver(Deliver_Data {
+            lock,
+            delivery: request.delivery,
+            message: request.message,
+        }))? {
+            Response::SendAccepted(acceptance) => Ok(acceptance),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
         }
+    }
+
+    fn observe_sender(
+        &self,
+        process: Process,
+        native_session_id: Option<String>,
+        cursor: Option<DeliveryCursor>,
+    ) -> Result<FlowSubscription, EdgeFailure> {
+        let mut stream =
+            UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
+        let timeout = Some(std::time::Duration::from_secs(2));
+        stream
+            .set_write_timeout(timeout)
+            .map_err(|_| EdgeFailure::Broken)?;
+        stream
+            .write_frame(&Query::ObserveSender(ObserveSender_Data {
+                process,
+                native_session_id_option: native_session_id,
+                delivery_cursor_option: cursor,
+            }))
+            .map_err(|_| EdgeFailure::Unreachable)?;
+        Ok(FlowSubscription { stream })
     }
 
     fn release(&self, lock: Lock) -> Result<(), EdgeFailure> {

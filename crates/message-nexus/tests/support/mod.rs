@@ -73,6 +73,19 @@ impl NexusProcess {
         stream.read_frame().unwrap()
     }
 
+    pub fn ask_stream(&self, query: &signal_message::Query) -> Vec<signal_message::Response> {
+        let mut stream = UnixStream::connect(self.ordinary_socket()).unwrap();
+        stream.write_frame(query).unwrap();
+        let mut responses = Vec::new();
+        loop {
+            match stream.read_frame() {
+                Ok(response) => responses.push(response),
+                Err(message_nexus::frame::FrameError::Closed) => return responses,
+                Err(error) => panic!("Message stream failed: {error}"),
+            }
+        }
+    }
+
     pub fn ask_meta(&self, query: &meta_signal_message::Query) -> meta_signal_message::Response {
         let mut stream = UnixStream::connect(self.meta_socket()).unwrap();
         stream.write_frame(query).unwrap();
@@ -88,6 +101,17 @@ impl NexusProcess {
             self.home.take().expect("home held until stop"),
             self.runtime.take().expect("runtime held until stop"),
         )
+    }
+
+    pub fn stop_gracefully(mut self) {
+        // SAFETY: the pid belongs to this child and the signal is the Nexus's
+        // documented shutdown signal, handled by its signalfd loop.
+        let _ = unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
+        let _ = self.child.wait();
+        let _ = std::fs::remove_file(self.ordinary_socket());
+        let _ = std::fs::remove_file(self.meta_socket());
+        self.home.take();
+        self.runtime.take();
     }
 }
 

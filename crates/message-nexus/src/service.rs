@@ -1,12 +1,14 @@
 //! Executes the two Message requests over its typed memory and Flow edge.
 
 use crate::{
-    flow_edge::{CallsFlow, DeliveryOutcome, EdgeFailure},
+    flow_edge::{CallsFlow, EdgeFailure, FlowSubscription},
     nexus::{HoldsNexusState, MessageNexus},
     store::{ChangesConfiguration, KeepsStandard, StoreError},
 };
 use message_library::Configuration;
-use signal_flow::{Process, Refusal, Unknown_Data as FlowUnknown};
+use signal_flow::{
+    DeliveryCursor, Process, Refusal, SendAcceptance, SendRequest, Unknown_Data as FlowUnknown,
+};
 use signal_message::{Query, Response, SendRefusal, Unknown_Data as MessageUnknown};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -43,20 +45,28 @@ impl ConfiguresMessage for MessageNexus {
 
 pub trait ServesMessages {
     fn serve_query(&self, process: Process, query: Query) -> Response;
+    fn accept_send(
+        &self,
+        process: Process,
+        request: SendRequest,
+        thread: Option<String>,
+    ) -> Result<AcceptedSend, Box<Response>>;
+    fn observe_sends(
+        &self,
+        process: Process,
+        thread: Option<String>,
+        cursor: Option<DeliveryCursor>,
+    ) -> Result<FlowSubscription, Box<Response>>;
+}
+
+pub struct AcceptedSend {
+    pub acceptance: SendAcceptance,
+    pub subscription: Result<FlowSubscription, Box<Response>>,
 }
 
 impl ServesMessages for MessageNexus {
-    fn serve_query(&self, process: Process, query: Query) -> Response {
+    fn serve_query(&self, _process: Process, query: Query) -> Response {
         match query {
-            Query::Send(request) => self.send(process, request, None),
-            Query::SendThread(request) => self.send(
-                process,
-                signal_message::Send_Data {
-                    recipient: request.recipient,
-                    request: request.request,
-                },
-                Some(request.native_session_id),
-            ),
             Query::Configure(configuration) => match self.configure(configuration, false) {
                 Ok(_) => Response::Configured,
                 Err(ConfigureFailure::AlreadyConfigured) => {
@@ -66,60 +76,89 @@ impl ServesMessages for MessageNexus {
                     Response::Refused(SendRefusal::Store(error.to_string()))
                 }
             },
+            _ => Response::Refused(SendRefusal::FlowUnreachable),
         }
     }
-}
 
-trait SendsMessage {
-    fn send(
+    fn accept_send(
         &self,
         process: Process,
-        request: signal_message::Send_Data,
+        request: SendRequest,
         thread: Option<String>,
-    ) -> Response;
-}
-
-impl SendsMessage for MessageNexus {
-    fn send(
-        &self,
-        process: Process,
-        request: signal_message::Send_Data,
-        thread: Option<String>,
-    ) -> Response {
+    ) -> Result<AcceptedSend, Box<Response>> {
         let edge = match self.flow_edge() {
             Ok(edge) => edge,
             Err(error) => {
-                return Response::Refused(SendRefusal::Store(error.to_string()));
+                return Err(Box::new(Response::Refused(SendRefusal::Store(
+                    error.to_string(),
+                ))));
             }
         };
-        let identified = match thread {
-            Some(thread) => edge.identify_thread(process, thread),
-            None => edge.identify(process),
+        let identified = match &thread {
+            Some(thread) => edge.identify_thread(process.clone(), thread.clone()),
+            None => edge.identify(process.clone()),
         };
         let sender = match identified {
             Ok(sender) => sender,
-            Err(failure) => return Response::Refused(failure.for_message()),
+            Err(failure) => return Err(Box::new(Response::Refused(failure.for_message()))),
         };
-        let lock = match edge.lock(sender, request.recipient) {
+        let lock = match edge.lock(sender, request.recipient.clone()) {
             Ok(lock) => lock,
-            Err(failure) => return Response::Refused(failure.for_message()),
+            Err(failure) => return Err(Box::new(Response::Refused(failure.for_message()))),
         };
         if SystemTime::now().unix_seconds() >= lock.until {
-            return Response::Refused(SendRefusal::Lapsed);
+            return Err(Box::new(Response::Refused(SendRefusal::Lapsed)));
         }
-        match edge.deliver(lock.clone(), request.request) {
-            Ok(DeliveryOutcome::Delivered) => Response::Delivered,
-            Ok(DeliveryOutcome::Queued) => Response::Queued,
-            Ok(DeliveryOutcome::Woken) => Response::Woken,
+        let acceptance = match edge.deliver(lock.clone(), request) {
+            Ok(acceptance) => acceptance,
             Err(
                 failure
                 @ (EdgeFailure::Unreachable | EdgeFailure::Broken | EdgeFailure::Unexpected),
             ) => {
                 let _ = edge.release(lock);
-                Response::Refused(failure.for_message())
+                return Err(Box::new(Response::Refused(failure.for_message())));
             }
-            Err(failure @ EdgeFailure::Refused(_)) => Response::Refused(failure.for_message()),
-        }
+            Err(failure @ EdgeFailure::Refused(_)) => {
+                return Err(Box::new(Response::Refused(failure.for_message())));
+            }
+        };
+        let subscription = edge
+            .observe_sender(process, thread, Some(acceptance.delivery_cursor))
+            .map_err(|failure| {
+                Box::new(Response::ObservationInterrupted(
+                    signal_message::ObservationInterrupted_Data {
+                        delivery_cursor_option: Some(acceptance.delivery_cursor),
+                        string: format!("Flow subscription could not open: {failure:?}"),
+                    },
+                ))
+            });
+        Ok(AcceptedSend {
+            acceptance,
+            subscription,
+        })
+    }
+
+    fn observe_sends(
+        &self,
+        process: Process,
+        thread: Option<String>,
+        cursor: Option<DeliveryCursor>,
+    ) -> Result<FlowSubscription, Box<Response>> {
+        let edge = self
+            .flow_edge()
+            .map_err(|error| Box::new(Response::Refused(SendRefusal::Store(error.to_string()))))?;
+        edge.observe_sender(process, thread, cursor)
+            .map_err(|failure| match failure {
+                EdgeFailure::Refused(refusal) => Box::new(Response::Refused(
+                    EdgeFailure::Refused(refusal).for_message(),
+                )),
+                _ => Box::new(Response::ObservationInterrupted(
+                    signal_message::ObservationInterrupted_Data {
+                        delivery_cursor_option: cursor,
+                        string: format!("Flow subscription could not open: {failure:?}"),
+                    },
+                )),
+            })
     }
 }
 
@@ -197,12 +236,10 @@ mod tests {
 
     #[test]
     fn oversized_flow_refusal_keeps_its_typed_byte_counts() {
-        let refusal = EdgeFailure::Refused(signal_flow::Refusal::Oversized(
-            SendPayloadSize {
-                actual_bytes: 65_537,
-                maximum_bytes: 65_536,
-            },
-        ))
+        let refusal = EdgeFailure::Refused(signal_flow::Refusal::Oversized(SendPayloadSize {
+            actual_bytes: 65_537,
+            maximum_bytes: 65_536,
+        }))
         .for_message();
         assert_eq!(
             refusal,

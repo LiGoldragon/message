@@ -2,13 +2,15 @@
 
 use message_nexus::frame::FramedStream;
 use signal_flow::{
-    Address, Aspect, Bind_Data, Deliver_Data, FlowId, Layer, Lock, Lock_Data, Process, Query,
-    Recipient, Refusal, Response,
+    Address, Aspect, Bind_Data, Deliver_Data, DeliveryState, FlowId, Layer, Lock, Lock_Data,
+    Process, Query, Recipient, Refusal, Response, SendAcceptance, SendObservation,
 };
 use std::{
+    io::Read,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Condvar, Mutex},
+    time::Duration,
 };
 
 #[derive(Default)]
@@ -22,10 +24,20 @@ struct State {
 pub struct FakeFlow {
     state: Arc<Mutex<State>>,
     socket_path: PathBuf,
+    quiet_observer: bool,
+    observer_closed: Arc<(Mutex<usize>, Condvar)>,
 }
 
 impl FakeFlow {
     pub fn start(runtime_directory: &Path) -> Self {
+        Self::start_with_observer(runtime_directory, false)
+    }
+
+    pub fn start_quiet(runtime_directory: &Path) -> Self {
+        Self::start_with_observer(runtime_directory, true)
+    }
+
+    fn start_with_observer(runtime_directory: &Path, quiet_observer: bool) -> Self {
         let directory = runtime_directory.join("flow");
         std::fs::create_dir_all(&directory).unwrap();
         let socket_path = directory.join("flow.sock");
@@ -33,6 +45,8 @@ impl FakeFlow {
         let flow = Self {
             state: Arc::new(Mutex::new(State::default())),
             socket_path,
+            quiet_observer,
+            observer_closed: Arc::new((Mutex::new(0), Condvar::new())),
         };
         let accepting = flow.clone();
         std::thread::spawn(move || {
@@ -42,6 +56,16 @@ impl FakeFlow {
             }
         });
         flow
+    }
+
+    pub fn wait_for_observer_close(&self) {
+        let (count, changed) = &*self.observer_closed;
+        let count = count.lock().unwrap();
+        let (count, timeout) = changed
+            .wait_timeout_while(count, Duration::from_secs(5), |count| *count == 0)
+            .unwrap();
+        assert!(*count > 0, "Flow observation socket stayed open");
+        assert!(!timeout.timed_out() || *count > 0);
     }
 
     pub fn socket_path(&self) -> PathBuf {
@@ -79,6 +103,7 @@ impl FakeFlow {
         let Ok(query) = stream.read_frame::<Query>() else {
             return;
         };
+        let observing = matches!(&query, Query::ObserveSender(_));
         let response = match query {
             Query::Bind(Bind_Data { address, process }) => {
                 self.state.lock().unwrap().bound.push((address, process));
@@ -108,11 +133,26 @@ impl FakeFlow {
             }
             Query::Deliver(delivery) => {
                 self.state.lock().unwrap().delivered.push(delivery);
-                Response::Delivered
+                Response::SendAccepted(SendAcceptance {
+                    logical_delivery_id: "fake-logical-delivery".into(),
+                    delivery_cursor: 1,
+                    delivery_state: DeliveryState::Queued,
+                })
             }
+            Query::ObserveSender(_) => Response::SendsObserved(SendObservation {
+                delivery_cursor: 1,
+                delivery_snapshot_vector: vec![],
+            }),
             Query::Release(_) => Response::Released,
             _ => Response::Refused(Refusal::NotConfigured),
         };
         let _ = stream.write_frame(&response);
+        if observing && self.quiet_observer {
+            let mut byte = [0; 1];
+            let _ = stream.read(&mut byte);
+            let (count, changed) = &*self.observer_closed;
+            *count.lock().unwrap() += 1;
+            changed.notify_all();
+        }
     }
 }

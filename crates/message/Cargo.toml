@@ -18,3 +18,4 @@ datom-codec.workspace = true
 protos.workspace      = true
 rkyv.workspace        = true
 signal-message = { workspace = true, features = ["datom"] }
+signal-flow.workspace = true
