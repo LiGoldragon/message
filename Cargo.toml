@@ -17,5 +17,5 @@ protos              = { git = "https://github.com/LiGoldragon/protos", rev = "15
 signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "10e0901" }
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "b447b56" }
 signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "cc524c807047d39967d213917308d928c2685129" }
-meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "c494af46c1ddc50c3bb31e787caa8c061b488bc1" }
+meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "3a80adad7f3282aae2843e496f14596dced2f1b7" }
 rkyv                = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
