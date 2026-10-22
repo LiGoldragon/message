@@ -1,5 +1,12 @@
 # UPGRADES
 
+## 0.20.3 → 0.20.4 — Flow 0.39 peer
+
+Rebuilds every Message executable against the simplified Flow contracts
+and the matching Message producer closure. Message ingress and durable
+store layouts are unchanged. Activate this package with Flow 0.39.0: the
+Flow root Query archive changed even for peers sending other variants.
+
 ## 0.20.2 -> 0.20.3 -- preserves oversized Flow Send refusal
 
 Pins signal-flow 27.0.0 (`cc524c8`), meta-signal-flow 34.0.0
