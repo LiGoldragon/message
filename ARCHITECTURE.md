@@ -8,7 +8,7 @@ contracts without datom; the CLIs enable it. `fn main()` is the only free
 function and every method lives in a trait (`checks/`).
 
 - `configuration` — the defaults as the Configure value a new store is seeded with.
-- `store` — the Sema ledger: `MessageRecord`, append-only `ReceiptRecord`,
+- `store` — the Memory ledger: `MessageRecord`, append-only `ReceiptRecord`,
   `ParkRecord` (present while a recipient is Submitted or Parked, so a restart
   resumes it), `ConfigurationRecord`.
 - `ledger` — appends grades and tells Observe subscribers.

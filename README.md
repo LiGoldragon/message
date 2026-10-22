@@ -12,7 +12,7 @@ through Flow's typed `Deliver`, and never runs Herdr.
 ## Executables
 
 - `message-nexus` — the Nexus. Starts with no arguments. Store
-  `~/.local/state/message/message.sema`; sockets
+  `~/.local/state/message/message.memory`; sockets
   `$XDG_RUNTIME_DIR/message/message.sock` (ordinary) and `message-owner.sock`
   (meta), both `0600`; it reaches Flow at `$XDG_RUNTIME_DIR/flow/flow.sock` and
   `flow-meta.sock` until meta `Configure` says otherwise.

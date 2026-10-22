@@ -21,7 +21,7 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
     let home = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let socket = runtime.path().join("message/message.sock");
-    let store = home.path().join(".local/state/message/message.sema");
+    let store = home.path().join(".local/state/message/message.memory");
     // The second start exercises the same durable store, not a fresh fixture.
     std::fs::create_dir_all(runtime.path().join("flow")).unwrap();
     let flow = UnixListener::bind(runtime.path().join("flow/flow.sock")).unwrap();

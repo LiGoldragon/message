@@ -18,7 +18,7 @@ Beauty and elegant, extensible logic win every trade-off.
 - Consume the exact producer heads directly. Do not copy, rename, wrap, or
   re-export individual producer Types as a component vocabulary.
 - Do not add component-local structural inputs, generated Rust, build-time
-  generation, daemon-shape policy, or a second Signal/Nexus/SEMA contract.
+  generation, daemon-shape policy, or a second Signal/Nexus/MEMORY contract.
 - The bootstrap generator is provisional: strict producer Types are generated;
   current behavior and roles are handwritten until Logos can express them.
 - Public text is Datom, read and written only by the CLIs through
@@ -31,7 +31,7 @@ Beauty and elegant, extensible logic win every trade-off.
   XDG_RUNTIME_DIR, and meta Configure changes them.
 - `message` uses `MESSAGE_SOCKET`; `message-meta` uses
   `MESSAGE_META_SOCKET`. Each accepts exactly one inline Datom value.
-- `message.sema` is the component's durable store.
+- `message.memory` is the component's durable store.
 - Flow is the only pane writer. Message never runs Herdr.
 
 ## Work and history

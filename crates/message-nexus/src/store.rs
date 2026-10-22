@@ -1,7 +1,7 @@
 //! Message's configuration and first-configuration state.
 
 use crate::{generated::memory::Standard, message_library::Configuration};
-use sema_engine::{
+use memory_engine::{
     Engine, EngineOpen, EngineRecord, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan,
     RecordKey, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
 };
@@ -12,8 +12,8 @@ const STANDARD_KEY: &str = "standard";
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("sema-engine: {0}")]
-    Engine(#[from] sema_engine::Error),
+    #[error("memory-engine: {0}")]
+    Engine(#[from] memory_engine::Error),
     #[error("store {path} is not current Message Standard2: {reason}")]
     Unrecognized { path: String, reason: String },
     #[error("the store does not hold exactly one Standard record")]
@@ -166,7 +166,7 @@ impl RecognizesStore for MessageStore {
             Err(error) => return Err(reject(error.to_string())),
         };
         let metadata = read
-            .open_table(redb::TableDefinition::<&str, u64>::new("__sema_meta"))
+            .open_table(redb::TableDefinition::<&str, u64>::new("__memory_meta"))
             .map_err(|error| reject(error.to_string()))?;
         let version = metadata
             .get("schema_version")
@@ -177,7 +177,7 @@ impl RecognizesStore for MessageStore {
         }
         let counters = read
             .open_table(redb::TableDefinition::<&str, &[u8]>::new(
-                "__sema_engine_counters",
+                "__memory_engine_counters",
             ))
             .map_err(|error| reject(error.to_string()))?;
         let layout = counters
@@ -191,14 +191,14 @@ impl RecognizesStore for MessageStore {
         }
         let catalog = read
             .open_table(redb::TableDefinition::<&str, &[u8]>::new(
-                "__sema_engine_catalog",
+                "__memory_engine_catalog",
             ))
             .map_err(|error| reject(error.to_string()))?;
         let mut count = 0;
         for entry in catalog.iter().map_err(|error| reject(error.to_string()))? {
             let (key, value) = entry.map_err(|error| reject(error.to_string()))?;
             let registration = rkyv::from_bytes::<
-                sema_engine::TableRegistration,
+                memory_engine::TableRegistration,
                 rkyv::rancor::Error,
             >(value.value())
             .map_err(|error| reject(error.to_string()))?;
@@ -259,7 +259,7 @@ mod recognition_tests {
     #[test]
     fn current_standard_reopens_without_reseeding_configuration() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("message.sema");
+        let path = directory.path().join("message.memory");
         let store = MessageStore::open(&path, seed()).unwrap();
         let mut configured = store.standard().unwrap();
         configured.meta_configured = true;
@@ -272,7 +272,7 @@ mod recognition_tests {
     fn foreign_and_legacy_occupants_are_refused_without_changing_bytes() {
         for version in [2, 3, 5] {
             let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("message.sema");
+            let path = directory.path().join("message.memory");
             let engine = Engine::open(EngineOpen::new(&path, SchemaVersion::new(version))).unwrap();
             drop(engine);
             let before = std::fs::read(&path).unwrap();
@@ -306,7 +306,7 @@ mod recognition_tests {
     fn crash_recognition_preserves_original_and_rejects_foreign_store() {
         for foreign in [false, true] {
             let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("message.sema");
+            let path = directory.path().join("message.memory");
             let mut command = std::process::Command::new(std::env::current_exe().unwrap());
             command
                 .args(["--exact", "store::recognition_tests::crash_writer"])

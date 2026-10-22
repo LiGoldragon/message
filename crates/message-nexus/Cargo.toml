@@ -32,7 +32,7 @@ signal-flow.workspace         = true
 meta-signal-flow.workspace    = true
 rkyv.workspace                = true
 rustix      = { version = "1", features = ["net", "time"] }
-sema-engine = { git = "https://github.com/LiGoldragon/sema-engine", rev = "9884905ff9c660ad97a35c524e42532d5c7bac90" }
+memory-engine = { git = "https://github.com/LiGoldragon/memory-engine.git", rev = "abf9d85166e22440440baba03358913458905b8d" }
 thiserror   = "2"
 redb = "4"
 

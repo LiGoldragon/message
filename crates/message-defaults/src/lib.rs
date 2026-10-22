@@ -84,7 +84,7 @@ impl ReadsAnchors for DefaultConfiguration {
 /// them under the same runtime directory.
 pub trait LaysOutDefaults {
     const STATE_DIRECTORY: &str = ".local/state/message";
-    const STORE_FILE: &str = "message.sema";
+    const STORE_FILE: &str = "message.memory";
     const SOCKET_DIRECTORY: &str = "message";
     const ORDINARY_SOCKET: &str = "message.sock";
     const META_SOCKET: &str = "message-owner.sock";
@@ -151,7 +151,7 @@ mod tests {
         };
         assert_eq!(
             defaults.store_path(),
-            Path::new("/home/someone/.local/state/message/message.sema")
+            Path::new("/home/someone/.local/state/message/message.memory")
         );
         assert_eq!(
             defaults.ordinary_socket_path(),
