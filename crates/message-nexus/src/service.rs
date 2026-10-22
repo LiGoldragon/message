@@ -251,7 +251,11 @@ impl MapsFlowRefusal for Refusal {
             Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Store(error) => SendRefusal::Store(error),
             Self::Oversized(size) => SendRefusal::Oversized(size),
-            Self::Unknown(_) | Self::Awake(_) | Self::Taken(_) | Self::OffRoute => {
+            Self::Unknown(_)
+            | Self::Awake(_)
+            | Self::Taken(_)
+            | Self::OffRoute
+            | Self::Direct(_) => {
                 return None;
             }
         })
