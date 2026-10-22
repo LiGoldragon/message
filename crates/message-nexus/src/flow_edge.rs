@@ -139,11 +139,18 @@ impl CallsFlow for FlowEdge {
     }
 
     fn deliver(&self, lock: Lock, request: SendRequest) -> Result<FlowSendReply, EdgeFailure> {
+        let abrupt = !matches!(&request.message, signal_flow::Message::Soft(_));
         match self.exchange(&Query::Deliver(Deliver_Data {
             lock,
             delivery: request.delivery,
             message: request.message,
         }))? {
+            Response::SendAccepted(acceptance) if abrupt => {
+                Ok(FlowSendReply::Failed(SendFailure {
+                    logical_delivery_id_option: Some(acceptance.logical_delivery_id),
+                    send_failure_reason: signal_flow::SendFailureReason::ReceiptUncertain,
+                }))
+            }
             Response::SendAccepted(acceptance) => Ok(FlowSendReply::Queued(acceptance)),
             Response::Sent(receipt) => Ok(FlowSendReply::Sent(receipt)),
             Response::Failed(failure) => Ok(FlowSendReply::Failed(failure)),

@@ -132,12 +132,24 @@ impl FakeFlow {
                 })
             }
             Query::Deliver(delivery) => {
+                let abrupt = !matches!(&delivery.message, signal_flow::Message::Soft(_));
                 self.state.lock().unwrap().delivered.push(delivery);
-                Response::SendAccepted(SendAcceptance {
-                    logical_delivery_id: "fake-logical-delivery".into(),
-                    delivery_cursor: 1,
-                    delivery_state: DeliveryState::Queued,
-                })
+                if abrupt {
+                    Response::Sent(signal_flow::SendReceipt {
+                        logical_delivery_id: "fake-logical-delivery".into(),
+                        native_receipt: signal_flow::NativeReceipt {
+                            harness_kind: signal_flow::HarnessKind::Codex,
+                            native_session_id: "fake-session".into(),
+                            native_prompt_id: "fake-prompt".into(),
+                        },
+                    })
+                } else {
+                    Response::SendAccepted(SendAcceptance {
+                        logical_delivery_id: "fake-logical-delivery".into(),
+                        delivery_cursor: 1,
+                        delivery_state: DeliveryState::Queued,
+                    })
+                }
             }
             Query::ObserveSender(_) => Response::SendsObserved(SendObservation {
                 delivery_cursor: 1,

@@ -16,7 +16,7 @@ fn quiet_send_stream(nexus: &NexusProcess) -> std::os::unix::net::UnixStream {
         .write_frame(&Query::Send(SendRequest {
             recipient: Recipient::Up,
             delivery: Delivery::Wake,
-            message: Message::MiddleAbrupt(Request::Question("quiet observer".into())),
+            message: Message::Soft(Request::Question("quiet observer".into())),
         }))
         .unwrap();
     assert!(matches!(
@@ -49,10 +49,13 @@ fn send_reaches_flow_with_the_lock_and_original_request() {
 
     assert_eq!(
         nexus.ask(&Query::Send(request.clone())),
-        Response::SendAccepted(SendAcceptance {
+        Response::Sent(signal_flow::SendReceipt {
             logical_delivery_id: "fake-logical-delivery".into(),
-            delivery_cursor: 1,
-            delivery_state: DeliveryState::Queued,
+            native_receipt: signal_flow::NativeReceipt {
+                harness_kind: signal_flow::HarnessKind::Codex,
+                native_session_id: "fake-session".into(),
+                native_prompt_id: "fake-prompt".into(),
+            },
         })
     );
 
@@ -133,7 +136,7 @@ fn thread_send_forwards_kernel_peer_and_exact_thread_before_delivery() {
         },
         native_session_id: "actual-thread".into(),
     });
-    assert!(matches!(nexus.ask(&request), Response::SendAccepted(_)));
+    assert!(matches!(nexus.ask(&request), Response::Sent(_)));
     let identified = flow.identified_threads();
     assert_eq!(identified.len(), 1);
     assert_eq!(
@@ -151,19 +154,16 @@ fn thread_send_forwards_kernel_peer_and_exact_thread_before_delivery() {
 #[test]
 fn failed_thread_identification_keeps_precise_refusal_and_never_delivers() {
     use message_nexus::peer::ReadsProcess;
-    use signal_message::SendRefusal;
+    use signal_flow::Refusal;
     let home = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let flow = FakeFlow::start(runtime.path());
     let nexus = NexusProcess::start(home, runtime);
     let process = signal_flow::Process::this_process().unwrap();
     for (thread, refusal) in [
-        ("not-configured", SendRefusal::NotConfigured),
-        (
-            "not-send-server",
-            SendRefusal::NotSendServer(process.clone()),
-        ),
-        ("unknown", SendRefusal::Unidentified(process)),
+        ("not-configured", Refusal::NotConfigured),
+        ("not-send-server", Refusal::NotSendServer(process.clone())),
+        ("unknown", Refusal::Unidentified(process)),
     ] {
         let query = Query::SendThread(SendThread_Data {
             send_request: SendRequest {
@@ -173,7 +173,13 @@ fn failed_thread_identification_keeps_precise_refusal_and_never_delivers() {
             },
             native_session_id: thread.into(),
         });
-        assert_eq!(nexus.ask(&query), Response::Refused(refusal));
+        assert_eq!(
+            nexus.ask(&query),
+            Response::Failed(signal_flow::SendFailure {
+                logical_delivery_id_option: None,
+                send_failure_reason: signal_flow::SendFailureReason::Refused(refusal),
+            })
+        );
     }
     assert!(flow.typed().is_empty());
     assert_eq!(flow.identified_threads().len(), 3);
