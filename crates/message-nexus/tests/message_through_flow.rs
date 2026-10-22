@@ -2,10 +2,7 @@
 
 mod support;
 
-use signal_flow::{
-    Address, Aspect, Delivery, DeliveryState, Layer, Message, Recipient, Request, SendAcceptance,
-    SendRequest,
-};
+use signal_flow::{Address, Aspect, Delivery, Layer, Message, Recipient, Request, SendRequest};
 use signal_message::{Query, Response, SendThread_Data};
 use support::{NexusProcess, fake_flow::FakeFlow};
 
@@ -77,7 +74,7 @@ fn message_forwards_flow_statuses_after_admission_and_preserves_resume_cursor() 
     let responses = nexus.ask_stream(&Query::Send(SendRequest {
         recipient: Recipient::Up,
         delivery: Delivery::Wake,
-        message: Message::MiddleAbrupt(Request::Question("status stream".into())),
+        message: Message::Soft(Request::Question("status stream".into())),
     }));
 
     assert!(matches!(responses.first(), Some(Response::SendAccepted(_))));
