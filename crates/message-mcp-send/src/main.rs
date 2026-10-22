@@ -291,6 +291,7 @@ trait IdentifiesTerminalResponse {
 impl IdentifiesTerminalResponse for Response {
     fn terminal_for(&self, accepted_id: Option<&str>) -> bool {
         match self {
+            Response::Sent(_) | Response::Failed(_) => true,
             Response::SendAccepted(_) => false,
             Response::SendsObserved(observation) => accepted_id.is_some_and(|id| {
                 observation.delivery_snapshot_vector.iter().any(|snapshot| {
@@ -445,7 +446,9 @@ impl RunsMcpCall for CallRequest {
                     if response.terminal_for(accepted_id.as_deref()) {
                         let failed = matches!(
                             response,
-                            Response::Refused(_) | Response::ObservationInterrupted(_)
+                            Response::Failed(_)
+                                | Response::Refused(_)
+                                | Response::ObservationInterrupted(_)
                         ) || matches!(&response, Response::SendChanged(snapshot) if matches!(snapshot.delivery_state, DeliveryState::Failed(_)))
                             || matches!(&response, Response::SendsObserved(observation) if observation.delivery_snapshot_vector.iter().any(|snapshot| accepted_id.as_deref() == Some(snapshot.logical_delivery_id.as_str()) && matches!(snapshot.delivery_state, DeliveryState::Failed(_))));
                         if matches!(response, Response::ObservationInterrupted(_)) {

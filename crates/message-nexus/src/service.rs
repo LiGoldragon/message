@@ -1,7 +1,7 @@
 //! Executes the two Message requests over its typed memory and Flow edge.
 
 use crate::{
-    flow_edge::{CallsFlow, EdgeFailure, FlowSubscription},
+    flow_edge::{CallsFlow, EdgeFailure, FlowSendReply, FlowSubscription},
     nexus::{HoldsNexusState, MessageNexus},
     store::{ChangesConfiguration, KeepsStandard, StoreError},
 };
@@ -50,7 +50,7 @@ pub trait ServesMessages {
         process: Process,
         request: SendRequest,
         thread: Option<String>,
-    ) -> Result<AcceptedSend, Box<Response>>;
+    ) -> Result<SendReply, Box<Response>>;
     fn observe_sends(
         &self,
         process: Process,
@@ -59,9 +59,13 @@ pub trait ServesMessages {
     ) -> Result<FlowSubscription, Box<Response>>;
 }
 
-pub struct AcceptedSend {
-    pub acceptance: SendAcceptance,
-    pub subscription: Result<FlowSubscription, Box<Response>>,
+pub enum SendReply {
+    Queued {
+        acceptance: SendAcceptance,
+        subscription: Result<FlowSubscription, Box<Response>>,
+    },
+    Sent(signal_flow::SendReceipt),
+    Failed(signal_flow::SendFailure),
 }
 
 impl ServesMessages for MessageNexus {
@@ -85,7 +89,8 @@ impl ServesMessages for MessageNexus {
         process: Process,
         request: SendRequest,
         thread: Option<String>,
-    ) -> Result<AcceptedSend, Box<Response>> {
+    ) -> Result<SendReply, Box<Response>> {
+        let abrupt = !matches!(&request.message, signal_flow::Message::Soft(_));
         let edge = match self.flow_edge() {
             Ok(edge) => edge,
             Err(error) => {
@@ -100,14 +105,22 @@ impl ServesMessages for MessageNexus {
         };
         let sender = match identified {
             Ok(sender) => sender,
-            Err(failure) => return Err(Box::new(Response::Refused(failure.for_message()))),
+            Err(failure) => return Err(Box::new(failure.for_send(abrupt, false))),
         };
+        if abrupt && request.delivery == signal_flow::Delivery::Queue {
+            return Ok(SendReply::Failed(signal_flow::SendFailure {
+                logical_delivery_id_option: None,
+                send_failure_reason: signal_flow::SendFailureReason::QueueNotPermitted,
+            }));
+        }
         let lock = match edge.lock(sender, request.recipient.clone()) {
             Ok(lock) => lock,
-            Err(failure) => return Err(Box::new(Response::Refused(failure.for_message()))),
+            Err(failure) => return Err(Box::new(failure.for_send(abrupt, false))),
         };
         if SystemTime::now().unix_seconds() >= lock.until {
-            return Err(Box::new(Response::Refused(SendRefusal::Lapsed)));
+            return Err(Box::new(
+                EdgeFailure::Refused(Refusal::Lapsed).for_send(abrupt, false),
+            ));
         }
         let acceptance = match edge.deliver(lock.clone(), request) {
             Ok(acceptance) => acceptance,
@@ -116,10 +129,21 @@ impl ServesMessages for MessageNexus {
                 @ (EdgeFailure::Unreachable | EdgeFailure::Broken | EdgeFailure::Unexpected),
             ) => {
                 let _ = edge.release(lock);
-                return Err(Box::new(Response::Refused(failure.for_message())));
+                return Err(Box::new(failure.for_send(abrupt, true)));
             }
             Err(failure @ EdgeFailure::Refused(_)) => {
-                return Err(Box::new(Response::Refused(failure.for_message())));
+                return Err(Box::new(failure.for_send(abrupt, true)));
+            }
+        };
+        let acceptance = match acceptance {
+            FlowSendReply::Queued(acceptance) => acceptance,
+            FlowSendReply::Sent(receipt) => {
+                let _ = edge.release(lock);
+                return Ok(SendReply::Sent(receipt));
+            }
+            FlowSendReply::Failed(failure) => {
+                let _ = edge.release(lock);
+                return Ok(SendReply::Failed(failure));
             }
         };
         let subscription = edge
@@ -132,7 +156,7 @@ impl ServesMessages for MessageNexus {
                     },
                 ))
             });
-        Ok(AcceptedSend {
+        Ok(SendReply::Queued {
             acceptance,
             subscription,
         })
@@ -163,10 +187,29 @@ impl ServesMessages for MessageNexus {
 }
 
 trait ReportsMessageRefusal {
+    fn for_send(self, abrupt: bool, delivery_may_have_started: bool) -> Response;
     fn for_message(self) -> SendRefusal;
 }
 
 impl ReportsMessageRefusal for EdgeFailure {
+    fn for_send(self, abrupt: bool, delivery_may_have_started: bool) -> Response {
+        if !abrupt {
+            return Response::Refused(self.for_message());
+        }
+        let reason = match self {
+            Self::Refused(refusal) => signal_flow::SendFailureReason::Refused(refusal),
+            Self::Broken | Self::Unexpected if delivery_may_have_started => {
+                signal_flow::SendFailureReason::ReceiptUncertain
+            }
+            failure => signal_flow::SendFailureReason::NotSent(format!(
+                "Flow exchange ended before delivery: {failure:?}"
+            )),
+        };
+        Response::Failed(signal_flow::SendFailure {
+            logical_delivery_id_option: None,
+            send_failure_reason: reason,
+        })
+    }
     fn for_message(self) -> SendRefusal {
         match self {
             Self::Refused(refusal) => {

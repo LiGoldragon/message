@@ -97,7 +97,9 @@ impl CallsMessageNexus for MessageClient {
                             DeliveryState::Delivered(_) | DeliveryState::Failed(_)
                         )
                 }
-                Response::ObservationInterrupted(_)
+                Response::Sent(_)
+                | Response::Failed(_)
+                | Response::ObservationInterrupted(_)
                 | Response::Refused(_)
                 | Response::Configured => true,
             };
