@@ -56,7 +56,7 @@
           commonArgs = {
             inherit src;
             pname = "message-workspace";
-            version = "0.20.3";
+            version = "0.20.4";
             strictDeps = true;
           };
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
