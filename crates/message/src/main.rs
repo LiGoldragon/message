@@ -81,6 +81,7 @@ impl CallsMessageNexus for MessageClient {
                     accepted_id = Some(accepted.logical_delivery_id.clone());
                     false
                 }
+                Response::Sent(_) | Response::Failed(_) => true,
                 Response::SendsObserved(observation) => accepted_id.as_deref().is_some_and(|id| {
                     observation.delivery_snapshot_vector.iter().any(|snapshot| {
                         snapshot.logical_delivery_id == id
