@@ -292,6 +292,7 @@ impl IdentifiesTerminalResponse for Response {
     fn terminal_for(&self, accepted_id: Option<&str>) -> bool {
         match self {
             Response::SendAccepted(_) => false,
+            Response::Sent(_) | Response::Failed(_) => true,
             Response::SendsObserved(observation) => accepted_id.is_some_and(|id| {
                 observation.delivery_snapshot_vector.iter().any(|snapshot| {
                     snapshot.logical_delivery_id == id
@@ -445,7 +446,9 @@ impl RunsMcpCall for CallRequest {
                     if response.terminal_for(accepted_id.as_deref()) {
                         let failed = matches!(
                             response,
-                            Response::Refused(_) | Response::ObservationInterrupted(_)
+                            Response::Failed(_)
+                                | Response::Refused(_)
+                                | Response::ObservationInterrupted(_)
                         ) || matches!(&response, Response::SendChanged(snapshot) if matches!(snapshot.delivery_state, DeliveryState::Failed(_)))
                             || matches!(&response, Response::SendsObserved(observation) if observation.delivery_snapshot_vector.iter().any(|snapshot| accepted_id.as_deref() == Some(snapshot.logical_delivery_id.as_str()) && matches!(snapshot.delivery_state, DeliveryState::Failed(_))));
                         if matches!(response, Response::ObservationInterrupted(_)) {
@@ -839,6 +842,86 @@ mod tests {
         drop(input_writer);
         assert_eq!(runner.join().unwrap(), ExitCode::SUCCESS);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn direct_terminal_replies_finish_without_observation() {
+        use signal_flow::{
+            HarnessKind, NativeReceipt, SendFailure, SendFailureReason, SendReceipt,
+        };
+        use std::os::unix::net::UnixListener;
+
+        for (id, response, expected_error) in [
+            (
+                20,
+                Response::Sent(SendReceipt {
+                    logical_delivery_id: "sent-1".into(),
+                    native_receipt: NativeReceipt {
+                        harness_kind: HarnessKind::Claude,
+                        native_session_id: "session-1".into(),
+                        native_prompt_id: "prompt-1".into(),
+                    },
+                }),
+                false,
+            ),
+            (
+                21,
+                Response::Failed(SendFailure {
+                    logical_delivery_id_option: Some("failed-1".into()),
+                    send_failure_reason: SendFailureReason::ReceiptUncertain,
+                }),
+                true,
+            ),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let socket = directory.path().join("message.sock");
+            let listener = UnixListener::bind(&socket).unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut peer, _) = listener.accept().unwrap();
+                let mut length = [0; 4];
+                peer.read_exact(&mut length).unwrap();
+                let mut query = vec![0; u32::from_be_bytes(length) as usize];
+                peer.read_exact(&mut query).unwrap();
+                let _: Query = rkyv::from_bytes::<Query, rkyv::rancor::Error>(&query).unwrap();
+                write_frame(&mut peer, &response);
+            });
+            let call = json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":format!("progress-{id}")}}});
+            let (mut input_writer, input_reader) = UnixStream::pair().unwrap();
+            let output_state = Arc::new((Mutex::new(Vec::new()), std::sync::Condvar::new()));
+            let output: Arc<Mutex<Box<dyn Write + Send>>> =
+                Arc::new(Mutex::new(Box::new(SharedOutput(output_state.clone()))));
+            let runner = std::thread::spawn(move || {
+                Sender {
+                    socket: socket.to_string_lossy().into_owned(),
+                }
+                .run(io::BufReader::new(input_reader), output)
+            });
+            writeln!(
+                input_writer,
+                "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}}"
+            )
+            .unwrap();
+            writeln!(
+                input_writer,
+                "{{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}}"
+            )
+            .unwrap();
+            writeln!(input_writer, "{call}").unwrap();
+            let output_text = wait_for_id(&output_state, json!(id));
+            assert_eq!(final_count(&output_text, json!(id)), 1);
+            let final_response = output_text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .find(|message| message.get("id") == Some(&json!(id)))
+                .unwrap();
+            assert_eq!(
+                final_response.pointer("/result/isError"),
+                Some(&json!(expected_error))
+            );
+            drop(input_writer);
+            assert_eq!(runner.join().unwrap(), ExitCode::SUCCESS);
+            server.join().unwrap();
+        }
     }
 
     #[test]

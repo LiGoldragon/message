@@ -247,3 +247,10 @@ repository has ever contained forwarding code; `Query::Submit` writes the
 local ledger and answers `SubmissionAccepted`, and `Query::SubmitStamped`
 answers `MessageRequestUnimplemented(NotInPrototypeScope)`. Do not expect a
 deployed daemon to feed a router.
+
+## 0.20.3 → 0.20.4 — terminal direct Send replies
+
+Message now forwards Flow's terminal `Sent` and `Failed` replies for abrupt Wake
+without opening a delivery observation stream. Durable Queue admission and its
+sender observation stream are unchanged. Pins signal-message 19.0.0,
+meta-signal-message 0.18.0, signal-flow 29.0.0 and meta-signal-flow 38.0.0.

@@ -1,13 +1,14 @@
 //! Executes the two Message requests over its typed memory and Flow edge.
 
 use crate::{
-    flow_edge::{CallsFlow, EdgeFailure, FlowSubscription},
+    flow_edge::{CallsFlow, DeliveryReply, EdgeFailure, FlowSubscription},
     nexus::{HoldsNexusState, MessageNexus},
     store::{ChangesConfiguration, KeepsStandard, StoreError},
 };
 use message_library::Configuration;
 use signal_flow::{
-    DeliveryCursor, Process, Refusal, SendAcceptance, SendRequest, Unknown_Data as FlowUnknown,
+    DeliveryCursor, Process, Refusal, SendAcceptance, SendFailure, SendReceipt, SendRequest,
+    Unknown_Data as FlowUnknown,
 };
 use signal_message::{Query, Response, SendRefusal, Unknown_Data as MessageUnknown};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -50,7 +51,7 @@ pub trait ServesMessages {
         process: Process,
         request: SendRequest,
         thread: Option<String>,
-    ) -> Result<AcceptedSend, Box<Response>>;
+    ) -> Result<SendAnswer, Box<Response>>;
     fn observe_sends(
         &self,
         process: Process,
@@ -59,9 +60,13 @@ pub trait ServesMessages {
     ) -> Result<FlowSubscription, Box<Response>>;
 }
 
-pub struct AcceptedSend {
-    pub acceptance: SendAcceptance,
-    pub subscription: Result<FlowSubscription, Box<Response>>,
+pub enum SendAnswer {
+    Accepted {
+        acceptance: SendAcceptance,
+        subscription: Result<FlowSubscription, Box<Response>>,
+    },
+    Sent(SendReceipt),
+    Failed(SendFailure),
 }
 
 impl ServesMessages for MessageNexus {
@@ -85,7 +90,7 @@ impl ServesMessages for MessageNexus {
         process: Process,
         request: SendRequest,
         thread: Option<String>,
-    ) -> Result<AcceptedSend, Box<Response>> {
+    ) -> Result<SendAnswer, Box<Response>> {
         let edge = match self.flow_edge() {
             Ok(edge) => edge,
             Err(error) => {
@@ -109,8 +114,8 @@ impl ServesMessages for MessageNexus {
         if SystemTime::now().unix_seconds() >= lock.until {
             return Err(Box::new(Response::Refused(SendRefusal::Lapsed)));
         }
-        let acceptance = match edge.deliver(lock.clone(), request) {
-            Ok(acceptance) => acceptance,
+        let delivery = match edge.deliver(lock.clone(), request) {
+            Ok(delivery) => delivery,
             Err(
                 failure
                 @ (EdgeFailure::Unreachable | EdgeFailure::Broken | EdgeFailure::Unexpected),
@@ -122,20 +127,26 @@ impl ServesMessages for MessageNexus {
                 return Err(Box::new(Response::Refused(failure.for_message())));
             }
         };
-        let subscription = edge
-            .observe_sender(process, thread, Some(acceptance.delivery_cursor))
-            .map_err(|failure| {
-                Box::new(Response::ObservationInterrupted(
-                    signal_message::ObservationInterrupted_Data {
-                        delivery_cursor_option: Some(acceptance.delivery_cursor),
-                        string: format!("Flow subscription could not open: {failure:?}"),
-                    },
-                ))
-            });
-        Ok(AcceptedSend {
-            acceptance,
-            subscription,
-        })
+        match delivery {
+            DeliveryReply::Sent(receipt) => Ok(SendAnswer::Sent(receipt)),
+            DeliveryReply::Failed(failure) => Ok(SendAnswer::Failed(failure)),
+            DeliveryReply::Accepted(acceptance) => {
+                let subscription = edge
+                    .observe_sender(process, thread, Some(acceptance.delivery_cursor))
+                    .map_err(|failure| {
+                        Box::new(Response::ObservationInterrupted(
+                            signal_message::ObservationInterrupted_Data {
+                                delivery_cursor_option: Some(acceptance.delivery_cursor),
+                                string: format!("Flow subscription could not open: {failure:?}"),
+                            },
+                        ))
+                    });
+                Ok(SendAnswer::Accepted {
+                    acceptance,
+                    subscription,
+                })
+            }
+        }
     }
 
     fn observe_sends(

@@ -3,8 +3,8 @@
 use crate::frame::FramedStream;
 use signal_flow::{
     Address, Bind_Data, Deliver_Data, DeliveryCursor, FlowId, IdentifyThread_Data, Lock, Lock_Data,
-    ObserveSender_Data, Process, Query, Recipient, Refusal, Response, SendAcceptance, SendRequest,
-    Sender,
+    ObserveSender_Data, Process, Query, Recipient, Refusal, Response, SendAcceptance, SendFailure,
+    SendReceipt, SendRequest, Sender,
 };
 use std::os::unix::net::UnixStream;
 
@@ -22,6 +22,12 @@ pub struct FlowEdge {
 
 pub struct FlowSubscription {
     stream: UnixStream,
+}
+
+pub enum DeliveryReply {
+    Accepted(SendAcceptance),
+    Sent(SendReceipt),
+    Failed(SendFailure),
 }
 
 pub trait ReadsFlowSubscription {
@@ -74,7 +80,7 @@ pub trait CallsFlow {
         native_session_id: String,
     ) -> Result<Address, EdgeFailure>;
     fn lock(&self, sender: Sender, recipient: Recipient) -> Result<Lock, EdgeFailure>;
-    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<SendAcceptance, EdgeFailure>;
+    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<DeliveryReply, EdgeFailure>;
     fn observe_sender(
         &self,
         process: Process,
@@ -124,13 +130,15 @@ impl CallsFlow for FlowEdge {
         }
     }
 
-    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<SendAcceptance, EdgeFailure> {
+    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<DeliveryReply, EdgeFailure> {
         match self.exchange(&Query::Deliver(Deliver_Data {
             lock,
             delivery: request.delivery,
             message: request.message,
         }))? {
-            Response::SendAccepted(acceptance) => Ok(acceptance),
+            Response::SendAccepted(acceptance) => Ok(DeliveryReply::Accepted(acceptance)),
+            Response::Sent(receipt) => Ok(DeliveryReply::Sent(receipt)),
+            Response::Failed(failure) => Ok(DeliveryReply::Failed(failure)),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
         }
@@ -164,5 +172,74 @@ impl CallsFlow for FlowEdge {
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CallsFlow, DeliveryReply, FlowEdge};
+    use crate::frame::FramedStream;
+    use signal_flow::{
+        Address, Aspect, Delivery, HarnessKind, Layer, Lock, Message, NativeReceipt, Recipient,
+        Request, Response, SendFailure, SendFailureReason, SendReceipt, SendRequest,
+    };
+    use std::os::unix::net::UnixListener;
+
+    fn delivery(response: Response) -> DeliveryReply {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("flow.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut peer, _) = listener.accept().unwrap();
+            let _: signal_flow::Query = peer.read_frame().unwrap();
+            peer.write_frame(&response).unwrap();
+        });
+        let address = Address {
+            aspect: Aspect::Mind,
+            topic: "core".into(),
+            layer: Layer::Secondary,
+        };
+        let reply = FlowEdge {
+            socket_path: socket.to_string_lossy().into_owned(),
+        }
+        .deliver(
+            Lock {
+                sender: address.clone(),
+                address: address.clone(),
+                until: i64::MAX,
+            },
+            SendRequest {
+                recipient: Recipient::Address(address),
+                delivery: Delivery::Wake,
+                message: Message::MiddleAbrupt(Request::Question("whole body".into())),
+            },
+        )
+        .unwrap();
+        server.join().unwrap();
+        reply
+    }
+
+    #[test]
+    fn terminal_flow_delivery_replies_remain_terminal() {
+        let receipt = SendReceipt {
+            logical_delivery_id: "logical-1".into(),
+            native_receipt: NativeReceipt {
+                harness_kind: HarnessKind::Claude,
+                native_session_id: "session-1".into(),
+                native_prompt_id: "prompt-1".into(),
+            },
+        };
+        assert!(matches!(
+            delivery(Response::Sent(receipt.clone())),
+            DeliveryReply::Sent(observed) if observed == receipt
+        ));
+        let failure = SendFailure {
+            logical_delivery_id_option: Some("logical-2".into()),
+            send_failure_reason: SendFailureReason::ReceiptUncertain,
+        };
+        assert!(matches!(
+            delivery(Response::Failed(failure.clone())),
+            DeliveryReply::Failed(observed) if observed == failure
+        ));
     }
 }
