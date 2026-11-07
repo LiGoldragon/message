@@ -35,6 +35,7 @@ struct State {
     delivery_cursor: i64,
     unavailable_delivery_observations: usize,
     fault: Option<FaultBoundary>,
+    withheld_delivery_answers: usize,
 }
 
 #[derive(Clone)]
@@ -46,6 +47,8 @@ pub struct FakeFlow {
     delivery_observed: Arc<(Mutex<usize>, Condvar)>,
     fault_reached: Arc<(Mutex<bool>, Condvar)>,
     acknowledgements_changed: Arc<(Mutex<usize>, Condvar)>,
+    delivery_answers_withheld: Arc<(Mutex<usize>, Condvar)>,
+    delivery_changes_sent: Arc<(Mutex<usize>, Condvar)>,
 }
 
 impl FakeFlow {
@@ -70,6 +73,8 @@ impl FakeFlow {
             delivery_observed: Arc::new((Mutex::new(0), Condvar::new())),
             fault_reached: Arc::new((Mutex::new(false), Condvar::new())),
             acknowledgements_changed: Arc::new((Mutex::new(0), Condvar::new())),
+            delivery_answers_withheld: Arc::new((Mutex::new(0), Condvar::new())),
+            delivery_changes_sent: Arc::new((Mutex::new(0), Condvar::new())),
         };
         let accepting = flow.clone();
         std::thread::spawn(move || {
@@ -140,6 +145,33 @@ impl FakeFlow {
             *count >= expected,
             "Message did not acknowledge its durable ledger"
         );
+        assert!(!timeout.timed_out() || *count >= expected);
+    }
+
+    pub fn withhold_delivery_answers(&self, count: usize) {
+        self.state.lock().unwrap().withheld_delivery_answers = count;
+    }
+
+    pub fn wait_for_withheld_delivery_answers(&self, expected: usize) {
+        let (count, changed) = &*self.delivery_answers_withheld;
+        let count = count.lock().unwrap();
+        let (count, timeout) = changed
+            .wait_timeout_while(count, Duration::from_secs(8), |count| *count < expected)
+            .unwrap();
+        assert!(
+            *count >= expected,
+            "Message did not reach the withheld admission answer"
+        );
+        assert!(!timeout.timed_out() || *count >= expected);
+    }
+
+    pub fn wait_for_delivery_changes(&self, expected: usize) {
+        let (count, changed) = &*self.delivery_changes_sent;
+        let count = count.lock().unwrap();
+        let (count, timeout) = changed
+            .wait_timeout_while(count, Duration::from_secs(5), |count| *count < expected)
+            .unwrap();
+        assert!(*count >= expected, "Flow did not write the delivery change");
         assert!(!timeout.timed_out() || *count >= expected);
     }
 
@@ -237,6 +269,7 @@ impl FakeFlow {
         let mut ledger_before_acknowledge = false;
         let mut hold_before_cursor = false;
         let mut held_reconnect = false;
+        let mut withhold_delivery_answer = false;
         let response = match query {
             Query::Bind(Bind_Data { address, process }) => {
                 self.state.lock().unwrap().bound.push((address, process));
@@ -280,6 +313,10 @@ impl FakeFlow {
                 };
                 let mut state = self.state.lock().unwrap();
                 state.delivery_attempts.push(key.clone());
+                if state.withheld_delivery_answers > 0 {
+                    state.withheld_delivery_answers -= 1;
+                    withhold_delivery_answer = true;
+                }
                 let acceptance = VisibleSendAcceptance {
                     request_id: "fake-request".into(),
                     delivery_cursor: 1,
@@ -381,6 +418,14 @@ impl FakeFlow {
         if answer_before_ledger || ledger_before_acknowledge || held_reconnect {
             self.stop_message_and_signal();
         }
+        if withhold_delivery_answer {
+            let (count, changed) = &*self.delivery_answers_withheld;
+            *count.lock().unwrap() += 1;
+            changed.notify_all();
+            let mut byte = [0; 1];
+            let _ = stream.read(&mut byte);
+            return;
+        }
         let _ = stream.write_frame(&response);
         if register_delivery_observer {
             self.state.lock().unwrap().delivery_observer = stream.try_clone().ok();
@@ -389,6 +434,9 @@ impl FakeFlow {
             && let Some(observer) = self.state.lock().unwrap().delivery_observer.as_mut()
         {
             let _ = observer.write_frame(&Response::SendChanged(snapshot));
+            let (count, changed) = &*self.delivery_changes_sent;
+            *count.lock().unwrap() += 1;
+            changed.notify_all();
         }
         if observing_deliveries || (observing_sender && self.quiet_observer) {
             let mut byte = [0; 1];

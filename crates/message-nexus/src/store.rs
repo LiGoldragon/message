@@ -10,6 +10,8 @@ use sema_engine::{
     RecordKey, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
 };
 use std::path::Path;
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const STANDARD_TABLE: TableName = TableName::new("message_nexus_standard");
 const STANDARD_KEY: &str = "standard";
@@ -28,6 +30,9 @@ pub enum StoreError {
     StateInvariant,
     #[error("cannot mint the Message Memory namespace: {0}")]
     Namespace(String),
+    #[cfg(test)]
+    #[error("injected request-tracking replacement failure")]
+    InjectedTrackingReplacement,
 }
 
 impl EngineRecord for Standard {
@@ -46,6 +51,8 @@ pub struct MessageStore {
     engine: Engine,
     standard: TableReference<Standard>,
     request_tracking: TableReference<DurableRequestTracking>,
+    #[cfg(test)]
+    fail_tracking_replacement: AtomicBool,
 }
 
 pub trait KeepsStandard {
@@ -60,6 +67,11 @@ pub trait KeepsRequestTracking {
 
 pub trait OpensStore: Sized {
     fn open(path: &Path, seed: Standard) -> Result<Self, StoreError>;
+}
+
+#[cfg(test)]
+pub(crate) trait InjectsTrackingFailure {
+    fn fail_next_tracking_replacement(&self);
 }
 
 trait ReadsRows {
@@ -91,6 +103,8 @@ impl OpensStore for MessageStore {
             engine,
             standard,
             request_tracking,
+            #[cfg(test)]
+            fail_tracking_replacement: AtomicBool::new(false),
         };
         if store.standards()?.is_empty() {
             store.engine.assert_keyed(KeyedAssertion::new(
@@ -165,12 +179,24 @@ impl KeepsRequestTracking for MessageStore {
     }
 
     fn replace_request_tracking(&self, tracking: DurableRequestTracking) -> Result<(), StoreError> {
+        #[cfg(test)]
+        if self.fail_tracking_replacement.swap(false, Ordering::AcqRel) {
+            return Err(StoreError::InjectedTrackingReplacement);
+        }
         self.engine.mutate_keyed(KeyedMutation::new(
             self.request_tracking,
             RecordKey::new(REQUEST_TRACKING_KEY),
             tracking,
         ))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl InjectsTrackingFailure for MessageStore {
+    fn fail_next_tracking_replacement(&self) {
+        self.fail_tracking_replacement
+            .store(true, Ordering::Release);
     }
 }
 
@@ -354,6 +380,7 @@ impl RecognizesStore for MessageStore {
 #[cfg(test)]
 mod recognition_tests {
     use super::*;
+    use crate::request_tracking::{ClassifiesOrdered, OrderedClassifier, TracksRequests};
     fn seed() -> Standard {
         Standard {
             configuration: Configuration {
@@ -396,6 +423,66 @@ mod recognition_tests {
         let first = store_namespace(&one_path);
         assert_eq!(store_namespace(&one_path), first);
         assert_ne!(store_namespace(&two_path), first);
+    }
+
+    #[test]
+    fn failed_effect_replacement_replays_before_the_cursor_can_advance() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("message.sema");
+        let store = MessageStore::open(&path, seed()).unwrap();
+        let mut tracking = store.request_tracking().unwrap();
+        tracking.observe_store("flow-store".into());
+        store.replace_request_tracking(tracking).unwrap();
+        let address = signal_flow::Address {
+            aspect: signal_flow::Aspect::Mind,
+            topic: "flow".into(),
+            model: signal_flow::Model::Sol,
+        };
+        let snapshot = signal_flow::VisibleDeliverySnapshot {
+            request_id: "outside".into(),
+            delivery_cursor: 1,
+            visible_sender: signal_flow::VisibleSender::Sender(address.clone()),
+            address,
+            visible_delivery_state: signal_flow::VisibleDeliveryState::Delivered,
+        };
+        let mut classifier = OrderedClassifier::default();
+        classifier.push(snapshot.clone());
+        let write = classifier
+            .next_ready(&store.request_tracking().unwrap(), 1)
+            .unwrap()
+            .unwrap();
+        store.fail_next_tracking_replacement();
+        assert!(matches!(
+            store.replace_request_tracking(write),
+            Err(StoreError::InjectedTrackingReplacement)
+        ));
+        assert_eq!(classifier.held_len(), 1);
+        let unchanged = store.request_tracking().unwrap();
+        assert!(unchanged.classified_events.is_empty());
+        assert_eq!(unchanged.observation_cursor, None);
+        drop(store);
+
+        let reopened = MessageStore::open(&path, seed()).unwrap();
+        let mut replay = OrderedClassifier::default();
+        replay.push(snapshot);
+        let write = replay
+            .next_ready(&reopened.request_tracking().unwrap(), 1)
+            .unwrap()
+            .unwrap();
+        reopened.replace_request_tracking(write).unwrap();
+        replay.commit_front();
+        let mut committed = reopened.request_tracking().unwrap();
+        committed.advance_cursor(1).unwrap();
+        reopened.replace_request_tracking(committed).unwrap();
+        drop(reopened);
+
+        let verified = MessageStore::open(&path, seed())
+            .unwrap()
+            .request_tracking()
+            .unwrap();
+        assert_eq!(verified.observation_cursor, Some(1));
+        assert_eq!(verified.classified_events.len(), 1);
+        assert_eq!(verified.classified_events[0].delivery_cursor, 1);
     }
     #[test]
     fn foreign_and_legacy_occupants_are_refused_without_changing_bytes() {

@@ -103,15 +103,23 @@ impl NexusProcess {
         )
     }
 
-    pub fn stop_gracefully(mut self) {
+    pub fn stop_gracefully(self) {
+        self.stop_gracefully_for_reopen();
+    }
+
+    pub fn stop_gracefully_for_reopen(mut self) -> (tempfile::TempDir, tempfile::TempDir) {
         // SAFETY: the pid belongs to this child and the signal is the Nexus's
         // documented shutdown signal, handled by its signalfd loop.
         let _ = unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
         let _ = self.child.wait();
         let _ = std::fs::remove_file(self.ordinary_socket());
         let _ = std::fs::remove_file(self.meta_socket());
-        self.home.take();
-        self.runtime.take();
+        (
+            self.home.take().expect("home held until graceful stop"),
+            self.runtime
+                .take()
+                .expect("runtime held until graceful stop"),
+        )
     }
 }
 

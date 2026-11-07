@@ -32,6 +32,13 @@ pub struct FlowSubscription {
     stream: UnixStream,
 }
 
+#[cfg(test)]
+impl FlowSubscription {
+    pub(crate) fn from_test_stream(stream: UnixStream) -> Self {
+        Self { stream }
+    }
+}
+
 pub trait ReadsFlowSubscription {
     fn next(&mut self) -> Result<Response, EdgeFailure>;
     fn interrupt_handle(&self) -> Result<UnixStream, EdgeFailure>;
@@ -62,18 +69,11 @@ impl ExchangesWithFlow for FlowEdge {
     fn exchange(&self, query: &Query) -> Result<Response, EdgeFailure> {
         let mut stream =
             UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
-        // Bound an unavailable peer so shutdown can join an in-flight handler.
-        // A timeout is a failed exchange, never permission to replay a delivery.
+        // Every one-answer exchange is bounded so shutdown can join its worker.
+        // Deliver answers admission; later delivery fate belongs to observation.
         let timeout = Some(FLOW_RESPONSE_TIMEOUT);
-        let read_timeout = if matches!(query, Query::Deliver(delivery)
-            if !matches!(delivery.sendable_message, signal_flow::SendableMessage::Soft(_)))
-        {
-            None
-        } else {
-            timeout
-        };
         stream
-            .set_read_timeout(read_timeout)
+            .set_read_timeout(timeout)
             .map_err(|_| EdgeFailure::Broken)?;
         stream
             .set_write_timeout(timeout)

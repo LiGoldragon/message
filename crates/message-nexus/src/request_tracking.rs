@@ -374,6 +374,13 @@ impl<S> Default for OrderedClassifier<S> {
 pub(crate) trait ClassifiesOrdered<S> {
     fn push(&mut self, snapshot: S);
     fn held_len(&self) -> usize;
+    fn next_ready<Request: Clone>(
+        &self,
+        durable: &RequestTracking<Request>,
+        read_highwater: i64,
+    ) -> Result<Option<RequestTracking<Request>>, TrackingError>;
+    fn commit_front(&mut self);
+    #[cfg(test)]
     fn classify_ready<Request: Clone>(
         &mut self,
         durable: &RequestTracking<Request>,
@@ -390,8 +397,47 @@ impl<S: SenderSnapshot> ClassifiesOrdered<S> for OrderedClassifier<S> {
         self.held.len()
     }
 
+    fn next_ready<Request: Clone>(
+        &self,
+        durable: &RequestTracking<Request>,
+        read_highwater: i64,
+    ) -> Result<Option<RequestTracking<Request>>, TrackingError> {
+        let Some(snapshot) = self.held.front() else {
+            return Ok(None);
+        };
+        let known_archive_boundary = durable.candidate_index(snapshot.request_id()).map(|index| {
+            let acceptance = durable.ledger[index].acceptance_cursor;
+            self.held
+                .iter()
+                .filter(|event| {
+                    event.request_id() == snapshot.request_id()
+                        && event.is_archived()
+                        && event.delivery_cursor() < acceptance
+                })
+                .map(|event| event.delivery_cursor())
+                .chain(std::iter::once(
+                    durable.last_archive_before(snapshot.request_id(), acceptance),
+                ))
+                .max()
+                .unwrap_or(0)
+        });
+        match durable.decision(snapshot, read_highwater, known_archive_boundary) {
+            Decision::Hold => Ok(None),
+            Decision::Classify(classification, retirement) => Ok(Some(durable.committed(
+                snapshot,
+                classification,
+                retirement,
+            )?)),
+        }
+    }
+
+    fn commit_front(&mut self) {
+        self.held.pop_front();
+    }
+
     /// Returns successive whole durable values. The caller durably replaces
     /// the preceding value before performing the next transition.
+    #[cfg(test)]
     fn classify_ready<Request: Clone>(
         &mut self,
         durable: &RequestTracking<Request>,

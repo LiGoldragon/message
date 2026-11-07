@@ -82,8 +82,16 @@ impl ListensOnSockets for MessageNexus {
                     .delivery_consumer
                     .accept_snapshot(&store, snapshot)
                 {
-                    eprintln!("message-nexus: delivery consumer: {error}");
-                    break;
+                    eprintln!("message-nexus: delivery consumer persistence: {error}");
+                    while delivery_nexus.delivery_consumer.wait_to_reconnect() {
+                        let store = delivery_nexus.store();
+                        match delivery_nexus.delivery_consumer.reclassify(&store) {
+                            Ok(()) => break,
+                            Err(error) => eprintln!(
+                                "message-nexus: delivery consumer persistence retry: {error}"
+                            ),
+                        }
+                    }
                 }
             }
         });

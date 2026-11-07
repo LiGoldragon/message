@@ -305,12 +305,16 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
             .classifier
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let tracking = store.request_tracking()?;
-        let writes = classifier
-            .classify_ready(&tracking, highwater)
-            .map_err(DeliveryConsumerError::Tracking)?;
-        for write in writes {
+        loop {
+            let tracking = store.request_tracking()?;
+            let Some(write) = classifier
+                .next_ready(&tracking, highwater)
+                .map_err(DeliveryConsumerError::Tracking)?
+            else {
+                break;
+            };
             store.replace_request_tracking(write)?;
+            classifier.commit_front();
         }
         if classifier.held_len() == 0 {
             let mut tracking = store.request_tracking()?;
@@ -365,5 +369,87 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
             let _ = edge.acknowledge(acknowledgements);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        flow_edge::FlowSubscription,
+        generated::memory::Standard,
+        message_library::Configuration,
+        store::{InjectsTrackingFailure, OpensStore},
+    };
+    use signal_flow::{Address, Aspect, Model, VisibleDeliveryState, VisibleSender};
+
+    fn seed() -> Standard {
+        Standard {
+            configuration: Configuration {
+                ordinary: "/run/message.sock".into(),
+                meta: "/run/message-meta.sock".into(),
+                flow: "/run/flow.sock".into(),
+            },
+            meta_configured: false,
+        }
+    }
+
+    fn consumer() -> DeliveryConsumer {
+        let (stream, peer) = UnixStream::pair().unwrap();
+        let interrupt = stream.try_clone().unwrap();
+        drop(peer);
+        DeliveryConsumer {
+            subscription: Mutex::new(FlowSubscription::from_test_stream(stream)),
+            interrupt: Mutex::new(interrupt),
+            classifier: Mutex::new(OrderedClassifier::default()),
+            read_highwater: Mutex::new(0),
+            stopping: AtomicBool::new(false),
+            reconnect_wait: Mutex::new(()),
+            reconnect_wake: Condvar::new(),
+        }
+    }
+
+    #[test]
+    fn failed_live_effect_write_is_reclassified_before_cursor_and_survives_reopen() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("message.sema");
+        let store = MessageStore::open(&path, seed()).unwrap();
+        let mut tracking = store.request_tracking().unwrap();
+        tracking.observe_store("flow-store".into());
+        store.replace_request_tracking(tracking).unwrap();
+        let address = Address {
+            aspect: Aspect::Mind,
+            topic: "flow".into(),
+            model: Model::Sol,
+        };
+        let snapshot = VisibleDeliverySnapshot {
+            request_id: "outside".into(),
+            delivery_cursor: 1,
+            visible_sender: VisibleSender::Sender(address.clone()),
+            address,
+            visible_delivery_state: VisibleDeliveryState::Delivered,
+        };
+        let consumer = consumer();
+
+        store.fail_next_tracking_replacement();
+        assert!(matches!(
+            consumer.apply_snapshot(&store, snapshot),
+            Err(DeliveryConsumerError::Store(
+                StoreError::InjectedTrackingReplacement
+            ))
+        ));
+        assert_eq!(consumer.classifier.lock().unwrap().held_len(), 1);
+        let unchanged = store.request_tracking().unwrap();
+        assert!(unchanged.classified_events.is_empty());
+        assert_eq!(unchanged.observation_cursor, None);
+
+        consumer.reclassify(&store).unwrap();
+        assert_eq!(consumer.classifier.lock().unwrap().held_len(), 0);
+        drop(store);
+        let reopened = MessageStore::open(&path, seed()).unwrap();
+        let committed = reopened.request_tracking().unwrap();
+        assert_eq!(committed.observation_cursor, Some(1));
+        assert_eq!(committed.classified_events.len(), 1);
+        assert_eq!(committed.classified_events[0].delivery_cursor, 1);
     }
 }

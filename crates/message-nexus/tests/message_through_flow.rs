@@ -83,7 +83,9 @@ fn read_tracking(
         },
     )
     .unwrap();
-    store.request_tracking().unwrap()
+    let tracking = store.request_tracking().unwrap();
+    drop(store);
+    tracking
 }
 
 #[test]
@@ -143,6 +145,13 @@ fn message_consumes_its_live_delivery_stream_and_reopens_the_durable_cursor() {
         Response::SendAccepted(_)
     ));
     assert_eq!(flow.acknowledged().len(), 1);
+    flow.wait_for_delivery_changes(1);
+    flow.interrupt_delivery_observer();
+    assert_eq!(
+        flow.wait_for_delivery_observations(5),
+        vec![None, Some(0), Some(0), Some(0), Some(2)],
+        "a reconnect observes the cursor only after the live change is durably classified"
+    );
 
     let (home, runtime) = nexus.stop();
     let defaults = DefaultConfiguration {
@@ -169,8 +178,8 @@ fn message_consumes_its_live_delivery_stream_and_reopens_the_durable_cursor() {
 
     let reopened = NexusProcess::start(home, runtime);
     assert_eq!(
-        flow.wait_for_delivery_observations(5),
-        vec![None, Some(0), Some(0), Some(0), Some(2)],
+        flow.wait_for_delivery_observations(6),
+        vec![None, Some(0), Some(0), Some(0), Some(2), Some(2)],
         "a process reopen resumes the same Flow store at the committed cursor"
     );
     reopened.stop_gracefully();
@@ -187,6 +196,35 @@ fn shutdown_interrupts_the_bounded_reconnect_wait() {
     flow.interrupt_delivery_observer();
     assert_eq!(flow.wait_for_delivery_observations(2), vec![None, Some(0)]);
     nexus.stop_gracefully();
+}
+
+#[test]
+fn withheld_replay_admission_is_bounded_across_shutdown_and_restart() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    flow.withhold_delivery_answers(2);
+    let stream = begin_send(&nexus, "withheld admission answer");
+    flow.wait_for_withheld_delivery_answers(1);
+    flow.interrupt_delivery_observer();
+    flow.wait_for_withheld_delivery_answers(2);
+
+    let (home, runtime) = nexus.stop_gracefully_for_reopen();
+    drop(stream);
+    let interrupted = read_tracking(&home, &runtime);
+    assert_eq!(interrupted.pending.len(), 1);
+    assert!(interrupted.ledger.is_empty());
+
+    let reopened = NexusProcess::start(home, runtime);
+    flow.wait_for_acknowledgements(1);
+    let attempts = flow.delivery_attempts();
+    assert_eq!(attempts.len(), 3);
+    assert!(attempts.iter().all(|key| key == &attempts[0]));
+    assert_eq!(flow.typed().len(), 1);
+    let tracking = tracking_after_stop(reopened);
+    assert_eq!(tracking.observation_cursor, Some(2));
+    assert_eq!(tracking.classified_events.len(), 1);
 }
 
 #[test]
@@ -300,6 +338,13 @@ fn flow_archive_before_message_retirement_retires_once_on_reopen() {
         Response::SendAccepted(_)
     ));
     flow.wait_for_acknowledgements(1);
+    flow.wait_for_delivery_changes(1);
+    flow.interrupt_delivery_observer();
+    assert_eq!(
+        flow.wait_for_delivery_observations(2),
+        vec![None, Some(2)],
+        "the classified delivery cursor is durable before archive"
+    );
     flow.archive_and_stop_before_message_retirement();
     flow.wait_for_fault();
     let (home, runtime) = nexus.stop();
@@ -309,8 +354,8 @@ fn flow_archive_before_message_retirement_retires_once_on_reopen() {
 
     let reopened = NexusProcess::start(home, runtime);
     assert_eq!(
-        flow.wait_for_delivery_observations(2),
-        vec![None, Some(2)],
+        flow.wait_for_delivery_observations(3),
+        vec![None, Some(2), Some(2)],
         "Archived is replayed strictly after Message's committed cursor"
     );
     let tracking = tracking_after_stop(reopened);
