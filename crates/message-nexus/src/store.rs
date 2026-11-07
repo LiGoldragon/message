@@ -1,7 +1,9 @@
 //! Message's configuration and first-configuration state.
 
 use crate::{
-    generated::memory::Standard, message_library::Configuration, request_tracking::RequestTracking,
+    generated::memory::Standard,
+    message_library::Configuration,
+    request_tracking::{MakesRequestTracking, RequestTracking},
 };
 use sema_engine::{
     Engine, EngineOpen, EngineRecord, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan,

@@ -68,8 +68,47 @@ pub enum TrackingError {
     ObservationOutOfOrder,
 }
 
-impl<Request> RequestTracking<Request> {
-    pub fn new(namespace: Namespace) -> Self {
+pub trait MakesRequestTracking<Request> {
+    fn new(namespace: Namespace) -> Self;
+}
+
+pub trait TracksRequests<Request> {
+    fn queue_deliver(
+        &mut self,
+        request: impl FnOnce(&DeliverKey) -> Request,
+    ) -> Result<DeliverKey, TrackingError>;
+    fn record_acceptance(
+        &mut self,
+        deliver_key: &DeliverKey,
+        request_id: String,
+        acceptance_cursor: i64,
+    ) -> Result<(), TrackingError>;
+    fn record_refusal(&mut self, deliver_key: &DeliverKey) -> Result<(), TrackingError>;
+    fn pending_deliver_keys(&self) -> Vec<DeliverKey>;
+    fn acknowledgement_keys(&self) -> Vec<DeliverKey>;
+    fn opening_cursor(&self) -> Result<Option<i64>, TrackingError>;
+    fn observe_store(&mut self, identity: String);
+    fn highest_acceptance_cursor(&self) -> Option<i64>;
+    fn candidate_index(&self, request_id: &str) -> Option<usize>;
+    fn last_archive_before(&self, request_id: &str, cursor: i64) -> i64;
+    fn decision<S: SenderSnapshot>(
+        &self,
+        snapshot: &S,
+        read_highwater: i64,
+        known_archive_boundary: Option<i64>,
+    ) -> Decision;
+    fn committed<S: SenderSnapshot>(
+        &self,
+        snapshot: &S,
+        classification: Classification,
+        retire: Option<usize>,
+    ) -> Result<Self, TrackingError>
+    where
+        Self: Sized;
+}
+
+impl<Request> MakesRequestTracking<Request> for RequestTracking<Request> {
+    fn new(namespace: Namespace) -> Self {
         Self {
             namespace,
             next_counter: 0,
@@ -83,9 +122,9 @@ impl<Request> RequestTracking<Request> {
     }
 }
 
-impl<Request: Clone> RequestTracking<Request> {
+impl<Request: Clone> TracksRequests<Request> for RequestTracking<Request> {
     /// The store write which precedes sending `Deliver`.
-    pub fn queue_deliver(
+    fn queue_deliver(
         &mut self,
         request: impl FnOnce(&DeliverKey) -> Request,
     ) -> Result<DeliverKey, TrackingError> {
@@ -107,7 +146,7 @@ impl<Request: Clone> RequestTracking<Request> {
     }
 
     /// The store write which must precede `Acknowledge`.
-    pub fn record_acceptance(
+    fn record_acceptance(
         &mut self,
         deliver_key: &DeliverKey,
         request_id: String,
@@ -137,7 +176,7 @@ impl<Request: Clone> RequestTracking<Request> {
         Ok(())
     }
 
-    pub fn record_refusal(&mut self, deliver_key: &DeliverKey) -> Result<(), TrackingError> {
+    fn record_refusal(&mut self, deliver_key: &DeliverKey) -> Result<(), TrackingError> {
         let entry = self
             .outbox
             .iter_mut()
@@ -148,18 +187,18 @@ impl<Request: Clone> RequestTracking<Request> {
         Ok(())
     }
 
-    pub fn pending_deliver_keys(&self) -> Vec<DeliverKey> {
+    fn pending_deliver_keys(&self) -> Vec<DeliverKey> {
         self.pending.clone()
     }
 
-    pub fn acknowledgement_keys(&self) -> Vec<DeliverKey> {
+    fn acknowledgement_keys(&self) -> Vec<DeliverKey> {
         self.ledger
             .iter()
             .map(|entry| entry.deliver_key.clone())
             .collect()
     }
 
-    pub fn opening_cursor(&self) -> Result<Option<i64>, TrackingError> {
+    fn opening_cursor(&self) -> Result<Option<i64>, TrackingError> {
         if self.observation_cursor.is_none()
             && (!self.pending.is_empty() || self.ledger.iter().any(|entry| !entry.retired))
         {
@@ -169,7 +208,7 @@ impl<Request: Clone> RequestTracking<Request> {
     }
 
     /// Applies the identity from the opening observation.
-    pub fn observe_store(&mut self, identity: String) {
+    fn observe_store(&mut self, identity: String) {
         if self
             .store_identity
             .as_ref()
@@ -303,18 +342,28 @@ impl<S> Default for OrderedClassifier<S> {
     }
 }
 
-impl<S: SenderSnapshot> OrderedClassifier<S> {
-    pub fn push(&mut self, snapshot: S) {
+pub trait ClassifiesOrdered<S> {
+    fn push(&mut self, snapshot: S);
+    fn held_len(&self) -> usize;
+    fn classify_ready<Request: Clone>(
+        &mut self,
+        durable: &RequestTracking<Request>,
+        read_highwater: i64,
+    ) -> Result<Vec<RequestTracking<Request>>, TrackingError>;
+}
+
+impl<S: SenderSnapshot> ClassifiesOrdered<S> for OrderedClassifier<S> {
+    fn push(&mut self, snapshot: S) {
         self.held.push_back(snapshot);
     }
 
-    pub fn held_len(&self) -> usize {
+    fn held_len(&self) -> usize {
         self.held.len()
     }
 
     /// Returns successive whole durable values. The caller durably replaces
     /// the preceding value before performing the next transition.
-    pub fn classify_ready<Request: Clone>(
+    fn classify_ready<Request: Clone>(
         &mut self,
         durable: &RequestTracking<Request>,
         read_highwater: i64,
