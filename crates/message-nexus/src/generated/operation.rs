@@ -29,7 +29,7 @@ pub enum Operation {
     Identify(signal_flow::Process),
     Lock(Lock_Data),
     Deliver(Deliver_Data),
-    Acknowledge(Vec<signal_flow::DeliverKey>),
+    Acknowledge(std::vec::Vec<signal_flow::DeliverKey>),
     Release(signal_flow::Lock),
     Store(message_library::Configuration),
 }
