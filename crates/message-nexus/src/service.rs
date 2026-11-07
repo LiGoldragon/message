@@ -262,6 +262,9 @@ impl ReportsMessageRefusal for EdgeFailure {
             Self::DeliverKeyReused => {
                 return Response::Refused(SendRefusal::FlowProtocolMismatch);
             }
+            Self::Unidentified(process) => {
+                return Response::Refused(SendRefusal::Unidentified(process));
+            }
             Self::Broken | Self::Unexpected if delivery_may_have_started => {
                 signal_flow::VisibleSendFailureReason::ReceiptUncertain
             }
