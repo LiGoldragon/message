@@ -1,6 +1,7 @@
 //! The ordinary and owner-only Message sockets.
 
 use crate::{
+    delivery_consumer::ConsumesDeliveries,
     flow_edge::ReadsFlowSubscription,
     frame::{FrameError, FramedStream},
     nexus::{HoldsNexusState, MessageNexus},
@@ -43,6 +44,30 @@ impl ListensOnSockets for MessageNexus {
         let signals = unsafe { OwnedFd::from_raw_fd(raw) };
         ordinary.set_nonblocking(true)?;
         meta.set_nonblocking(true)?;
+        let delivery_control = self
+            .delivery_consumer
+            .interrupt_handle()
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        let delivery_nexus = Arc::clone(&self);
+        let delivery_worker = std::thread::spawn(move || {
+            loop {
+                let snapshot = match delivery_nexus.delivery_consumer.receive_next() {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        eprintln!("message-nexus: delivery consumer: {error}");
+                        break;
+                    }
+                };
+                let store = delivery_nexus.store();
+                if let Err(error) = delivery_nexus
+                    .delivery_consumer
+                    .accept_snapshot(&store, snapshot)
+                {
+                    eprintln!("message-nexus: delivery consumer: {error}");
+                    break;
+                }
+            }
+        });
         let mut workers: Vec<(UnixStream, std::thread::JoinHandle<()>)> = Vec::new();
         let result = loop {
             let mut ready = [
@@ -136,6 +161,8 @@ impl ListensOnSockets for MessageNexus {
         };
         drop(ordinary);
         drop(meta);
+        let _ = delivery_control.shutdown(Shutdown::Both);
+        let _ = delivery_worker.join();
         for (stream, _) in &workers {
             let _ = stream.shutdown(Shutdown::Both);
         }

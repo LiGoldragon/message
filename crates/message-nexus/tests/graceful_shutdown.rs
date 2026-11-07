@@ -77,6 +77,32 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
             .unwrap();
         drop(startup);
         let deadline = Instant::now() + Duration::from_secs(10);
+        let mut delivery_stream = loop {
+            match flow.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("Flow delivery observation accept: {error}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Message did not open delivery observation"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(matches!(
+            delivery_stream.read_frame::<signal_flow::Query>().unwrap(),
+            signal_flow::Query::ObserveDeliveries(_)
+        ));
+        delivery_stream
+            .write_frame(&signal_flow::Response::SendsObserved(
+                signal_flow::VisibleSendObservation {
+                    store_identity: "shutdown-store".into(),
+                    delivery_cursor: 0,
+                    visible_delivery_snapshot_vector: vec![],
+                },
+            ))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
         let mut connection = loop {
             assert!(
                 child.0.try_wait().unwrap().is_none(),

@@ -3,6 +3,7 @@
 extern crate signal_message as message_library;
 
 pub mod configuration;
+pub mod delivery_consumer;
 pub mod flow_edge;
 pub mod frame;
 pub mod generated;

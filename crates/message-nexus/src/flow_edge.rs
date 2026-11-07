@@ -102,6 +102,10 @@ pub trait CallsFlow {
         native_session_id: Option<String>,
         cursor: Option<DeliveryCursor>,
     ) -> Result<FlowSubscription, EdgeFailure>;
+    fn observe_deliveries(
+        &self,
+        cursor: Option<DeliveryCursor>,
+    ) -> Result<FlowSubscription, EdgeFailure>;
     fn release(&self, lock: Lock) -> Result<(), EdgeFailure>;
 }
 
@@ -191,6 +195,21 @@ impl CallsFlow for FlowEdge {
                 native_session_id_option: native_session_id,
                 delivery_cursor_option: cursor,
             }))
+            .map_err(|_| EdgeFailure::Unreachable)?;
+        Ok(FlowSubscription { stream })
+    }
+
+    fn observe_deliveries(
+        &self,
+        cursor: Option<DeliveryCursor>,
+    ) -> Result<FlowSubscription, EdgeFailure> {
+        let mut stream =
+            UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
+        stream
+            .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+            .map_err(|_| EdgeFailure::Broken)?;
+        stream
+            .write_frame(&Query::ObserveDeliveries(cursor))
             .map_err(|_| EdgeFailure::Unreachable)?;
         Ok(FlowSubscription { stream })
     }

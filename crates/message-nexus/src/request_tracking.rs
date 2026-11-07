@@ -88,6 +88,7 @@ pub(crate) trait TracksRequests<Request> {
     fn acknowledgement_keys(&self) -> Vec<DeliverKey>;
     fn opening_cursor(&self) -> Result<Option<i64>, TrackingError>;
     fn observe_store(&mut self, identity: String);
+    fn advance_cursor(&mut self, read_highwater: i64) -> Result<(), TrackingError>;
     fn highest_acceptance_cursor(&self) -> Option<i64>;
     fn candidate_index(&self, request_id: &str) -> Option<usize>;
     fn last_archive_before(&self, request_id: &str, cursor: i64) -> i64;
@@ -221,6 +222,17 @@ impl<Request: Clone> TracksRequests<Request> for RequestTracking<Request> {
         self.store_identity = Some(identity);
     }
 
+    fn advance_cursor(&mut self, read_highwater: i64) -> Result<(), TrackingError> {
+        if self
+            .observation_cursor
+            .is_some_and(|cursor| read_highwater < cursor)
+        {
+            return Err(TrackingError::ObservationOutOfOrder);
+        }
+        self.observation_cursor = Some(read_highwater);
+        Ok(())
+    }
+
     fn highest_acceptance_cursor(&self) -> Option<i64> {
         self.ledger
             .iter()
@@ -323,7 +335,24 @@ pub trait SenderSnapshot {
     fn is_archived(&self) -> bool;
 }
 
-pub(crate) enum Decision {
+pub(crate) impl SenderSnapshot for signal_flow::VisibleDeliverySnapshot {
+    fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    fn delivery_cursor(&self) -> i64 {
+        self.delivery_cursor
+    }
+
+    fn is_archived(&self) -> bool {
+        matches!(
+            self.visible_delivery_state,
+            signal_flow::VisibleDeliveryState::Archived
+        )
+    }
+}
+
+enum Decision {
     Hold,
     Classify(Classification, Option<usize>),
 }

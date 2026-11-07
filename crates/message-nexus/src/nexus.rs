@@ -2,6 +2,7 @@
 
 use crate::{
     configuration::SeedsConfiguration,
+    delivery_consumer::{DeliveryConsumer, DeliveryConsumerError, OpensDeliveryConsumer},
     flow_edge::{CallsFlow, FlowEdge},
     generated::memory::Standard,
     peer::ReadsProcess,
@@ -15,6 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 pub struct MessageNexus {
     pub(crate) store: Mutex<MessageStore>,
     pub(crate) bound: Configuration,
+    pub(crate) delivery_consumer: DeliveryConsumer,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -25,6 +27,8 @@ pub enum NexusError {
     Process(#[from] std::io::Error),
     #[error("Flow bind failed: {0:?}")]
     Flow(crate::flow_edge::EdgeFailure),
+    #[error("Message delivery consumer: {0}")]
+    DeliveryConsumer(#[from] DeliveryConsumerError),
 }
 
 pub trait OpensNexus: Sized {
@@ -37,7 +41,7 @@ impl OpensNexus for MessageNexus {
             configuration: defaults.message_configuration(),
             meta_configured: false,
         };
-        let store = MessageStore::open(&defaults.store_path(), seed)?;
+        let mut store = MessageStore::open(&defaults.store_path(), seed)?;
         let standard = store.standard()?;
         let edge = FlowEdge {
             socket_path: standard.configuration.flow.clone(),
@@ -49,9 +53,11 @@ impl OpensNexus for MessageNexus {
             model: Model::Astra,
         };
         edge.bind(address, process).map_err(NexusError::Flow)?;
+        let delivery_consumer = DeliveryConsumer::open(&edge, &mut store)?;
         Ok(Self {
             store: Mutex::new(store),
             bound: standard.configuration,
+            delivery_consumer,
         })
     }
 }

@@ -101,7 +101,8 @@ impl FakeFlow {
         let Ok(query) = stream.read_frame::<Query>() else {
             return;
         };
-        let observing = matches!(&query, Query::ObserveSender(_));
+        let observing_sender = matches!(&query, Query::ObserveSender(_));
+        let observing_deliveries = matches!(&query, Query::ObserveDeliveries(_));
         let response = match query {
             Query::Bind(Bind_Data { address, process }) => {
                 self.state.lock().unwrap().bound.push((address, process));
@@ -151,16 +152,23 @@ impl FakeFlow {
                 delivery_cursor: 1,
                 visible_delivery_snapshot_vector: vec![],
             }),
+            Query::ObserveDeliveries(_) => Response::SendsObserved(VisibleSendObservation {
+                store_identity: "fake-store".into(),
+                delivery_cursor: 0,
+                visible_delivery_snapshot_vector: vec![],
+            }),
             Query::Release(_) => Response::Released,
             _ => Response::Refused(Refusal::NotConfigured),
         };
         let _ = stream.write_frame(&response);
-        if observing && self.quiet_observer {
+        if observing_deliveries || (observing_sender && self.quiet_observer) {
             let mut byte = [0; 1];
             let _ = stream.read(&mut byte);
-            let (count, changed) = &*self.observer_closed;
-            *count.lock().unwrap() += 1;
-            changed.notify_all();
+            if observing_sender {
+                let (count, changed) = &*self.observer_closed;
+                *count.lock().unwrap() += 1;
+                changed.notify_all();
+            }
         }
     }
 }

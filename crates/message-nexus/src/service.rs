@@ -1,6 +1,7 @@
 //! Executes the two Message requests over its typed memory and Flow edge.
 
 use crate::{
+    delivery_consumer::ConsumesDeliveries,
     flow_edge::{CallsFlow, EdgeFailure, FlowSendReply, FlowSubscription},
     nexus::{HoldsNexusState, MessageNexus},
     request_tracking::TracksRequests,
@@ -204,6 +205,10 @@ impl ServesMessages for MessageNexus {
             store.replace_request_tracking(tracking).map_err(|error| {
                 Box::new(Response::Refused(SendRefusal::Store(error.to_string())))
             })?;
+        }
+        {
+            let store = self.store();
+            let _ = self.delivery_consumer.reclassify(&store);
         }
         let _ = edge.acknowledge(vec![deliver_key]);
         let subscription = edge
