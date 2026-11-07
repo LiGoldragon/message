@@ -4,7 +4,7 @@ use crate::frame::FramedStream;
 use signal_flow::{
     Address, Bind_Data, Deliver_Data, DeliverKey, DeliveryCursor, FlowId, IdentifyThread_Data,
     Lock, Lock_Data, ObserveSender_Data, Process, Query, Recipient, Refusal, Response,
-    SendableMessage, Sender, VisibleSendAcceptance, VisibleSendFailure, VisibleSendReceipt,
+    SendableMessage, Sender, VisibleSendAcceptance,
 };
 use std::os::unix::net::UnixStream;
 
@@ -20,8 +20,6 @@ pub enum EdgeFailure {
 
 pub enum FlowSendReply {
     Queued(VisibleSendAcceptance),
-    Sent(VisibleSendReceipt),
-    Failed(VisibleSendFailure),
 }
 
 pub struct FlowEdge {

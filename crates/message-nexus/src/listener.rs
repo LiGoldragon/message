@@ -264,8 +264,6 @@ impl AnswersConnection for MessageNexus {
     ) -> Result<(), FrameError> {
         match self.accept_send(process, request, thread) {
             Err(response) => stream.write_frame(response.as_ref()),
-            Ok(SendReply::Sent(receipt)) => stream.write_frame(&Response::Sent(receipt)),
-            Ok(SendReply::Failed(failure)) => stream.write_frame(&Response::Failed(failure)),
             Ok(SendReply::Queued {
                 acceptance: accepted,
                 subscription,

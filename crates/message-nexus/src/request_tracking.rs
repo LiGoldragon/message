@@ -335,7 +335,7 @@ pub trait SenderSnapshot {
     fn is_archived(&self) -> bool;
 }
 
-pub(crate) impl SenderSnapshot for signal_flow::VisibleDeliverySnapshot {
+impl SenderSnapshot for signal_flow::VisibleDeliverySnapshot {
     fn request_id(&self) -> &str {
         &self.request_id
     }

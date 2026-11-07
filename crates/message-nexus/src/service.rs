@@ -67,8 +67,6 @@ pub enum SendReply {
         acceptance: VisibleSendAcceptance,
         subscription: Result<FlowSubscription, Box<Response>>,
     },
-    Sent(signal_flow::VisibleSendReceipt),
-    Failed(signal_flow::VisibleSendFailure),
 }
 
 impl ServesMessages for MessageNexus {
@@ -175,17 +173,7 @@ impl ServesMessages for MessageNexus {
                 return Err(Box::new(failure.for_send(abrupt, true)));
             }
         };
-        let acceptance = match acceptance {
-            FlowSendReply::Queued(acceptance) => acceptance,
-            FlowSendReply::Sent(receipt) => {
-                let _ = edge.release(lock);
-                return Ok(SendReply::Sent(receipt));
-            }
-            FlowSendReply::Failed(failure) => {
-                let _ = edge.release(lock);
-                return Ok(SendReply::Failed(failure));
-            }
-        };
+        let FlowSendReply::Queued(acceptance) = acceptance;
         {
             let store = self.store();
             let mut tracking = store.request_tracking().map_err(|error| {
