@@ -106,7 +106,7 @@
             // {
               pname = "message-generated-lock";
               cargoArtifacts = null;
-              buildPhaseCargoCommand = "cargo generate-lockfile --offline";
+              buildPhaseCargoCommand = "cargo update --offline";
               installPhaseCommand = "mkdir -p $out; cp Cargo.lock $out/Cargo.lock";
             }
           );

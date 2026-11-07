@@ -1,7 +1,7 @@
 //! Message's typed operation failures retain Flow's exact result.
 
 use message_nexus::generated::{Failed_Data, Failed_Data_Unknown_Data, Outcome};
-use signal_flow::{Address, Aspect, Layer, Lock};
+use signal_flow::{Address, Aspect, Lock, Model};
 
 fn archived(outcome: &Outcome) -> Outcome {
     let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(outcome).expect("archives operation outcome");
@@ -13,7 +13,7 @@ fn reachable_flow_failures_keep_their_distinct_payloads() {
     let address = Address {
         aspect: Aspect::Mind,
         topic: "flow".into(),
-        layer: Layer::Secondary,
+        model: Model::Sol,
     };
     let lock = Lock {
         sender: address.clone(),

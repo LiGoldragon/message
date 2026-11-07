@@ -699,7 +699,9 @@ mod tests {
         assert_eq!(request.native_session_id, "recorded-thread");
         assert_eq!(
             request.send_request.sendable_message,
-            signal_flow::Message::MiddleAbrupt(signal_flow::Request::Question("whole body".into()))
+            signal_flow::SendableMessage::MiddleAbrupt(signal_flow::SendableRequest::Question(
+                "whole body".into()
+            ))
         );
     }
 

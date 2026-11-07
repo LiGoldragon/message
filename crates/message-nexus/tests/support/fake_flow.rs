@@ -2,8 +2,8 @@
 
 use message_nexus::frame::FramedStream;
 use signal_flow::{
-    Address, Aspect, Bind_Data, Deliver_Data, DeliveryState, FlowId, Layer, Lock, Lock_Data,
-    Process, Query, Recipient, Refusal, Response, SendAcceptance, SendObservation,
+    Address, Aspect, Bind_Data, Deliver_Data, FlowId, Lock, Lock_Data, Model, Process, Query,
+    Refusal, Response, VisibleDeliveryState, VisibleSendAcceptance, VisibleSendObservation,
 };
 use std::{
     io::Read,
@@ -17,6 +17,7 @@ use std::{
 struct State {
     bound: Vec<(Address, Process)>,
     delivered: Vec<Deliver_Data>,
+    acknowledged: Vec<signal_flow::DeliverKey>,
     identified_threads: Vec<signal_flow::IdentifyThread_Data>,
 }
 
@@ -84,18 +85,15 @@ impl FakeFlow {
         self.state.lock().unwrap().bound.clone()
     }
 
+    pub fn acknowledged(&self) -> Vec<signal_flow::DeliverKey> {
+        self.state.lock().unwrap().acknowledged.clone()
+    }
+
     fn sender(&self) -> Address {
         Address {
             aspect: Aspect::Mind,
             topic: "flow".into(),
-            layer: Layer::Secondary,
-        }
-    }
-
-    fn resolve(&self, recipient: Recipient, sender: &Address) -> Address {
-        match recipient {
-            Recipient::Address(address) => address,
-            Recipient::Up => sender.clone(),
+            model: Model::Sol,
         }
     }
 
@@ -119,41 +117,39 @@ impl FakeFlow {
                 match request.native_session_id.as_str() {
                     "not-configured" => Response::Refused(Refusal::NotConfigured),
                     "not-send-server" => Response::Refused(Refusal::NotSendServer(request.process)),
-                    "unknown" => Response::Refused(Refusal::Unidentified(request.process)),
+                    "unknown" => {
+                        Response::Refused(Refusal::Unidentified(signal_flow::SeatEvidence {
+                            seat_pane_option: None,
+                            pane_label_option: None,
+                            native_session_id_option: Some(request.native_session_id),
+                            observed_at: 0,
+                            process: request.process,
+                        }))
+                    }
                     _ => Response::Identified(self.sender()),
                 }
             }
-            Query::Lock(Lock_Data { sender, recipient }) => {
-                let address = self.resolve(recipient, &sender);
-                Response::Locked(Lock {
-                    sender,
-                    address,
-                    until: i64::MAX,
+            Query::Lock(Lock_Data { sender, recipient }) => Response::Locked(Lock {
+                sender,
+                address: recipient,
+                until: i64::MAX,
+            }),
+            Query::Deliver(delivery) => {
+                self.state.lock().unwrap().delivered.push(delivery);
+                Response::SendAccepted(VisibleSendAcceptance {
+                    request_id: "fake-request".into(),
+                    delivery_cursor: 1,
+                    visible_delivery_state: VisibleDeliveryState::Queued,
                 })
             }
-            Query::Deliver(delivery) => {
-                let abrupt = !matches!(&delivery.message, signal_flow::Message::Soft(_));
-                self.state.lock().unwrap().delivered.push(delivery);
-                if abrupt {
-                    Response::Sent(signal_flow::SendReceipt {
-                        logical_delivery_id: "fake-logical-delivery".into(),
-                        native_receipt: signal_flow::NativeReceipt {
-                            harness_kind: signal_flow::HarnessKind::Codex,
-                            native_session_id: "fake-session".into(),
-                            native_prompt_id: "fake-prompt".into(),
-                        },
-                    })
-                } else {
-                    Response::SendAccepted(SendAcceptance {
-                        logical_delivery_id: "fake-logical-delivery".into(),
-                        delivery_cursor: 1,
-                        delivery_state: DeliveryState::Queued,
-                    })
-                }
+            Query::Acknowledge(deliver_keys) => {
+                self.state.lock().unwrap().acknowledged.extend(deliver_keys);
+                Response::Acknowledged
             }
-            Query::ObserveSender(_) => Response::SendsObserved(SendObservation {
+            Query::ObserveSender(_) => Response::SendsObserved(VisibleSendObservation {
+                store_identity: "fake-store".into(),
                 delivery_cursor: 1,
-                delivery_snapshot_vector: vec![],
+                visible_delivery_snapshot_vector: vec![],
             }),
             Query::Release(_) => Response::Released,
             _ => Response::Refused(Refusal::NotConfigured),

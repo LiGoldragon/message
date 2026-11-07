@@ -2,7 +2,10 @@
 
 mod support;
 
-use signal_flow::{Address, Aspect, Delivery, Layer, Message, Recipient, Request, SendRequest};
+use signal_flow::{
+    Address, Aspect, Model, SendRequest, SendableMessage, SendableRequest, VisibleDeliveryState,
+    VisibleSendAcceptance,
+};
 use signal_message::{Query, Response, SendThread_Data};
 use support::{NexusProcess, fake_flow::FakeFlow};
 
@@ -11,9 +14,10 @@ fn quiet_send_stream(nexus: &NexusProcess) -> std::os::unix::net::UnixStream {
     let mut stream = std::os::unix::net::UnixStream::connect(nexus.ordinary_socket()).unwrap();
     stream
         .write_frame(&Query::Send(SendRequest {
-            recipient: Recipient::Up,
-            delivery: Delivery::Wake,
-            message: Message::Soft(Request::Question("quiet observer".into())),
+            recipient: sender(),
+            sendable_message: SendableMessage::Soft(SendableRequest::Question(
+                "quiet observer".into(),
+            )),
         }))
         .unwrap();
     assert!(matches!(
@@ -27,41 +31,43 @@ fn quiet_send_stream(nexus: &NexusProcess) -> std::os::unix::net::UnixStream {
     stream
 }
 
+fn sender() -> Address {
+    Address {
+        aspect: Aspect::Mind,
+        topic: "flow".into(),
+        model: Model::Sol,
+    }
+}
+
 #[test]
 fn send_reaches_flow_with_the_lock_and_original_request() {
     let home = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let flow = FakeFlow::start(runtime.path());
     let nexus = NexusProcess::start(home, runtime);
-    let recipient = Address {
-        aspect: Aspect::Mind,
-        topic: "flow".into(),
-        layer: Layer::Secondary,
-    };
+    let recipient = sender();
     let request = SendRequest {
-        recipient: Recipient::Address(recipient.clone()),
-        delivery: Delivery::Wake,
-        message: Message::MiddleAbrupt(Request::Question("What is current?".into())),
+        recipient: recipient.clone(),
+        sendable_message: SendableMessage::MiddleAbrupt(SendableRequest::Question(
+            "What is current?".into(),
+        )),
     };
 
     assert_eq!(
         nexus.ask(&Query::Send(request.clone())),
-        Response::Sent(signal_flow::SendReceipt {
-            logical_delivery_id: "fake-logical-delivery".into(),
-            native_receipt: signal_flow::NativeReceipt {
-                harness_kind: signal_flow::HarnessKind::Codex,
-                native_session_id: "fake-session".into(),
-                native_prompt_id: "fake-prompt".into(),
-            },
+        Response::SendAccepted(VisibleSendAcceptance {
+            request_id: "fake-request".into(),
+            delivery_cursor: 1,
+            visible_delivery_state: VisibleDeliveryState::Queued,
         })
     );
 
     let delivered = flow.typed();
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].lock.address, recipient);
-    assert_eq!(delivered[0].message, request.message);
-    assert_eq!(delivered[0].delivery, request.delivery);
+    assert_eq!(delivered[0].sendable_message, request.sendable_message);
     assert_eq!(delivered[0].lock.sender.topic, "flow");
+    assert_eq!(flow.acknowledged(), vec![delivered[0].deliver_key.clone()]);
     assert_eq!(flow.bound().len(), 1);
 }
 
@@ -72,9 +78,8 @@ fn message_forwards_flow_statuses_after_admission_and_preserves_resume_cursor() 
     let _flow = FakeFlow::start(runtime.path());
     let nexus = NexusProcess::start(home, runtime);
     let responses = nexus.ask_stream(&Query::Send(SendRequest {
-        recipient: Recipient::Up,
-        delivery: Delivery::Wake,
-        message: Message::Soft(Request::Question("status stream".into())),
+        recipient: sender(),
+        sendable_message: SendableMessage::Soft(SendableRequest::Question("status stream".into())),
     }));
 
     assert!(matches!(responses.first(), Some(Response::SendAccepted(_))));
@@ -127,9 +132,10 @@ fn thread_send_forwards_kernel_peer_and_exact_thread_before_delivery() {
     let nexus = NexusProcess::start(home, runtime);
     let request = Query::SendThread(SendThread_Data {
         send_request: SendRequest {
-            recipient: Recipient::Up,
-            delivery: Delivery::Wake,
-            message: Message::MiddleAbrupt(Request::Question("whole thread body".into())),
+            recipient: sender(),
+            sendable_message: SendableMessage::MiddleAbrupt(SendableRequest::Question(
+                "whole thread body".into(),
+            )),
         },
         native_session_id: "actual-thread".into(),
     });
@@ -143,40 +149,40 @@ fn thread_send_forwards_kernel_peer_and_exact_thread_before_delivery() {
     assert_eq!(identified[0].native_session_id, "actual-thread");
     assert_eq!(flow.typed().len(), 1);
     assert_eq!(
-        flow.typed()[0].message,
-        Message::MiddleAbrupt(Request::Question("whole thread body".into()))
+        flow.typed()[0].sendable_message,
+        SendableMessage::MiddleAbrupt(SendableRequest::Question("whole thread body".into()))
     );
 }
 
 #[test]
 fn failed_thread_identification_keeps_precise_refusal_and_never_delivers() {
     use message_nexus::peer::ReadsProcess;
-    use signal_flow::Refusal;
     let home = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let flow = FakeFlow::start(runtime.path());
     let nexus = NexusProcess::start(home, runtime);
     let process = signal_flow::Process::this_process().unwrap();
-    for (thread, refusal) in [
-        ("not-configured", Refusal::NotConfigured),
-        ("not-send-server", Refusal::NotSendServer(process.clone())),
-        ("unknown", Refusal::Unidentified(process)),
+    for (thread, message_refusal) in [
+        ("not-configured", signal_message::SendRefusal::NotConfigured),
+        (
+            "not-send-server",
+            signal_message::SendRefusal::NotSendServer(process.clone()),
+        ),
+        (
+            "unknown",
+            signal_message::SendRefusal::Unidentified(process.clone()),
+        ),
     ] {
         let query = Query::SendThread(SendThread_Data {
             send_request: SendRequest {
-                recipient: Recipient::Up,
-                delivery: Delivery::Wake,
-                message: Message::MiddleAbrupt(Request::Question("never deliver".into())),
+                recipient: sender(),
+                sendable_message: SendableMessage::MiddleAbrupt(SendableRequest::Question(
+                    "never deliver".into(),
+                )),
             },
             native_session_id: thread.into(),
         });
-        assert_eq!(
-            nexus.ask(&query),
-            Response::Failed(signal_flow::SendFailure {
-                logical_delivery_id_option: None,
-                send_failure_reason: signal_flow::SendFailureReason::Refused(refusal),
-            })
-        );
+        assert_eq!(nexus.ask(&query), Response::Refused(message_refusal));
     }
     assert!(flow.typed().is_empty());
     assert_eq!(flow.identified_threads().len(), 3);
