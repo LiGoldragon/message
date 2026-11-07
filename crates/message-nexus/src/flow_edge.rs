@@ -115,7 +115,7 @@ impl CallsFlow for FlowEdge {
     }
 
     fn identify(&self, process: Process) -> Result<Address, EdgeFailure> {
-        match self.exchange(&Query::Identify(process))? {
+        match self.exchange(&Query::Identify(process.clone()))? {
             Response::Identified(address) => Ok(address),
             Response::Refused(Refusal::Unidentified(_)) => Err(EdgeFailure::Unidentified(process)),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
