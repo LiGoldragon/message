@@ -12,8 +12,8 @@ publish      = false
 
 [workspace.dependencies]
 message-defaults    = { path = "crates/message-defaults" }
-datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "eabead48b31e8d4f429d7fb156dd18548bbd79c1" }
-protos              = { git = "https://github.com/LiGoldragon/protos", rev = "3c7ade34010cec6cec153ae694ee335f7fea0193" }
+datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "eabead4" }
+protos              = { git = "https://github.com/LiGoldragon/protos", rev = "3c7ade3" }
 signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "1914bbd90e55fdcaa9ffcb701dd68acf8568c594" }
 meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "afeff70e1a1cc438cd3518f53c475fa4dcaee9b3" }
 signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "a150f3b59d63ef851a2ba02ef7559f32b3df42c4" }
