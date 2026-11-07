@@ -279,6 +279,7 @@ impl ReportsMessageRefusal for EdgeFailure {
                 })
             }
             Self::DeliverKeyReused => SendRefusal::FlowProtocolMismatch,
+            Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Unreachable | Self::Broken | Self::Unexpected => SendRefusal::FlowUnreachable,
         }
     }

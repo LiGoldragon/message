@@ -139,7 +139,7 @@ fn thread_send_forwards_kernel_peer_and_exact_thread_before_delivery() {
         },
         native_session_id: "actual-thread".into(),
     });
-    assert!(matches!(nexus.ask(&request), Response::Sent(_)));
+    assert!(matches!(nexus.ask(&request), Response::SendAccepted(_)));
     let identified = flow.identified_threads();
     assert_eq!(identified.len(), 1);
     assert_eq!(

@@ -13,6 +13,7 @@ pub enum EdgeFailure {
     Unreachable,
     Broken,
     Refused(Refusal),
+    Unidentified(Process),
     DeliverKeyReused,
     Unexpected,
 }
@@ -116,6 +117,7 @@ impl CallsFlow for FlowEdge {
     fn identify(&self, process: Process) -> Result<Address, EdgeFailure> {
         match self.exchange(&Query::Identify(process))? {
             Response::Identified(address) => Ok(address),
+            Response::Refused(Refusal::Unidentified(_)) => Err(EdgeFailure::Unidentified(process)),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
         }
@@ -127,10 +129,11 @@ impl CallsFlow for FlowEdge {
         native_session_id: String,
     ) -> Result<Address, EdgeFailure> {
         match self.exchange(&Query::IdentifyThread(IdentifyThread_Data {
-            process,
+            process: process.clone(),
             native_session_id,
         }))? {
             Response::Identified(address) => Ok(address),
+            Response::Refused(Refusal::Unidentified(_)) => Err(EdgeFailure::Unidentified(process)),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
         }
