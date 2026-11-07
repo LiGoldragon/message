@@ -160,7 +160,11 @@ impl ServesMessages for MessageNexus {
                 let _ = edge.release(lock);
                 return Err(Box::new(failure.for_send(abrupt, true)));
             }
-            Err(failure @ (EdgeFailure::Refused(_) | EdgeFailure::DeliverKeyReused)) => {
+            Err(
+                failure @ (EdgeFailure::Refused(_)
+                | EdgeFailure::Unidentified(_)
+                | EdgeFailure::DeliverKeyReused),
+            ) => {
                 let store = self.store();
                 if let Ok(mut tracking) = store.request_tracking() {
                     let _ = tracking.record_refusal(&deliver_key);
