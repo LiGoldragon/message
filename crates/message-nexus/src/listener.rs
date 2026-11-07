@@ -54,19 +54,25 @@ impl ListensOnSockets for MessageNexus {
                             break;
                         }
                         eprintln!("message-nexus: delivery consumer: {error}");
-                        let edge = match delivery_nexus.flow_edge() {
-                            Ok(edge) => edge,
-                            Err(error) => {
-                                eprintln!("message-nexus: delivery consumer reconnect: {error}");
-                                break;
+                        loop {
+                            let result = delivery_nexus
+                                .flow_edge()
+                                .map_err(crate::delivery_consumer::DeliveryConsumerError::Store);
+                            let result = result.and_then(|edge| {
+                                let store = delivery_nexus.store();
+                                delivery_nexus.delivery_consumer.reconnect(&edge, &store)
+                            });
+                            match result {
+                                Ok(()) => break,
+                                Err(error) => {
+                                    eprintln!(
+                                        "message-nexus: delivery consumer reconnect: {error}"
+                                    );
+                                    if !delivery_nexus.delivery_consumer.wait_to_reconnect() {
+                                        return;
+                                    }
+                                }
                             }
-                        };
-                        let store = delivery_nexus.store();
-                        if let Err(error) =
-                            delivery_nexus.delivery_consumer.reconnect(&edge, &store)
-                        {
-                            eprintln!("message-nexus: delivery consumer reconnect: {error}");
-                            break;
                         }
                         continue;
                     }

@@ -8,6 +8,8 @@ use signal_flow::{
 };
 use std::os::unix::net::UnixStream;
 
+pub const FLOW_RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 #[derive(Debug)]
 pub enum EdgeFailure {
     Unreachable,
@@ -33,6 +35,7 @@ pub struct FlowSubscription {
 pub trait ReadsFlowSubscription {
     fn next(&mut self) -> Result<Response, EdgeFailure>;
     fn interrupt_handle(&self) -> Result<UnixStream, EdgeFailure>;
+    fn keep_open(&self) -> Result<(), EdgeFailure>;
 }
 
 impl ReadsFlowSubscription for FlowSubscription {
@@ -42,6 +45,12 @@ impl ReadsFlowSubscription for FlowSubscription {
 
     fn interrupt_handle(&self) -> Result<UnixStream, EdgeFailure> {
         self.stream.try_clone().map_err(|_| EdgeFailure::Broken)
+    }
+
+    fn keep_open(&self) -> Result<(), EdgeFailure> {
+        self.stream
+            .set_read_timeout(None)
+            .map_err(|_| EdgeFailure::Broken)
     }
 }
 
@@ -55,7 +64,7 @@ impl ExchangesWithFlow for FlowEdge {
             UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
         // Bound an unavailable peer so shutdown can join an in-flight handler.
         // A timeout is a failed exchange, never permission to replay a delivery.
-        let timeout = Some(std::time::Duration::from_secs(2));
+        let timeout = Some(FLOW_RESPONSE_TIMEOUT);
         let read_timeout = if matches!(query, Query::Deliver(delivery)
             if !matches!(delivery.sendable_message, signal_flow::SendableMessage::Soft(_)))
         {
@@ -183,7 +192,7 @@ impl CallsFlow for FlowEdge {
     ) -> Result<FlowSubscription, EdgeFailure> {
         let mut stream =
             UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
-        let timeout = Some(std::time::Duration::from_secs(2));
+        let timeout = Some(FLOW_RESPONSE_TIMEOUT);
         stream
             .set_write_timeout(timeout)
             .map_err(|_| EdgeFailure::Broken)?;
@@ -204,7 +213,10 @@ impl CallsFlow for FlowEdge {
         let mut stream =
             UnixStream::connect(&self.socket_path).map_err(|_| EdgeFailure::Unreachable)?;
         stream
-            .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+            .set_read_timeout(Some(FLOW_RESPONSE_TIMEOUT))
+            .map_err(|_| EdgeFailure::Broken)?;
+        stream
+            .set_write_timeout(Some(FLOW_RESPONSE_TIMEOUT))
             .map_err(|_| EdgeFailure::Broken)?;
         stream
             .write_frame(&Query::ObserveDeliveries(cursor))

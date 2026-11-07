@@ -2,7 +2,8 @@
 
 use crate::{
     flow_edge::{
-        CallsFlow, EdgeFailure, FlowEdge, FlowSendReply, FlowSubscription, ReadsFlowSubscription,
+        CallsFlow, EdgeFailure, FLOW_RESPONSE_TIMEOUT, FlowEdge, FlowSendReply, FlowSubscription,
+        ReadsFlowSubscription,
     },
     request_tracking::{ClassifiesOrdered, OrderedClassifier, TracksRequests},
     store::{KeepsRequestTracking, MessageStore, StoreError},
@@ -12,7 +13,7 @@ use std::{
     net::Shutdown,
     os::unix::net::UnixStream,
     sync::{
-        Mutex,
+        Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -35,6 +36,8 @@ pub struct DeliveryConsumer {
     classifier: Mutex<OrderedClassifier<VisibleDeliverySnapshot>>,
     read_highwater: Mutex<i64>,
     stopping: AtomicBool,
+    reconnect_wait: Mutex<()>,
+    reconnect_wake: Condvar,
 }
 
 pub trait OpensDeliveryConsumer: Sized {
@@ -47,6 +50,7 @@ pub trait ConsumesDeliveries {
     -> Result<(), DeliveryConsumerError>;
     fn stop(&self) -> Result<(), DeliveryConsumerError>;
     fn is_stopping(&self) -> bool;
+    fn wait_to_reconnect(&self) -> bool;
     fn accept_snapshot(
         &self,
         store: &MessageStore,
@@ -88,6 +92,9 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
         else {
             return Err(DeliveryConsumerError::Opening);
         };
+        subscription
+            .keep_open()
+            .map_err(DeliveryConsumerError::Flow)?;
         let identity_changed = store
             .request_tracking()?
             .store_identity
@@ -105,6 +112,9 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
             else {
                 return Err(DeliveryConsumerError::Opening);
             };
+            replacement
+                .keep_open()
+                .map_err(DeliveryConsumerError::Flow)?;
             (replacement, reopened)
         } else {
             (subscription, opening)
@@ -118,6 +128,8 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
             classifier: Mutex::new(OrderedClassifier::default()),
             read_highwater: Mutex::new(opening.delivery_cursor),
             stopping: AtomicBool::new(false),
+            reconnect_wait: Mutex::new(()),
+            reconnect_wake: Condvar::new(),
         };
         consumer.apply_opening(store, opening)?;
         consumer.recover_deliveries(edge, store)?;
@@ -157,6 +169,9 @@ impl ConsumesDeliveries for DeliveryConsumer {
         else {
             return Err(DeliveryConsumerError::Opening);
         };
+        replacement
+            .keep_open()
+            .map_err(DeliveryConsumerError::Flow)?;
         let identity_changed = store
             .request_tracking()?
             .store_identity
@@ -174,6 +189,9 @@ impl ConsumesDeliveries for DeliveryConsumer {
             else {
                 return Err(DeliveryConsumerError::Opening);
             };
+            replacement
+                .keep_open()
+                .map_err(DeliveryConsumerError::Flow)?;
             opening = reopened;
         }
         let interrupt = replacement
@@ -201,6 +219,7 @@ impl ConsumesDeliveries for DeliveryConsumer {
 
     fn stop(&self) -> Result<(), DeliveryConsumerError> {
         self.stopping.store(true, Ordering::Release);
+        self.reconnect_wake.notify_all();
         self.interrupt
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -210,6 +229,18 @@ impl ConsumesDeliveries for DeliveryConsumer {
 
     fn is_stopping(&self) -> bool {
         self.stopping.load(Ordering::Acquire)
+    }
+
+    fn wait_to_reconnect(&self) -> bool {
+        let wait = self
+            .reconnect_wait
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = self
+            .reconnect_wake
+            .wait_timeout_while(wait, FLOW_RESPONSE_TIMEOUT, |_| !self.is_stopping())
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        !self.is_stopping()
     }
 
     fn accept_snapshot(

@@ -7,7 +7,10 @@ use signal_flow::{
     VisibleSendAcceptance,
 };
 use signal_message::{Query, Response, SendThread_Data};
-use support::{NexusProcess, fake_flow::FakeFlow};
+use support::{
+    NexusProcess,
+    fake_flow::{FakeFlow, FaultBoundary},
+};
 
 use message_nexus::{
     DefaultConfiguration, LaysOutDefaults,
@@ -45,6 +48,42 @@ fn sender() -> Address {
         topic: "flow".into(),
         model: Model::Sol,
     }
+}
+
+fn begin_send(nexus: &NexusProcess, body: &str) -> std::os::unix::net::UnixStream {
+    use message_nexus::frame::FramedStream;
+    let mut stream = std::os::unix::net::UnixStream::connect(nexus.ordinary_socket()).unwrap();
+    stream
+        .write_frame(&Query::Send(SendRequest {
+            recipient: sender(),
+            sendable_message: SendableMessage::Soft(SendableRequest::Question(body.into())),
+        }))
+        .unwrap();
+    stream
+}
+
+fn tracking_after_stop(nexus: NexusProcess) -> message_nexus::store::DurableRequestTracking {
+    let (home, runtime) = nexus.stop();
+    read_tracking(&home, &runtime)
+}
+
+fn read_tracking(
+    home: &tempfile::TempDir,
+    runtime: &tempfile::TempDir,
+) -> message_nexus::store::DurableRequestTracking {
+    let defaults = DefaultConfiguration {
+        home: home.path().into(),
+        runtime_directory: runtime.path().into(),
+    };
+    let store = MessageStore::open(
+        &defaults.store_path(),
+        Standard {
+            configuration: defaults.message_configuration(),
+            meta_configured: false,
+        },
+    )
+    .unwrap();
+    store.request_tracking().unwrap()
 }
 
 #[test]
@@ -86,11 +125,12 @@ fn message_consumes_its_live_delivery_stream_and_reopens_the_durable_cursor() {
     let flow = FakeFlow::start(runtime.path());
     let nexus = NexusProcess::start(home, runtime);
     assert_eq!(flow.wait_for_delivery_observations(1), vec![None]);
+    flow.make_delivery_observations_unavailable(2);
     flow.interrupt_delivery_observer();
     assert_eq!(
-        flow.wait_for_delivery_observations(2),
-        vec![None, Some(0)],
-        "the replacement stream resumes at Message's durable cursor"
+        flow.wait_for_delivery_observations(4),
+        vec![None, Some(0), Some(0), Some(0)],
+        "bounded reconnect waits survive prolonged unavailability and resume at Message's cursor"
     );
 
     assert!(matches!(
@@ -129,11 +169,161 @@ fn message_consumes_its_live_delivery_stream_and_reopens_the_durable_cursor() {
 
     let reopened = NexusProcess::start(home, runtime);
     assert_eq!(
-        flow.wait_for_delivery_observations(3),
-        vec![None, Some(0), Some(2)],
+        flow.wait_for_delivery_observations(5),
+        vec![None, Some(0), Some(0), Some(0), Some(2)],
         "a process reopen resumes the same Flow store at the committed cursor"
     );
     reopened.stop_gracefully();
+}
+
+#[test]
+fn shutdown_interrupts_the_bounded_reconnect_wait() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    assert_eq!(flow.wait_for_delivery_observations(1), vec![None]);
+    flow.make_delivery_observations_unavailable(100);
+    flow.interrupt_delivery_observer();
+    assert_eq!(flow.wait_for_delivery_observations(2), vec![None, Some(0)]);
+    nexus.stop_gracefully();
+}
+
+#[test]
+fn answer_before_ledger_reopens_by_the_exact_deliver_key() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    flow.arm_fault(FaultBoundary::AnswerBeforeLedger);
+    let stream = begin_send(&nexus, "answer before ledger");
+    flow.wait_for_fault();
+    let (home, runtime) = nexus.stop();
+    drop(stream);
+    assert!(flow.acknowledged().is_empty());
+    let interrupted = read_tracking(&home, &runtime);
+    assert_eq!(interrupted.pending.len(), 1);
+    assert!(interrupted.ledger.is_empty());
+    assert!(interrupted.classified_events.is_empty());
+    assert_eq!(interrupted.observation_cursor, Some(0));
+
+    let reopened = NexusProcess::start(home, runtime);
+    flow.wait_for_acknowledgements(1);
+    assert_eq!(flow.typed().len(), 1, "Flow admitted the key once");
+    assert_eq!(
+        flow.delivery_attempts().len(),
+        2,
+        "Message replayed the same key"
+    );
+    assert_eq!(flow.delivery_attempts()[0], flow.delivery_attempts()[1]);
+    let tracking = tracking_after_stop(reopened);
+    assert_eq!(tracking.observation_cursor, Some(2));
+    assert_eq!(tracking.classified_events.len(), 1);
+    assert_eq!(
+        tracking.classified_events[0].classification,
+        Classification::MessageRelay
+    );
+}
+
+#[test]
+fn ledger_before_acknowledge_reopens_without_redelivering() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    flow.arm_fault(FaultBoundary::LedgerBeforeAcknowledge);
+    let stream = begin_send(&nexus, "ledger before acknowledge");
+    flow.wait_for_fault();
+    let (home, runtime) = nexus.stop();
+    drop(stream);
+    assert!(flow.acknowledged().is_empty());
+    let interrupted = read_tracking(&home, &runtime);
+    assert!(interrupted.pending.is_empty());
+    assert_eq!(interrupted.ledger.len(), 1);
+
+    let reopened = NexusProcess::start(home, runtime);
+    flow.wait_for_acknowledgements(1);
+    assert_eq!(
+        flow.delivery_attempts().len(),
+        1,
+        "the durable ledger prevents redelivery"
+    );
+    let tracking = tracking_after_stop(reopened);
+    assert_eq!(tracking.observation_cursor, Some(2));
+    assert_eq!(tracking.classified_events.len(), 1);
+}
+
+#[test]
+fn held_event_before_cursor_reopens_and_classifies_once() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    flow.arm_fault(FaultBoundary::HeldBeforeCursor);
+    let stream = begin_send(&nexus, "held before cursor");
+    flow.wait_for_fault();
+    assert_eq!(
+        flow.wait_for_delivery_observations(2),
+        vec![None, Some(0)],
+        "the live handler read and held the event without advancing P"
+    );
+    let (home, runtime) = nexus.stop();
+    drop(stream);
+    let interrupted = read_tracking(&home, &runtime);
+    assert_eq!(interrupted.pending.len(), 1);
+    assert!(interrupted.ledger.is_empty());
+    assert!(interrupted.classified_events.is_empty());
+    assert_eq!(interrupted.observation_cursor, Some(0));
+
+    let reopened = NexusProcess::start(home, runtime);
+    flow.wait_for_acknowledgements(1);
+    assert_eq!(flow.delivery_attempts().len(), 2);
+    assert_eq!(flow.delivery_attempts()[0], flow.delivery_attempts()[1]);
+    let tracking = tracking_after_stop(reopened);
+    assert_eq!(tracking.observation_cursor, Some(2));
+    assert_eq!(tracking.classified_events.len(), 1);
+}
+
+#[test]
+fn flow_archive_before_message_retirement_retires_once_on_reopen() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    assert!(matches!(
+        nexus.ask(&Query::Send(SendRequest {
+            recipient: sender(),
+            sendable_message: SendableMessage::Soft(SendableRequest::Question(
+                "archive before retirement".into(),
+            )),
+        })),
+        Response::SendAccepted(_)
+    ));
+    flow.wait_for_acknowledgements(1);
+    flow.archive_and_stop_before_message_retirement();
+    flow.wait_for_fault();
+    let (home, runtime) = nexus.stop();
+    let interrupted = read_tracking(&home, &runtime);
+    assert_eq!(interrupted.observation_cursor, Some(2));
+    assert!(!interrupted.ledger[0].retired);
+
+    let reopened = NexusProcess::start(home, runtime);
+    assert_eq!(
+        flow.wait_for_delivery_observations(2),
+        vec![None, Some(2)],
+        "Archived is replayed strictly after Message's committed cursor"
+    );
+    let tracking = tracking_after_stop(reopened);
+    assert_eq!(tracking.observation_cursor, Some(3));
+    assert!(tracking.ledger[0].retired);
+    assert_eq!(
+        tracking
+            .classified_events
+            .iter()
+            .filter(|event| event.delivery_cursor == 3 && event.archived)
+            .count(),
+        1
+    );
 }
 
 #[test]
