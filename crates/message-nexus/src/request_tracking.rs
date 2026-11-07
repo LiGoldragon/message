@@ -352,7 +352,7 @@ impl SenderSnapshot for signal_flow::VisibleDeliverySnapshot {
     }
 }
 
-enum Decision {
+pub(crate) enum Decision {
     Hold,
     Classify(Classification, Option<usize>),
 }

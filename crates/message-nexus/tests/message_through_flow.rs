@@ -9,6 +9,14 @@ use signal_flow::{
 use signal_message::{Query, Response, SendThread_Data};
 use support::{NexusProcess, fake_flow::FakeFlow};
 
+use message_nexus::{
+    DefaultConfiguration, LaysOutDefaults,
+    configuration::SeedsConfiguration,
+    generated::memory::Standard,
+    request_tracking::Classification,
+    store::{KeepsRequestTracking, MessageStore, OpensStore},
+};
+
 fn quiet_send_stream(nexus: &NexusProcess) -> std::os::unix::net::UnixStream {
     use message_nexus::frame::FramedStream;
     let mut stream = std::os::unix::net::UnixStream::connect(nexus.ordinary_socket()).unwrap();
@@ -69,6 +77,54 @@ fn send_reaches_flow_with_the_lock_and_original_request() {
     assert_eq!(delivered[0].lock.sender.topic, "flow");
     assert_eq!(flow.acknowledged(), vec![delivered[0].deliver_key.clone()]);
     assert_eq!(flow.bound().len(), 1);
+}
+
+#[test]
+fn message_consumes_its_live_delivery_stream_and_reopens_the_durable_cursor() {
+    let home = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let flow = FakeFlow::start(runtime.path());
+    let nexus = NexusProcess::start(home, runtime);
+    assert_eq!(flow.wait_for_delivery_observations(1), vec![None]);
+    flow.interrupt_delivery_observer();
+    assert_eq!(
+        flow.wait_for_delivery_observations(2),
+        vec![None, Some(0)],
+        "the replacement stream resumes at Message's durable cursor"
+    );
+
+    assert!(matches!(
+        nexus.ask(&Query::Send(SendRequest {
+            recipient: sender(),
+            sendable_message: SendableMessage::Soft(SendableRequest::Question(
+                "classify the live delivery".into(),
+            )),
+        })),
+        Response::SendAccepted(_)
+    ));
+    assert_eq!(flow.acknowledged().len(), 1);
+
+    let (home, runtime) = nexus.stop();
+    let defaults = DefaultConfiguration {
+        home: home.path().into(),
+        runtime_directory: runtime.path().into(),
+    };
+    let store = MessageStore::open(
+        &defaults.store_path(),
+        Standard {
+            configuration: defaults.message_configuration(),
+            meta_configured: false,
+        },
+    )
+    .unwrap();
+    let tracking = store.request_tracking().unwrap();
+    assert_eq!(tracking.observation_cursor, Some(2));
+    assert_eq!(tracking.classified_events.len(), 1);
+    assert_eq!(
+        tracking.classified_events[0].classification,
+        Classification::MessageRelay
+    );
+    assert_eq!(tracking.classified_events[0].delivery_cursor, 2);
 }
 
 #[test]

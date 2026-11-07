@@ -8,7 +8,14 @@ use crate::{
     store::{KeepsRequestTracking, MessageStore, StoreError},
 };
 use signal_flow::{Response, VisibleDeliverySnapshot, VisibleSendObservation};
-use std::{os::unix::net::UnixStream, sync::Mutex};
+use std::{
+    net::Shutdown,
+    os::unix::net::UnixStream,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryConsumerError {
@@ -24,8 +31,10 @@ pub enum DeliveryConsumerError {
 
 pub struct DeliveryConsumer {
     subscription: Mutex<FlowSubscription>,
+    interrupt: Mutex<UnixStream>,
     classifier: Mutex<OrderedClassifier<VisibleDeliverySnapshot>>,
     read_highwater: Mutex<i64>,
+    stopping: AtomicBool,
 }
 
 pub trait OpensDeliveryConsumer: Sized {
@@ -33,8 +42,11 @@ pub trait OpensDeliveryConsumer: Sized {
 }
 
 pub trait ConsumesDeliveries {
-    fn interrupt_handle(&self) -> Result<UnixStream, DeliveryConsumerError>;
     fn receive_next(&self) -> Result<VisibleDeliverySnapshot, DeliveryConsumerError>;
+    fn reconnect(&self, edge: &FlowEdge, store: &MessageStore)
+    -> Result<(), DeliveryConsumerError>;
+    fn stop(&self) -> Result<(), DeliveryConsumerError>;
+    fn is_stopping(&self) -> bool;
     fn accept_snapshot(
         &self,
         store: &MessageStore,
@@ -55,6 +67,11 @@ trait AppliesDeliveryObservation {
         snapshot: VisibleDeliverySnapshot,
     ) -> Result<(), DeliveryConsumerError>;
     fn commit_ready(&self, store: &MessageStore) -> Result<(), DeliveryConsumerError>;
+    fn recover_deliveries(
+        &self,
+        edge: &FlowEdge,
+        store: &MessageStore,
+    ) -> Result<(), DeliveryConsumerError>;
 }
 
 impl OpensDeliveryConsumer for DeliveryConsumer {
@@ -92,64 +109,24 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
         } else {
             (subscription, opening)
         };
+        let interrupt = subscription
+            .interrupt_handle()
+            .map_err(DeliveryConsumerError::Flow)?;
         let consumer = Self {
             subscription: Mutex::new(subscription),
+            interrupt: Mutex::new(interrupt),
             classifier: Mutex::new(OrderedClassifier::default()),
             read_highwater: Mutex::new(opening.delivery_cursor),
+            stopping: AtomicBool::new(false),
         };
         consumer.apply_opening(store, opening)?;
-
-        let pending = store.request_tracking()?.pending_deliver_keys();
-        for key in pending {
-            let request = store
-                .request_tracking()?
-                .outbox
-                .iter()
-                .find(|entry| entry.deliver_key == key)
-                .map(|entry| entry.request.clone());
-            let Some(request) = request else {
-                continue;
-            };
-            match edge.deliver(
-                request.lock,
-                request.deliver_key.clone(),
-                request.sendable_message,
-            ) {
-                Ok(FlowSendReply::Queued(acceptance)) => {
-                    let mut tracking = store.request_tracking()?;
-                    tracking
-                        .record_acceptance(&key, acceptance.request_id, acceptance.delivery_cursor)
-                        .map_err(DeliveryConsumerError::Tracking)?;
-                    store.replace_request_tracking(tracking)?;
-                }
-                Err(EdgeFailure::Refused(_) | EdgeFailure::DeliverKeyReused) => {
-                    let mut tracking = store.request_tracking()?;
-                    tracking
-                        .record_refusal(&key)
-                        .map_err(DeliveryConsumerError::Tracking)?;
-                    store.replace_request_tracking(tracking)?;
-                }
-                Err(_) => {}
-            }
-        }
-        let acknowledgements = store.request_tracking()?.acknowledgement_keys();
-        if !acknowledgements.is_empty() {
-            let _ = edge.acknowledge(acknowledgements);
-        }
+        consumer.recover_deliveries(edge, store)?;
         consumer.commit_ready(store)?;
         Ok(consumer)
     }
 }
 
 impl ConsumesDeliveries for DeliveryConsumer {
-    fn interrupt_handle(&self) -> Result<UnixStream, DeliveryConsumerError> {
-        self.subscription
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .interrupt_handle()
-            .map_err(DeliveryConsumerError::Flow)
-    }
-
     fn receive_next(&self) -> Result<VisibleDeliverySnapshot, DeliveryConsumerError> {
         let response = self
             .subscription
@@ -161,6 +138,78 @@ impl ConsumesDeliveries for DeliveryConsumer {
             Response::SendChanged(snapshot) => Ok(snapshot),
             _ => Err(DeliveryConsumerError::Opening),
         }
+    }
+
+    fn reconnect(
+        &self,
+        edge: &FlowEdge,
+        store: &MessageStore,
+    ) -> Result<(), DeliveryConsumerError> {
+        let cursor = store
+            .request_tracking()?
+            .opening_cursor()
+            .map_err(DeliveryConsumerError::Tracking)?;
+        let mut replacement = edge
+            .observe_deliveries(cursor)
+            .map_err(DeliveryConsumerError::Flow)?;
+        let Response::SendsObserved(mut opening) =
+            replacement.next().map_err(DeliveryConsumerError::Flow)?
+        else {
+            return Err(DeliveryConsumerError::Opening);
+        };
+        let identity_changed = store
+            .request_tracking()?
+            .store_identity
+            .as_ref()
+            .is_some_and(|identity| identity != &opening.store_identity);
+        if identity_changed {
+            let mut tracking = store.request_tracking()?;
+            tracking.observe_store(opening.store_identity);
+            store.replace_request_tracking(tracking)?;
+            replacement = edge
+                .observe_deliveries(None)
+                .map_err(DeliveryConsumerError::Flow)?;
+            let Response::SendsObserved(reopened) =
+                replacement.next().map_err(DeliveryConsumerError::Flow)?
+            else {
+                return Err(DeliveryConsumerError::Opening);
+            };
+            opening = reopened;
+        }
+        let interrupt = replacement
+            .interrupt_handle()
+            .map_err(DeliveryConsumerError::Flow)?;
+        if self.is_stopping() {
+            return Err(DeliveryConsumerError::Flow(EdgeFailure::Broken));
+        }
+        *self
+            .interrupt
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = interrupt;
+        *self
+            .subscription
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = replacement;
+        *self
+            .classifier
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = OrderedClassifier::default();
+        self.apply_opening(store, opening)?;
+        self.recover_deliveries(edge, store)?;
+        self.commit_ready(store)
+    }
+
+    fn stop(&self) -> Result<(), DeliveryConsumerError> {
+        self.stopping.store(true, Ordering::Release);
+        self.interrupt
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .shutdown(Shutdown::Both)
+            .map_err(|_| DeliveryConsumerError::Flow(EdgeFailure::Broken))
+    }
+
+    fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::Acquire)
     }
 
     fn accept_snapshot(
@@ -238,6 +287,51 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
                 .advance_cursor(highwater)
                 .map_err(DeliveryConsumerError::Tracking)?;
             store.replace_request_tracking(tracking)?;
+        }
+        Ok(())
+    }
+
+    fn recover_deliveries(
+        &self,
+        edge: &FlowEdge,
+        store: &MessageStore,
+    ) -> Result<(), DeliveryConsumerError> {
+        let pending = store.request_tracking()?.pending_deliver_keys();
+        for key in pending {
+            let request = store
+                .request_tracking()?
+                .outbox
+                .iter()
+                .find(|entry| entry.deliver_key == key)
+                .map(|entry| entry.request.clone());
+            let Some(request) = request else {
+                continue;
+            };
+            match edge.deliver(
+                request.lock,
+                request.deliver_key.clone(),
+                request.sendable_message,
+            ) {
+                Ok(FlowSendReply::Queued(acceptance)) => {
+                    let mut tracking = store.request_tracking()?;
+                    tracking
+                        .record_acceptance(&key, acceptance.request_id, acceptance.delivery_cursor)
+                        .map_err(DeliveryConsumerError::Tracking)?;
+                    store.replace_request_tracking(tracking)?;
+                }
+                Err(EdgeFailure::Refused(_) | EdgeFailure::DeliverKeyReused) => {
+                    let mut tracking = store.request_tracking()?;
+                    tracking
+                        .record_refusal(&key)
+                        .map_err(DeliveryConsumerError::Tracking)?;
+                    store.replace_request_tracking(tracking)?;
+                }
+                Err(_) => {}
+            }
+        }
+        let acknowledgements = store.request_tracking()?.acknowledgement_keys();
+        if !acknowledgements.is_empty() {
+            let _ = edge.acknowledge(acknowledgements);
         }
         Ok(())
     }

@@ -3,7 +3,8 @@
 use message_nexus::frame::FramedStream;
 use signal_flow::{
     Address, Aspect, Bind_Data, Deliver_Data, FlowId, Lock, Lock_Data, Model, Process, Query,
-    Refusal, Response, VisibleDeliveryState, VisibleSendAcceptance, VisibleSendObservation,
+    Refusal, Response, VisibleDeliverySnapshot, VisibleDeliveryState, VisibleSendAcceptance,
+    VisibleSendObservation, VisibleSender,
 };
 use std::{
     io::Read,
@@ -19,6 +20,10 @@ struct State {
     delivered: Vec<Deliver_Data>,
     acknowledged: Vec<signal_flow::DeliverKey>,
     identified_threads: Vec<signal_flow::IdentifyThread_Data>,
+    delivery_observer: Option<UnixStream>,
+    delivery_observation_cursors: Vec<Option<i64>>,
+    delivery_snapshots: Vec<VisibleDeliverySnapshot>,
+    delivery_cursor: i64,
 }
 
 #[derive(Clone)]
@@ -27,6 +32,7 @@ pub struct FakeFlow {
     socket_path: PathBuf,
     quiet_observer: bool,
     observer_closed: Arc<(Mutex<usize>, Condvar)>,
+    delivery_observed: Arc<(Mutex<usize>, Condvar)>,
 }
 
 impl FakeFlow {
@@ -48,6 +54,7 @@ impl FakeFlow {
             socket_path,
             quiet_observer,
             observer_closed: Arc::new((Mutex::new(0), Condvar::new())),
+            delivery_observed: Arc::new((Mutex::new(0), Condvar::new())),
         };
         let accepting = flow.clone();
         std::thread::spawn(move || {
@@ -89,6 +96,35 @@ impl FakeFlow {
         self.state.lock().unwrap().acknowledged.clone()
     }
 
+    pub fn interrupt_delivery_observer(&self) {
+        let observer = self
+            .state
+            .lock()
+            .unwrap()
+            .delivery_observer
+            .take()
+            .expect("Message opened its delivery observation");
+        observer.shutdown(std::net::Shutdown::Both).unwrap();
+    }
+
+    pub fn wait_for_delivery_observations(&self, expected: usize) -> Vec<Option<i64>> {
+        let (count, changed) = &*self.delivery_observed;
+        let count = count.lock().unwrap();
+        let (count, timeout) = changed
+            .wait_timeout_while(count, Duration::from_secs(5), |count| *count < expected)
+            .unwrap();
+        assert!(
+            *count >= expected,
+            "Message did not reopen its delivery stream"
+        );
+        assert!(!timeout.timed_out() || *count >= expected);
+        self.state
+            .lock()
+            .unwrap()
+            .delivery_observation_cursors
+            .clone()
+    }
+
     fn sender(&self) -> Address {
         Address {
             aspect: Aspect::Mind,
@@ -103,6 +139,8 @@ impl FakeFlow {
         };
         let observing_sender = matches!(&query, Query::ObserveSender(_));
         let observing_deliveries = matches!(&query, Query::ObserveDeliveries(_));
+        let mut delivery_change = None;
+        let mut register_delivery_observer = false;
         let response = match query {
             Query::Bind(Bind_Data { address, process }) => {
                 self.state.lock().unwrap().bound.push((address, process));
@@ -136,7 +174,18 @@ impl FakeFlow {
                 until: i64::MAX,
             }),
             Query::Deliver(delivery) => {
-                self.state.lock().unwrap().delivered.push(delivery);
+                let snapshot = VisibleDeliverySnapshot {
+                    request_id: "fake-request".into(),
+                    delivery_cursor: 2,
+                    visible_sender: VisibleSender::Sender(delivery.lock.sender.clone()),
+                    address: delivery.lock.address.clone(),
+                    visible_delivery_state: VisibleDeliveryState::Delivered,
+                };
+                let mut state = self.state.lock().unwrap();
+                state.delivered.push(delivery);
+                state.delivery_cursor = snapshot.delivery_cursor;
+                state.delivery_snapshots.push(snapshot.clone());
+                delivery_change = Some(snapshot);
                 Response::SendAccepted(VisibleSendAcceptance {
                     request_id: "fake-request".into(),
                     delivery_cursor: 1,
@@ -152,15 +201,38 @@ impl FakeFlow {
                 delivery_cursor: 1,
                 visible_delivery_snapshot_vector: vec![],
             }),
-            Query::ObserveDeliveries(_) => Response::SendsObserved(VisibleSendObservation {
-                store_identity: "fake-store".into(),
-                delivery_cursor: 0,
-                visible_delivery_snapshot_vector: vec![],
-            }),
+            Query::ObserveDeliveries(cursor) => {
+                register_delivery_observer = true;
+                let mut state = self.state.lock().unwrap();
+                state.delivery_observation_cursors.push(cursor);
+                Response::SendsObserved(VisibleSendObservation {
+                    store_identity: "fake-store".into(),
+                    delivery_cursor: state.delivery_cursor,
+                    visible_delivery_snapshot_vector: state
+                        .delivery_snapshots
+                        .iter()
+                        .filter(|snapshot| {
+                            cursor.is_none_or(|cursor| snapshot.delivery_cursor > cursor)
+                        })
+                        .cloned()
+                        .collect(),
+                })
+            }
             Query::Release(_) => Response::Released,
             _ => Response::Refused(Refusal::NotConfigured),
         };
         let _ = stream.write_frame(&response);
+        if register_delivery_observer {
+            self.state.lock().unwrap().delivery_observer = stream.try_clone().ok();
+            let (count, changed) = &*self.delivery_observed;
+            *count.lock().unwrap() += 1;
+            changed.notify_all();
+        }
+        if let Some(snapshot) = delivery_change
+            && let Some(observer) = self.state.lock().unwrap().delivery_observer.as_mut()
+        {
+            let _ = observer.write_frame(&Response::SendChanged(snapshot));
+        }
         if observing_deliveries || (observing_sender && self.quiet_observer) {
             let mut byte = [0; 1];
             let _ = stream.read(&mut byte);
