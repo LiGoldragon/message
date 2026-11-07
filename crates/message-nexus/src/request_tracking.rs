@@ -116,14 +116,14 @@ impl<Request: Clone> RequestTracking<Request> {
         if !self
             .outbox
             .iter()
-            .any(|entry| entry.deliver_key == deliver_key)
+            .any(|entry| &entry.deliver_key == deliver_key)
         {
             return Err(TrackingError::UnknownDeliverKey);
         }
         if self
             .ledger
             .iter()
-            .any(|entry| entry.deliver_key == deliver_key)
+            .any(|entry| &entry.deliver_key == deliver_key)
         {
             return Err(TrackingError::AnswerAlreadyRecorded);
         }
@@ -141,7 +141,7 @@ impl<Request: Clone> RequestTracking<Request> {
         let entry = self
             .outbox
             .iter_mut()
-            .find(|entry| entry.deliver_key == deliver_key)
+            .find(|entry| &entry.deliver_key == deliver_key)
             .ok_or(TrackingError::UnknownDeliverKey)?;
         entry.refused = true;
         self.pending.retain(|key| key != deliver_key);
@@ -624,8 +624,12 @@ mod tests {
         let state = tracking();
         let (_, writes) = classify(&state, 1, [Snapshot("i", 1, false)]);
         let durable = writes.last().unwrap();
-        let (_, replay) = classify(durable, 1, [Snapshot("i", 1, false)]);
-        assert_eq!(replay, Err(TrackingError::ObservationOutOfOrder));
+        let mut classifier = OrderedClassifier::default();
+        classifier.push(Snapshot("i", 1, false));
+        assert_eq!(
+            classifier.classify_ready(durable, 1),
+            Err(TrackingError::ObservationOutOfOrder)
+        );
     }
 
     #[test]

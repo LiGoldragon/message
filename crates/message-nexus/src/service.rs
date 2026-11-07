@@ -301,19 +301,21 @@ impl MapsFlowRefusal for Refusal {
             Self::Unknown(FlowUnknown::Lock(lock)) => {
                 SendRefusal::Unknown(MessageUnknown::Lock(lock))
             }
-            Self::NoLayer => SendRefusal::NoLayer,
-            Self::NoneAbove => SendRefusal::NoneAbove,
             Self::NotMessage => SendRefusal::NotMessage,
             Self::NotConfigured => SendRefusal::NotConfigured,
             Self::NotSendServer(process) => SendRefusal::NotSendServer(process),
-            Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Store(error) => SendRefusal::Store(error),
             Self::Oversized(size) => SendRefusal::Oversized(size),
             Self::Unknown(_)
             | Self::Awake(_)
             | Self::Taken(_)
-            | Self::OffRoute
-            | Self::Direct(_) => {
+            | Self::Unidentified(_)
+            | Self::Direct(_)
+            | Self::TopicRefused(_)
+            | Self::Unresolved
+            | Self::RequestIdSpaceFull
+            | Self::RequestIdDrawsCollided
+            | Self::MinutesRefused(_) => {
                 return None;
             }
         })
