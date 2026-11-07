@@ -68,11 +68,11 @@ pub enum TrackingError {
     ObservationOutOfOrder,
 }
 
-pub trait MakesRequestTracking<Request> {
+pub(crate) trait MakesRequestTracking<Request> {
     fn new(namespace: Namespace) -> Self;
 }
 
-pub trait TracksRequests<Request> {
+pub(crate) trait TracksRequests<Request> {
     fn queue_deliver(
         &mut self,
         request: impl FnOnce(&DeliverKey) -> Request,
@@ -323,7 +323,7 @@ pub trait SenderSnapshot {
     fn is_archived(&self) -> bool;
 }
 
-enum Decision {
+pub(crate) enum Decision {
     Hold,
     Classify(Classification, Option<usize>),
 }
@@ -342,7 +342,7 @@ impl<S> Default for OrderedClassifier<S> {
     }
 }
 
-pub trait ClassifiesOrdered<S> {
+pub(crate) trait ClassifiesOrdered<S> {
     fn push(&mut self, snapshot: S);
     fn held_len(&self) -> usize;
     fn classify_ready<Request: Clone>(
