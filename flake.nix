@@ -101,6 +101,15 @@
           context = mkContext system;
         in
         {
+          generated-lock = context.craneLib.mkCargoDerivation (
+            context.commonArgs
+            // {
+              pname = "message-generated-lock";
+              cargoArtifacts = null;
+              buildPhaseCargoCommand = "cargo generate-lockfile --offline";
+              installPhaseCommand = "mkdir -p $out; cp Cargo.lock $out/Cargo.lock";
+            }
+          );
           default = context.craneLib.buildPackage (
             context.commonArgs
             // {
