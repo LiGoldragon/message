@@ -31,6 +31,7 @@ meta-signal-message.workspace = true
 signal-flow.workspace         = true
 meta-signal-flow.workspace    = true
 rkyv.workspace                = true
+getrandom.workspace           = true
 rustix      = { version = "1", features = ["net", "time"] }
 sema-engine = { git = "https://github.com/LiGoldragon/sema-engine", rev = "9884905ff9c660ad97a35c524e42532d5c7bac90" }
 thiserror   = "2"

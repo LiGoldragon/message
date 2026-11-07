@@ -8,7 +8,7 @@ use crate::{
     service::{ConfigureFailure, ConfiguresMessage, SendReply, ServesMessages},
 };
 use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
-use signal_flow::{DeliveryState, LogicalDeliveryId, Response as FlowResponse};
+use signal_flow::{Response as FlowResponse, VisibleDeliveryState};
 use signal_message::{Query, Response};
 use std::{
     fs,
@@ -194,7 +194,7 @@ trait AnswersConnection {
         &self,
         stream: &mut UnixStream,
         subscription: &mut crate::flow_edge::FlowSubscription,
-        terminal_id: Option<LogicalDeliveryId>,
+        terminal_id: Option<String>,
     ) -> Result<(), FrameError>;
 }
 
@@ -248,7 +248,7 @@ impl AnswersConnection for MessageNexus {
                     Ok(mut subscription) => self.forward_subscription(
                         stream,
                         &mut subscription,
-                        Some(accepted.logical_delivery_id),
+                        Some(accepted.request_id),
                     ),
                     Err(response) => stream.write_frame(response.as_ref()),
                 }
@@ -273,7 +273,7 @@ impl AnswersConnection for MessageNexus {
         &self,
         stream: &mut UnixStream,
         subscription: &mut crate::flow_edge::FlowSubscription,
-        terminal_id: Option<LogicalDeliveryId>,
+        terminal_id: Option<String>,
     ) -> Result<(), FrameError> {
         let flow_control = subscription.interrupt_handle().map_err(|_| {
             FrameError::Io(io::Error::new(
@@ -312,18 +312,20 @@ impl AnswersConnection for MessageNexus {
                     FlowResponse::SendsObserved(observation) => {
                         last_cursor = Some(observation.delivery_cursor);
                         let finished = terminal_id.as_deref().is_some_and(|id| {
-                            observation.delivery_snapshot_vector.iter().any(|item| {
-                                item.logical_delivery_id.as_str() == id
-                                    && item.delivery_state.is_terminal()
-                            })
+                            observation
+                                .visible_delivery_snapshot_vector
+                                .iter()
+                                .any(|item| {
+                                    item.request_id.as_str() == id
+                                        && item.visible_delivery_state.is_terminal()
+                                })
                         });
                         (Response::SendsObserved(observation), finished)
                     }
                     FlowResponse::SendChanged(snapshot) => {
                         last_cursor = Some(snapshot.delivery_cursor);
-                        let finished = terminal_id.as_deref()
-                            == Some(snapshot.logical_delivery_id.as_str())
-                            && snapshot.delivery_state.is_terminal();
+                        let finished = terminal_id.as_deref() == Some(snapshot.request_id.as_str())
+                            && snapshot.visible_delivery_state.is_terminal();
                         (Response::SendChanged(snapshot), finished)
                     }
                     other => {
@@ -367,8 +369,11 @@ trait TerminalDeliveryState {
     fn is_terminal(&self) -> bool;
 }
 
-impl TerminalDeliveryState for DeliveryState {
+impl TerminalDeliveryState for VisibleDeliveryState {
     fn is_terminal(&self) -> bool {
-        matches!(self, Self::Delivered(_) | Self::Failed(_))
+        matches!(
+            self,
+            Self::Delivered | Self::Read | Self::Failed(_) | Self::Withdrawn | Self::Archived
+        )
     }
 }

@@ -9,6 +9,7 @@ pub mod generated;
 pub mod listener;
 pub mod nexus;
 pub mod peer;
+pub mod request_tracking;
 pub mod service;
 pub mod store;
 

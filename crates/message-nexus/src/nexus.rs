@@ -9,7 +9,7 @@ use crate::{
 };
 use message_defaults::{DefaultConfiguration, LaysOutDefaults};
 use message_library::Configuration;
-use signal_flow::{Address, Aspect, Layer};
+use signal_flow::{Address, Aspect, Model};
 use std::sync::{Mutex, MutexGuard};
 
 pub struct MessageNexus {
@@ -46,7 +46,7 @@ impl OpensNexus for MessageNexus {
         let address = Address {
             aspect: Aspect::Field,
             topic: "message".into(),
-            layer: Layer::Primary,
+            model: Model::Astra,
         };
         edge.bind(address, process).map_err(NexusError::Flow)?;
         Ok(Self {

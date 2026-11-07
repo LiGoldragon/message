@@ -4,7 +4,7 @@ use datom_codec::{Actualizing, Budget, Datomizable, Potential};
 use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use protos::{Compactable, Protosizable, ReaderBudget};
 use serde_json::{Value, json};
-use signal_flow::DeliveryState;
+use signal_flow::VisibleDeliveryState;
 use signal_message::{Query, Response, SendThread_Data};
 use std::{
     collections::{HashMap, HashSet},
@@ -294,19 +294,22 @@ impl IdentifiesTerminalResponse for Response {
             Response::Sent(_) | Response::Failed(_) => true,
             Response::SendAccepted(_) => false,
             Response::SendsObserved(observation) => accepted_id.is_some_and(|id| {
-                observation.delivery_snapshot_vector.iter().any(|snapshot| {
-                    snapshot.logical_delivery_id == id
-                        && matches!(
-                            snapshot.delivery_state,
-                            DeliveryState::Delivered(_) | DeliveryState::Failed(_)
-                        )
-                })
+                observation
+                    .visible_delivery_snapshot_vector
+                    .iter()
+                    .any(|snapshot| {
+                        snapshot.request_id == id
+                            && matches!(
+                                snapshot.visible_delivery_state,
+                                VisibleDeliveryState::Delivered | VisibleDeliveryState::Failed(_)
+                            )
+                    })
             }),
             Response::SendChanged(snapshot) => {
-                accepted_id == Some(snapshot.logical_delivery_id.as_str())
+                accepted_id == Some(snapshot.request_id.as_str())
                     && matches!(
-                        snapshot.delivery_state,
-                        DeliveryState::Delivered(_) | DeliveryState::Failed(_)
+                        snapshot.visible_delivery_state,
+                        VisibleDeliveryState::Delivered | VisibleDeliveryState::Failed(_)
                     )
             }
             Response::ObservationInterrupted(_) | Response::Refused(_) | Response::Configured => {
@@ -423,7 +426,7 @@ impl RunsMcpCall for CallRequest {
                 Ok(response) => {
                     match &response {
                         Response::SendAccepted(accepted) => {
-                            accepted_id = Some(accepted.logical_delivery_id.clone());
+                            accepted_id = Some(accepted.request_id.clone());
                             last_cursor = Some(accepted.delivery_cursor);
                         }
                         Response::SendsObserved(observation) => {
@@ -449,8 +452,8 @@ impl RunsMcpCall for CallRequest {
                             Response::Failed(_)
                                 | Response::Refused(_)
                                 | Response::ObservationInterrupted(_)
-                        ) || matches!(&response, Response::SendChanged(snapshot) if matches!(snapshot.delivery_state, DeliveryState::Failed(_)))
-                            || matches!(&response, Response::SendsObserved(observation) if observation.delivery_snapshot_vector.iter().any(|snapshot| accepted_id.as_deref() == Some(snapshot.logical_delivery_id.as_str()) && matches!(snapshot.delivery_state, DeliveryState::Failed(_))));
+                        ) || matches!(&response, Response::SendChanged(snapshot) if matches!(snapshot.visible_delivery_state, VisibleDeliveryState::Failed(_)))
+                            || matches!(&response, Response::SendsObserved(observation) if observation.visible_delivery_snapshot_vector.iter().any(|snapshot| accepted_id.as_deref() == Some(snapshot.request_id.as_str()) && matches!(snapshot.visible_delivery_state, VisibleDeliveryState::Failed(_))));
                         if matches!(response, Response::ObservationInterrupted(_)) {
                             let cursor = last_cursor
                                 .map_or_else(|| "none".to_owned(), |cursor| cursor.to_string());
@@ -639,7 +642,7 @@ mod tests {
     use serde_json::json;
 
     fn send_call() -> Value {
-        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"recorded-thread","progressToken":"token-1"}}})
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ { Mind flow Sol } MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"recorded-thread","progressToken":"token-1"}}})
     }
 
     #[test]
@@ -695,7 +698,7 @@ mod tests {
         };
         assert_eq!(request.native_session_id, "recorded-thread");
         assert_eq!(
-            request.send_request.message,
+            request.send_request.sendable_message,
             signal_flow::Message::MiddleAbrupt(signal_flow::Request::Question("whole body".into()))
         );
     }
@@ -780,7 +783,7 @@ mod tests {
 
     #[test]
     fn queued_progress_and_concurrent_cancel_stop_only_observation() {
-        use signal_flow::{DeliveryState, SendAcceptance};
+        use signal_flow::{VisibleDeliveryState, VisibleSendAcceptance};
         use std::os::unix::net::UnixListener;
 
         let directory = tempfile::tempdir().unwrap();
@@ -795,10 +798,10 @@ mod tests {
             let _: Query = rkyv::from_bytes::<Query, rkyv::rancor::Error>(&query).unwrap();
             write_frame(
                 &mut peer,
-                &Response::SendAccepted(SendAcceptance {
-                    logical_delivery_id: "queued-1".into(),
+                &Response::SendAccepted(VisibleSendAcceptance {
+                    request_id: "k7ph".into(),
                     delivery_cursor: 7,
-                    delivery_state: DeliveryState::Queued,
+                    visible_delivery_state: VisibleDeliveryState::Queued,
                 }),
             );
             // Cancellation closes this observation connection. The accepted
@@ -807,7 +810,7 @@ mod tests {
             let _ = peer.read(&mut byte);
         });
 
-        let input = json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":"progress-10"}}});
+        let input = json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ { Mind flow Sol } MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":"progress-10"}}});
         let (mut input_writer, input_reader) = UnixStream::pair().unwrap();
         let output_state = Arc::new((Mutex::new(Vec::new()), std::sync::Condvar::new()));
         let output: Arc<Mutex<Box<dyn Write + Send>>> =
@@ -863,7 +866,7 @@ mod tests {
             let mut byte = [0; 1];
             let _ = peer.read(&mut byte);
         });
-        let call = json!({"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":"progress-11"}}});
+        let call = json!({"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ { Mind flow Sol } MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":"progress-11"}}});
         let (mut input_writer, input_reader) = UnixStream::pair().unwrap();
         let output_state = Arc::new((Mutex::new(Vec::new()), std::sync::Condvar::new()));
         let output: Arc<Mutex<Box<dyn Write + Send>>> =
@@ -904,8 +907,8 @@ mod tests {
     #[test]
     fn matching_native_delivery_has_one_final_response() {
         use signal_flow::{
-            Address, DeliverySnapshot, DeliveryState, HarnessKind, Layer, NativeReceipt,
-            SendAcceptance, SentBy,
+            Address, Model, VisibleDeliverySnapshot, VisibleDeliveryState, VisibleSendAcceptance,
+            VisibleSender,
         };
         use std::os::unix::net::UnixListener;
 
@@ -920,33 +923,29 @@ mod tests {
             peer.read_exact(&mut query).unwrap();
             write_frame(
                 &mut peer,
-                &Response::SendAccepted(SendAcceptance {
-                    logical_delivery_id: "delivered-1".into(),
+                &Response::SendAccepted(VisibleSendAcceptance {
+                    request_id: "k7ph".into(),
                     delivery_cursor: 1,
-                    delivery_state: DeliveryState::Queued,
+                    visible_delivery_state: VisibleDeliveryState::Queued,
                 }),
             );
             let address = Address {
                 aspect: signal_flow::Aspect::Mind,
                 topic: "flow".into(),
-                layer: Layer::Secondary,
+                model: Model::Sol,
             };
             write_frame(
                 &mut peer,
-                &Response::SendChanged(DeliverySnapshot {
+                &Response::SendChanged(VisibleDeliverySnapshot {
+                    request_id: "k7ph".into(),
                     delivery_cursor: 2,
-                    logical_delivery_id: "delivered-1".into(),
-                    sent_by: SentBy::Sender(address.clone()),
+                    visible_sender: VisibleSender::Sender(address.clone()),
                     address,
-                    delivery_state: DeliveryState::Delivered(NativeReceipt {
-                        harness_kind: HarnessKind::Codex,
-                        native_session_id: "thread".into(),
-                        native_prompt_id: "prompt-1".into(),
-                    }),
+                    visible_delivery_state: VisibleDeliveryState::Delivered,
                 }),
             );
         });
-        let call = json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":"progress-10"}}});
+        let call = json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"send","arguments":{"query":"Send.{ { Mind flow Sol } MiddleAbrupt.Question.«whole body» }"},"_meta":{"threadId":"thread","progressToken":"progress-10"}}});
         let (mut input_writer, input_reader) = UnixStream::pair().unwrap();
         let output_state = Arc::new((Mutex::new(Vec::new()), std::sync::Condvar::new()));
         let output: Arc<Mutex<Box<dyn Write + Send>>> =

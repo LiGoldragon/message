@@ -2,9 +2,9 @@
 
 use crate::frame::FramedStream;
 use signal_flow::{
-    Address, Bind_Data, Deliver_Data, DeliveryCursor, FlowId, IdentifyThread_Data, Lock, Lock_Data,
-    ObserveSender_Data, Process, Query, Recipient, Refusal, Response, SendAcceptance, SendFailure,
-    SendReceipt, SendRequest, Sender,
+    Address, Bind_Data, Deliver_Data, DeliverKey, DeliveryCursor, FlowId, IdentifyThread_Data,
+    Lock, Lock_Data, ObserveSender_Data, Process, Query, Recipient, Refusal, Response,
+    SendableMessage, Sender, VisibleSendAcceptance, VisibleSendFailure, VisibleSendReceipt,
 };
 use std::os::unix::net::UnixStream;
 
@@ -13,13 +13,14 @@ pub enum EdgeFailure {
     Unreachable,
     Broken,
     Refused(Refusal),
+    DeliverKeyReused,
     Unexpected,
 }
 
 pub enum FlowSendReply {
-    Queued(SendAcceptance),
-    Sent(SendReceipt),
-    Failed(SendFailure),
+    Queued(VisibleSendAcceptance),
+    Sent(VisibleSendReceipt),
+    Failed(VisibleSendFailure),
 }
 
 pub struct FlowEdge {
@@ -57,8 +58,7 @@ impl ExchangesWithFlow for FlowEdge {
         // A timeout is a failed exchange, never permission to replay a delivery.
         let timeout = Some(std::time::Duration::from_secs(2));
         let read_timeout = if matches!(query, Query::Deliver(delivery)
-            if delivery.delivery == signal_flow::Delivery::Wake
-                && !matches!(delivery.message, signal_flow::Message::Soft(_)))
+            if !matches!(delivery.sendable_message, signal_flow::SendableMessage::Soft(_)))
         {
             None
         } else {
@@ -88,7 +88,13 @@ pub trait CallsFlow {
         native_session_id: String,
     ) -> Result<Address, EdgeFailure>;
     fn lock(&self, sender: Sender, recipient: Recipient) -> Result<Lock, EdgeFailure>;
-    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<FlowSendReply, EdgeFailure>;
+    fn deliver(
+        &self,
+        lock: Lock,
+        deliver_key: DeliverKey,
+        sendable_message: SendableMessage,
+    ) -> Result<FlowSendReply, EdgeFailure>;
+    fn acknowledge(&self, deliver_keys: Vec<DeliverKey>) -> Result<(), EdgeFailure>;
     fn observe_sender(
         &self,
         process: Process,
@@ -138,22 +144,27 @@ impl CallsFlow for FlowEdge {
         }
     }
 
-    fn deliver(&self, lock: Lock, request: SendRequest) -> Result<FlowSendReply, EdgeFailure> {
-        let abrupt = !matches!(&request.message, signal_flow::Message::Soft(_));
+    fn deliver(
+        &self,
+        lock: Lock,
+        deliver_key: DeliverKey,
+        sendable_message: SendableMessage,
+    ) -> Result<FlowSendReply, EdgeFailure> {
         match self.exchange(&Query::Deliver(Deliver_Data {
             lock,
-            delivery: request.delivery,
-            message: request.message,
+            deliver_key,
+            sendable_message,
         }))? {
-            Response::SendAccepted(acceptance) if abrupt => {
-                Ok(FlowSendReply::Failed(SendFailure {
-                    logical_delivery_id_option: Some(acceptance.logical_delivery_id),
-                    send_failure_reason: signal_flow::SendFailureReason::ReceiptUncertain,
-                }))
-            }
             Response::SendAccepted(acceptance) => Ok(FlowSendReply::Queued(acceptance)),
-            Response::Sent(receipt) => Ok(FlowSendReply::Sent(receipt)),
-            Response::Failed(failure) => Ok(FlowSendReply::Failed(failure)),
+            Response::DeliverKeyReused => Err(EdgeFailure::DeliverKeyReused),
+            Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
+            _ => Err(EdgeFailure::Unexpected),
+        }
+    }
+
+    fn acknowledge(&self, deliver_keys: Vec<DeliverKey>) -> Result<(), EdgeFailure> {
+        match self.exchange(&Query::Acknowledge(deliver_keys))? {
+            Response::Acknowledged => Ok(()),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
         }

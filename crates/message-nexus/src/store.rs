@@ -1,6 +1,8 @@
 //! Message's configuration and first-configuration state.
 
-use crate::{generated::memory::Standard, message_library::Configuration};
+use crate::{
+    generated::memory::Standard, message_library::Configuration, request_tracking::RequestTracking,
+};
 use sema_engine::{
     Engine, EngineOpen, EngineRecord, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan,
     RecordKey, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
@@ -9,15 +11,21 @@ use std::path::Path;
 
 const STANDARD_TABLE: TableName = TableName::new("message_nexus_standard");
 const STANDARD_KEY: &str = "standard";
+const REQUEST_TRACKING_TABLE: TableName = TableName::new("message_nexus_request_tracking");
+const REQUEST_TRACKING_KEY: &str = "request-tracking";
+
+pub type DurableRequestTracking = RequestTracking<signal_flow::Deliver_Data>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("sema-engine: {0}")]
     Engine(#[from] sema_engine::Error),
-    #[error("store {path} is not current Message Standard2: {reason}")]
+    #[error("store {path} is not current Message 0.22 Memory: {reason}")]
     Unrecognized { path: String, reason: String },
     #[error("the store does not hold exactly one Standard record")]
     StateInvariant,
+    #[error("cannot mint the Message Memory namespace: {0}")]
+    Namespace(String),
 }
 
 impl EngineRecord for Standard {
@@ -26,14 +34,26 @@ impl EngineRecord for Standard {
     }
 }
 
+impl EngineRecord for DurableRequestTracking {
+    fn record_key(&self) -> RecordKey {
+        RecordKey::new(REQUEST_TRACKING_KEY)
+    }
+}
+
 pub struct MessageStore {
     engine: Engine,
     standard: TableReference<Standard>,
+    request_tracking: TableReference<DurableRequestTracking>,
 }
 
 pub trait KeepsStandard {
     fn standard(&self) -> Result<Standard, StoreError>;
     fn replace_standard(&self, standard: Standard) -> Result<(), StoreError>;
+}
+
+pub trait KeepsRequestTracking {
+    fn request_tracking(&self) -> Result<DurableRequestTracking, StoreError>;
+    fn replace_request_tracking(&self, tracking: DurableRequestTracking) -> Result<(), StoreError>;
 }
 
 pub trait OpensStore: Sized {
@@ -42,25 +62,53 @@ pub trait OpensStore: Sized {
 
 trait ReadsRows {
     fn standards(&self) -> Result<Vec<Standard>, StoreError>;
+    fn request_trackings(&self) -> Result<Vec<DurableRequestTracking>, StoreError>;
 }
 
 impl OpensStore for MessageStore {
     fn open(path: &Path, seed: Standard) -> Result<Self, StoreError> {
         Self::recognize(path)?;
-        let descriptor = TableDescriptor::<Standard>::new(
+        let standard_descriptor = TableDescriptor::<Standard>::new(
             STANDARD_TABLE,
             FamilyName::new("message-nexus-standard"),
             SchemaHash::for_label("message-nexus-standard-v2"),
         );
-        let mut engine =
-            Engine::open(EngineOpen::new(path, SchemaVersion::new(2)).with_family(&descriptor))?;
-        let standard = engine.register_table(descriptor)?;
-        let store = Self { engine, standard };
+        let tracking_descriptor = TableDescriptor::<DurableRequestTracking>::new(
+            REQUEST_TRACKING_TABLE,
+            FamilyName::new("message-nexus-request-tracking"),
+            SchemaHash::for_label("message-nexus-request-tracking-v1"),
+        );
+        let mut engine = Engine::open(
+            EngineOpen::new(path, SchemaVersion::new(3))
+                .with_family(&standard_descriptor)
+                .with_family(&tracking_descriptor),
+        )?;
+        let standard = engine.register_table(standard_descriptor)?;
+        let request_tracking = engine.register_table(tracking_descriptor)?;
+        let store = Self {
+            engine,
+            standard,
+            request_tracking,
+        };
         if store.standards()?.is_empty() {
             store.engine.assert_keyed(KeyedAssertion::new(
                 store.standard,
                 RecordKey::new(STANDARD_KEY),
                 seed,
+            ))?;
+        }
+        if store.request_trackings()?.is_empty() {
+            let mut bytes = [0_u8; 16];
+            getrandom::fill(&mut bytes)
+                .map_err(|error| StoreError::Namespace(error.to_string()))?;
+            let namespace = bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            store.engine.assert_keyed(KeyedAssertion::new(
+                store.request_tracking,
+                RecordKey::new(REQUEST_TRACKING_KEY),
+                DurableRequestTracking::new(namespace),
             ))?;
         }
         Ok(store)
@@ -72,6 +120,17 @@ impl ReadsRows for MessageStore {
         Ok(self
             .engine
             .match_records(QueryPlan::key(self.standard, RecordKey::new(STANDARD_KEY)))?
+            .records()
+            .to_vec())
+    }
+
+    fn request_trackings(&self) -> Result<Vec<DurableRequestTracking>, StoreError> {
+        Ok(self
+            .engine
+            .match_records(QueryPlan::key(
+                self.request_tracking,
+                RecordKey::new(REQUEST_TRACKING_KEY),
+            ))?
             .records()
             .to_vec())
     }
@@ -90,6 +149,24 @@ impl KeepsStandard for MessageStore {
             self.standard,
             RecordKey::new(STANDARD_KEY),
             standard,
+        ))?;
+        Ok(())
+    }
+}
+
+impl KeepsRequestTracking for MessageStore {
+    fn request_tracking(&self) -> Result<DurableRequestTracking, StoreError> {
+        match self.request_trackings()?.as_slice() {
+            [tracking] => Ok(tracking.clone()),
+            _ => Err(StoreError::StateInvariant),
+        }
+    }
+
+    fn replace_request_tracking(&self, tracking: DurableRequestTracking) -> Result<(), StoreError> {
+        self.engine.mutate_keyed(KeyedMutation::new(
+            self.request_tracking,
+            RecordKey::new(REQUEST_TRACKING_KEY),
+            tracking,
         ))?;
         Ok(())
     }
@@ -172,8 +249,8 @@ impl RecognizesStore for MessageStore {
             .get("schema_version")
             .map_err(|error| reject(error.to_string()))?
             .map(|value| value.value());
-        if version != Some(2) {
-            return Err(reject(format!("schema version {version:?}, expected 2")));
+        if version != Some(3) {
+            return Err(reject(format!("schema version {version:?}, expected 3")));
         }
         let counters = read
             .open_table(redb::TableDefinition::<&str, &[u8]>::new(
@@ -203,11 +280,22 @@ impl RecognizesStore for MessageStore {
             >(value.value())
             .map_err(|error| reject(error.to_string()))?;
             let identity = registration.identity();
-            if key.value() != "message_nexus_standard"
-                || identity.table_name() != "message_nexus_standard"
-                || identity.family().as_str() != "message-nexus-standard"
-                || identity.schema_hash() != SchemaHash::for_label("message-nexus-standard-v2")
-            {
+            let recognized = match key.value() {
+                "message_nexus_standard" => {
+                    identity.table_name() == "message_nexus_standard"
+                        && identity.family().as_str() == "message-nexus-standard"
+                        && identity.schema_hash()
+                            == SchemaHash::for_label("message-nexus-standard-v2")
+                }
+                "message_nexus_request_tracking" => {
+                    identity.table_name() == "message_nexus_request_tracking"
+                        && identity.family().as_str() == "message-nexus-request-tracking"
+                        && identity.schema_hash()
+                            == SchemaHash::for_label("message-nexus-request-tracking-v1")
+                }
+                _ => false,
+            };
+            if !recognized {
                 return Err(reject(format!(
                     "foreign or historical family {:?}",
                     key.value()
@@ -215,8 +303,8 @@ impl RecognizesStore for MessageStore {
             }
             count += 1;
         }
-        if count != 1 {
-            return Err(reject("missing Standard2 family".into()));
+        if count != 2 {
+            return Err(reject("missing Message 0.22 families".into()));
         }
         let standards = read
             .open_table(redb::TableDefinition::<String, &[u8]>::new(
@@ -238,6 +326,24 @@ impl RecognizesStore for MessageStore {
         }
         if count != 1 {
             return Err(reject("missing or duplicate Standard row".into()));
+        }
+        let tracking = read
+            .open_table(redb::TableDefinition::<String, &[u8]>::new(
+                "message_nexus_request_tracking",
+            ))
+            .map_err(|error| reject(error.to_string()))?;
+        let mut count = 0;
+        for entry in tracking.iter().map_err(|error| reject(error.to_string()))? {
+            let (key, value) = entry.map_err(|error| reject(error.to_string()))?;
+            if key.value() != REQUEST_TRACKING_KEY {
+                return Err(reject("noncanonical RequestTracking key".into()));
+            }
+            rkyv::from_bytes::<DurableRequestTracking, rkyv::rancor::Error>(value.value())
+                .map_err(|error| reject(error.to_string()))?;
+            count += 1;
+        }
+        if count != 1 {
+            return Err(reject("missing or duplicate RequestTracking row".into()));
         }
         Ok(())
     }
@@ -261,12 +367,33 @@ mod recognition_tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("message.sema");
         let store = MessageStore::open(&path, seed()).unwrap();
+        let namespace = store.request_tracking().unwrap().namespace;
         let mut configured = store.standard().unwrap();
         configured.meta_configured = true;
         store.replace_standard(configured.clone()).unwrap();
         drop(store);
         let reopened = MessageStore::open(&path, seed()).unwrap();
         assert_eq!(reopened.standard().unwrap(), configured);
+        assert_eq!(reopened.request_tracking().unwrap().namespace, namespace);
+    }
+
+    fn store_namespace(path: &Path) -> String {
+        MessageStore::open(path, seed())
+            .unwrap()
+            .request_tracking()
+            .unwrap()
+            .namespace
+    }
+
+    #[test]
+    fn fresh_message_memories_have_distinct_persisted_namespaces() {
+        let one = tempfile::tempdir().unwrap();
+        let two = tempfile::tempdir().unwrap();
+        let one_path = one.path().join("message.sema");
+        let two_path = two.path().join("message.sema");
+        let first = store_namespace(&one_path);
+        assert_eq!(store_namespace(&one_path), first);
+        assert_ne!(store_namespace(&two_path), first);
     }
     #[test]
     fn foreign_and_legacy_occupants_are_refused_without_changing_bytes() {

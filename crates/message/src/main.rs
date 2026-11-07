@@ -4,7 +4,7 @@
 use datom_codec::{Actualizing, Budget, Datomizable, Potential};
 use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use protos::{Compactable, Protosizable, ReaderBudget};
-use signal_flow::DeliveryState;
+use signal_flow::VisibleDeliveryState;
 use signal_message::{Query, Response};
 use std::{
     env,
@@ -78,23 +78,27 @@ impl CallsMessageNexus for MessageClient {
                 .map_err(|e| e.to_string())?;
             let terminal = match &reply {
                 Response::SendAccepted(accepted) => {
-                    accepted_id = Some(accepted.logical_delivery_id.clone());
+                    accepted_id = Some(accepted.request_id.clone());
                     false
                 }
                 Response::SendsObserved(observation) => accepted_id.as_deref().is_some_and(|id| {
-                    observation.delivery_snapshot_vector.iter().any(|snapshot| {
-                        snapshot.logical_delivery_id == id
-                            && matches!(
-                                snapshot.delivery_state,
-                                DeliveryState::Delivered(_) | DeliveryState::Failed(_)
-                            )
-                    })
+                    observation
+                        .visible_delivery_snapshot_vector
+                        .iter()
+                        .any(|snapshot| {
+                            snapshot.request_id == id
+                                && matches!(
+                                    snapshot.visible_delivery_state,
+                                    VisibleDeliveryState::Delivered
+                                        | VisibleDeliveryState::Failed(_)
+                                )
+                        })
                 }),
                 Response::SendChanged(snapshot) => {
-                    accepted_id.as_deref() == Some(snapshot.logical_delivery_id.as_str())
+                    accepted_id.as_deref() == Some(snapshot.request_id.as_str())
                         && matches!(
-                            snapshot.delivery_state,
-                            DeliveryState::Delivered(_) | DeliveryState::Failed(_)
+                            snapshot.visible_delivery_state,
+                            VisibleDeliveryState::Delivered | VisibleDeliveryState::Failed(_)
                         )
                 }
                 Response::Sent(_)
@@ -135,7 +139,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{CallsMessageNexus, MessageClient};
-    use signal_flow::{Address, Aspect, Delivery, Layer, Message, Recipient};
+    use signal_flow::{Address, Aspect, Model, SendableMessage, SendableRequest};
     use signal_message::Query;
 
     #[test]
@@ -144,23 +148,22 @@ mod tests {
             socket: "unused".into(),
         };
         let Query::Send(request) = client
-            .parse(&["Send.{ Address.{ Mind flow Secondary } Wake MiddleAbrupt.Question.«What is current?» }".into()])
+            .parse(&["Send.{ { Mind flow Sol } MiddleAbrupt.Question.«What is current?» }".into()])
             .expect("send parses")
         else {
             panic!("Send datom must stay a Send query");
         };
         assert_eq!(
             request.recipient,
-            Recipient::Address(Address {
+            Address {
                 aspect: Aspect::Mind,
                 topic: "flow".into(),
-                layer: Layer::Secondary,
-            })
+                model: Model::Sol,
+            }
         );
-        assert_eq!(request.delivery, Delivery::Wake);
         assert_eq!(
-            request.message,
-            Message::MiddleAbrupt(signal_flow::Request::Question("What is current?".into()))
+            request.sendable_message,
+            SendableMessage::MiddleAbrupt(SendableRequest::Question("What is current?".into()))
         );
     }
 

@@ -4,21 +4,24 @@
 ; persistence failure is StoreRefused; Flow's failure is Store.String.
 
 Operation
-[ signal_flow:[ FlowId Address Request Lock Sender Recipient Process ]
+[ signal_flow:[ FlowId Address Lock DeliverKey SendableMessage Sender Recipient Process ]
   message_library:Configuration ]
 [ Bind.{ Address                ; register the Message process
          Process }
   Identify.Process              ; name the caller's metaflow
   Lock.{ Sender                 ; resolve Up relative to Sender
          Recipient }
-  Deliver.{ Lock                ; hand Flow the request under lock
-            Request }
+  Deliver.{ Lock                ; hand Flow the message under a durable key
+            DeliverKey
+            SendableMessage }
+  Acknowledge.Vector<DeliverKey> ; release Flow replay ownership after ledger write
   Release.Lock                  ; return the lock after failure
   Store.Configuration ]         ; write Memory
 [ Bound.FlowId
   Identified.Address
   Locked.Lock
   Delivered
+  Acknowledged
   Woken.FlowId
   Queued
   Released

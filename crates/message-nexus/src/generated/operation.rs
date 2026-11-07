@@ -18,7 +18,8 @@ pub struct Lock_Data {
 #[cfg_attr(feature = "datom", derive(datom_codec::Datomizable, datom_codec::Composing))]
 pub struct Deliver_Data {
     pub lock: signal_flow::Lock,
-    pub request: signal_flow::Request,
+    pub deliver_key: signal_flow::DeliverKey,
+    pub sendable_message: signal_flow::SendableMessage,
 }
 #[rustfmt::skip]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
@@ -28,6 +29,7 @@ pub enum Operation {
     Identify(signal_flow::Process),
     Lock(Lock_Data),
     Deliver(Deliver_Data),
+    Acknowledge(Vec<signal_flow::DeliverKey>),
     Release(signal_flow::Lock),
     Store(message_library::Configuration),
 }
@@ -66,6 +68,7 @@ pub enum Outcome {
     Identified(signal_flow::Address),
     Locked(signal_flow::Lock),
     Delivered,
+    Acknowledged,
     Woken(signal_flow::FlowId),
     Queued,
     Released,
