@@ -51,12 +51,22 @@ fn sender() -> Address {
 }
 
 fn begin_send(nexus: &NexusProcess, body: &str) -> std::os::unix::net::UnixStream {
+    begin_send_with_message(
+        nexus,
+        SendableMessage::Soft(SendableRequest::Question(body.into())),
+    )
+}
+
+fn begin_send_with_message(
+    nexus: &NexusProcess,
+    sendable_message: SendableMessage,
+) -> std::os::unix::net::UnixStream {
     use message_nexus::frame::FramedStream;
     let mut stream = std::os::unix::net::UnixStream::connect(nexus.ordinary_socket()).unwrap();
     stream
         .write_frame(&Query::Send(SendRequest {
             recipient: sender(),
-            sendable_message: SendableMessage::Soft(SendableRequest::Question(body.into())),
+            sendable_message,
         }))
         .unwrap();
     stream
@@ -199,13 +209,23 @@ fn shutdown_interrupts_the_bounded_reconnect_wait() {
 }
 
 #[test]
-fn withheld_replay_admission_is_bounded_across_shutdown_and_restart() {
+fn withheld_replay_admission_is_bounded_for_every_priority_across_shutdown_and_restart() {
+    for message in [
+        SendableMessage::Soft(SendableRequest::Question("soft admission".into())),
+        SendableMessage::MiddleAbrupt(SendableRequest::Question("middle admission".into())),
+        SendableMessage::HardAbrupt(SendableRequest::Question("hard admission".into())),
+    ] {
+        prove_withheld_replay_is_bounded(message);
+    }
+}
+
+fn prove_withheld_replay_is_bounded(message: SendableMessage) {
     let home = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let flow = FakeFlow::start(runtime.path());
     let nexus = NexusProcess::start(home, runtime);
     flow.withhold_delivery_answers(2);
-    let stream = begin_send(&nexus, "withheld admission answer");
+    let stream = begin_send_with_message(&nexus, message);
     flow.wait_for_withheld_delivery_answers(1);
     flow.interrupt_delivery_observer();
     flow.wait_for_withheld_delivery_answers(2);

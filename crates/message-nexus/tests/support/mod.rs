@@ -111,7 +111,18 @@ impl NexusProcess {
         // SAFETY: the pid belongs to this child and the signal is the Nexus's
         // documented shutdown signal, handled by its signalfd loop.
         let _ = unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
-        let _ = self.child.wait();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if self.child.try_wait().unwrap().is_some() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                panic!("Message Nexus did not complete bounded graceful shutdown");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         let _ = std::fs::remove_file(self.ordinary_socket());
         let _ = std::fs::remove_file(self.meta_socket());
         (

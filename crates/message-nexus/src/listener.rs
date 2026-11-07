@@ -25,6 +25,64 @@ pub trait ListensOnSockets {
     fn serve(self: Arc<Self>) -> io::Result<()>;
 }
 
+trait RunsDeliveryConsumer {
+    fn run_delivery_consumer(&self);
+}
+
+impl RunsDeliveryConsumer for MessageNexus {
+    fn run_delivery_consumer(&self) {
+        loop {
+            let snapshot = match self.delivery_consumer.receive_next() {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    if self.delivery_consumer.is_stopping() {
+                        break;
+                    }
+                    eprintln!("message-nexus: delivery consumer: {error}");
+                    loop {
+                        let result = self
+                            .flow_edge()
+                            .map_err(crate::delivery_consumer::DeliveryConsumerError::Store);
+                        let result = result.and_then(|edge| {
+                            let store = self.store();
+                            self.delivery_consumer.reconnect(&edge, &store)
+                        });
+                        match result {
+                            Ok(()) => break,
+                            Err(error) => {
+                                eprintln!("message-nexus: delivery consumer reconnect: {error}");
+                                if !self.delivery_consumer.wait_to_reconnect() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+            };
+            let result = {
+                let store = self.store();
+                self.delivery_consumer.accept_snapshot(&store, snapshot)
+            };
+            if let Err(error) = result {
+                eprintln!("message-nexus: delivery consumer persistence: {error}");
+                while self.delivery_consumer.wait_to_reconnect() {
+                    let result = {
+                        let store = self.store();
+                        self.delivery_consumer.reclassify(&store)
+                    };
+                    match result {
+                        Ok(()) => break,
+                        Err(error) => {
+                            eprintln!("message-nexus: delivery consumer persistence retry: {error}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl ListensOnSockets for MessageNexus {
     fn serve(self: Arc<Self>) -> io::Result<()> {
         let ordinary = Socket::Ordinary.bind(&self.bound_configuration().ordinary)?;
@@ -45,56 +103,7 @@ impl ListensOnSockets for MessageNexus {
         ordinary.set_nonblocking(true)?;
         meta.set_nonblocking(true)?;
         let delivery_nexus = Arc::clone(&self);
-        let delivery_worker = std::thread::spawn(move || {
-            loop {
-                let snapshot = match delivery_nexus.delivery_consumer.receive_next() {
-                    Ok(snapshot) => snapshot,
-                    Err(error) => {
-                        if delivery_nexus.delivery_consumer.is_stopping() {
-                            break;
-                        }
-                        eprintln!("message-nexus: delivery consumer: {error}");
-                        loop {
-                            let result = delivery_nexus
-                                .flow_edge()
-                                .map_err(crate::delivery_consumer::DeliveryConsumerError::Store);
-                            let result = result.and_then(|edge| {
-                                let store = delivery_nexus.store();
-                                delivery_nexus.delivery_consumer.reconnect(&edge, &store)
-                            });
-                            match result {
-                                Ok(()) => break,
-                                Err(error) => {
-                                    eprintln!(
-                                        "message-nexus: delivery consumer reconnect: {error}"
-                                    );
-                                    if !delivery_nexus.delivery_consumer.wait_to_reconnect() {
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                        continue;
-                    }
-                };
-                let store = delivery_nexus.store();
-                if let Err(error) = delivery_nexus
-                    .delivery_consumer
-                    .accept_snapshot(&store, snapshot)
-                {
-                    eprintln!("message-nexus: delivery consumer persistence: {error}");
-                    while delivery_nexus.delivery_consumer.wait_to_reconnect() {
-                        let store = delivery_nexus.store();
-                        match delivery_nexus.delivery_consumer.reclassify(&store) {
-                            Ok(()) => break,
-                            Err(error) => eprintln!(
-                                "message-nexus: delivery consumer persistence retry: {error}"
-                            ),
-                        }
-                    }
-                }
-            }
-        });
+        let delivery_worker = std::thread::spawn(move || delivery_nexus.run_delivery_consumer());
         let mut workers: Vec<(UnixStream, std::thread::JoinHandle<()>)> = Vec::new();
         let result = loop {
             let mut ready = [
@@ -427,5 +436,101 @@ impl TerminalDeliveryState for VisibleDeliveryState {
             self,
             Self::Delivered | Self::Read | Self::Failed(_) | Self::Withdrawn | Self::Archived
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        delivery_consumer::MakesTestDeliveryConsumer,
+        generated::memory::Standard,
+        message_library::Configuration,
+        request_tracking::TracksRequests,
+        store::{InjectsTrackingFailure, KeepsRequestTracking, OpensStore},
+    };
+    use signal_flow::{
+        Address, Aspect, Model, VisibleDeliverySnapshot, VisibleDeliveryState, VisibleSender,
+    };
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn listener_retries_a_failed_live_write_without_holding_the_store_and_shuts_down() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("message.sema");
+        let configuration = Configuration {
+            ordinary: "/run/message.sock".into(),
+            meta: "/run/message-meta.sock".into(),
+            flow: "/run/flow.sock".into(),
+        };
+        let store = crate::store::MessageStore::open(
+            &path,
+            Standard {
+                configuration: configuration.clone(),
+                meta_configured: false,
+            },
+        )
+        .unwrap();
+        let mut tracking = store.request_tracking().unwrap();
+        tracking.observe_store("flow-store".into());
+        store.replace_request_tracking(tracking).unwrap();
+        store.fail_next_tracking_replacement();
+        let (consumer_stream, mut peer) = UnixStream::pair().unwrap();
+        let nexus = Arc::new(MessageNexus {
+            store: std::sync::Mutex::new(store),
+            bound: configuration,
+            delivery_consumer: crate::delivery_consumer::DeliveryConsumer::from_test_stream(
+                consumer_stream,
+            ),
+        });
+        let worker_nexus = Arc::clone(&nexus);
+        let worker = std::thread::spawn(move || worker_nexus.run_delivery_consumer());
+        let address = Address {
+            aspect: Aspect::Mind,
+            topic: "flow".into(),
+            model: Model::Sol,
+        };
+        peer.write_frame(&FlowResponse::SendChanged(VisibleDeliverySnapshot {
+            request_id: "outside".into(),
+            delivery_cursor: 1,
+            visible_sender: VisibleSender::Sender(address.clone()),
+            address,
+            visible_delivery_state: VisibleDeliveryState::Delivered,
+        }))
+        .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(store) = nexus.store.try_lock() {
+                let tracking = store.request_tracking().unwrap();
+                if tracking.observation_cursor == Some(1) {
+                    assert_eq!(tracking.classified_events.len(), 1);
+                    break;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "listener did not release and retry"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        nexus.delivery_consumer.stop().unwrap();
+        worker.join().unwrap();
+        drop(nexus);
+        let reopened = crate::store::MessageStore::open(
+            &path,
+            Standard {
+                configuration: Configuration {
+                    ordinary: "/run/message.sock".into(),
+                    meta: "/run/message-meta.sock".into(),
+                    flow: "/run/flow.sock".into(),
+                },
+                meta_configured: false,
+            },
+        )
+        .unwrap();
+        let tracking = reopened.request_tracking().unwrap();
+        assert_eq!(tracking.observation_cursor, Some(1));
+        assert_eq!(tracking.classified_events.len(), 1);
     }
 }

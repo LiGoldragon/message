@@ -59,6 +59,27 @@ pub trait ConsumesDeliveries {
     fn reclassify(&self, store: &MessageStore) -> Result<(), DeliveryConsumerError>;
 }
 
+#[cfg(test)]
+pub(crate) trait MakesTestDeliveryConsumer {
+    fn from_test_stream(stream: UnixStream) -> Self;
+}
+
+#[cfg(test)]
+impl MakesTestDeliveryConsumer for DeliveryConsumer {
+    fn from_test_stream(stream: UnixStream) -> Self {
+        let interrupt = stream.try_clone().unwrap();
+        Self {
+            subscription: Mutex::new(FlowSubscription::from_test_stream(stream)),
+            interrupt: Mutex::new(interrupt),
+            classifier: Mutex::new(OrderedClassifier::default()),
+            read_highwater: Mutex::new(0),
+            stopping: AtomicBool::new(false),
+            reconnect_wait: Mutex::new(()),
+            reconnect_wake: Condvar::new(),
+        }
+    }
+}
+
 trait AppliesDeliveryObservation {
     fn apply_opening(
         &self,
@@ -376,7 +397,6 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
 mod tests {
     use super::*;
     use crate::{
-        flow_edge::FlowSubscription,
         generated::memory::Standard,
         message_library::Configuration,
         store::{InjectsTrackingFailure, OpensStore},
@@ -396,17 +416,8 @@ mod tests {
 
     fn consumer() -> DeliveryConsumer {
         let (stream, peer) = UnixStream::pair().unwrap();
-        let interrupt = stream.try_clone().unwrap();
         drop(peer);
-        DeliveryConsumer {
-            subscription: Mutex::new(FlowSubscription::from_test_stream(stream)),
-            interrupt: Mutex::new(interrupt),
-            classifier: Mutex::new(OrderedClassifier::default()),
-            read_highwater: Mutex::new(0),
-            stopping: AtomicBool::new(false),
-            reconnect_wait: Mutex::new(()),
-            reconnect_wake: Condvar::new(),
-        }
+        DeliveryConsumer::from_test_stream(stream)
     }
 
     #[test]
