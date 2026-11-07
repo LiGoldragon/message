@@ -125,6 +125,15 @@ fn message_consumes_its_live_delivery_stream_and_reopens_the_durable_cursor() {
         Classification::MessageRelay
     );
     assert_eq!(tracking.classified_events[0].delivery_cursor, 2);
+    drop(store);
+
+    let reopened = NexusProcess::start(home, runtime);
+    assert_eq!(
+        flow.wait_for_delivery_observations(3),
+        vec![None, Some(0), Some(2)],
+        "a process reopen resumes the same Flow store at the committed cursor"
+    );
+    reopened.stop_gracefully();
 }
 
 #[test]
