@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn message_never_opens_without_a_cursor_while_tracking() {
         let mut state = tracking();
-        let k_key = state.queue_deliver(|_| ()).unwrap();
+        let _key = state.queue_deliver(|_| ()).unwrap();
         assert_eq!(
             state.opening_cursor(),
             Err(TrackingError::CursorRequiredWhileTracking)
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn message_cursor_never_passes_an_unclassified_event() {
         let mut state = tracking();
-        let k_key = state.queue_deliver(|_| ()).unwrap();
+        let _key = state.queue_deliver(|_| ()).unwrap();
         let (classifier, writes) = classify(
             &state,
             10,
@@ -584,7 +584,7 @@ mod tests {
     fn message_crash_after_the_cursor_write_below_a_held_event_replays_it() {
         let mut durable = tracking();
         durable.observation_cursor = Some(2);
-        let k_key = durable.queue_deliver(|_| ()).unwrap();
+        let _key = durable.queue_deliver(|_| ()).unwrap();
         let (_, writes) = classify(&durable, 3, [Snapshot("i", 3, false)]);
         assert!(writes.is_empty());
         assert_eq!(durable.observation_cursor, Some(2));
