@@ -2,10 +2,11 @@
 
 ## 0.22.0 → 0.22.1 — Flow 0.53.3 peer: signal-flow 57, meta-signal-flow 72
 
-Pins signal-flow 57.0.0 (`edfb7e6`) and meta-signal-flow 72.0.0
-(`00d38de`): a Stop carries its background work, and a Refresh of a working
-flow answers `RefreshQueued`. signal-message 21.0.1 (`e2697f9`) and
-meta-signal-message 3.0.1 (`f0ccb9a`) take the same signal-flow, so the
+Pins signal-flow 57.0.0 (`065730f`) and meta-signal-flow 72.0.0
+(`82be495`): a Stop carries its background work, a Refresh of a working
+flow answers `RefreshQueued`, and a frame that decodes as no Query is
+answered `FrameRefused` and observed. signal-message 21.0.1 (`4c1cd69`) and
+meta-signal-message 3.0.1 (`f916df1`) take the same signal-flow, so the
 build holds one. Message ingress and durable store layouts are
 unchanged. Activate this package with Flow 0.53.3: the Flow root Query and
 Response archives changed.
