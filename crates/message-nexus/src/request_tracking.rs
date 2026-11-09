@@ -112,7 +112,7 @@ impl<Request> MakesRequestTracking<Request> for RequestTracking<Request> {
     fn new(namespace: Namespace) -> Self {
         Self {
             namespace,
-            next_counter: 0,
+            next_counter: Counter(0),
             store_identity: None,
             observation_cursor: None,
             outbox: Vec::new(),
@@ -135,7 +135,9 @@ impl<Request: Clone> TracksRequests<Request> for RequestTracking<Request> {
         };
         self.next_counter = self
             .next_counter
+            .0
             .checked_add(1)
+            .map(Counter)
             .ok_or(TrackingError::DuplicateDeliverKey)?;
         self.outbox.push(OutboxEntry {
             deliver_key: deliver_key.clone(),
@@ -337,11 +339,11 @@ pub trait SenderSnapshot {
 
 impl SenderSnapshot for signal_flow::VisibleDeliverySnapshot {
     fn request_id(&self) -> &str {
-        &self.request_id
+        &self.request_id.0
     }
 
     fn delivery_cursor(&self) -> i64 {
-        self.delivery_cursor
+        self.delivery_cursor.0
     }
 
     fn is_archived(&self) -> bool {
@@ -498,7 +500,7 @@ mod tests {
     }
 
     fn tracking() -> RequestTracking<()> {
-        let mut state = RequestTracking::new("message-store".into());
+        let mut state = RequestTracking::new(Namespace("message-store".into()));
         state.observe_store("flow-store".into());
         state
     }
@@ -506,7 +508,7 @@ mod tests {
     fn accepted(_key: &str, id: &str, cursor: i64) -> RequestTracking<()> {
         let mut state = tracking();
         let deliver_key = state.queue_deliver(|_| ()).unwrap();
-        assert_eq!(deliver_key.namespace, "message-store");
+        assert_eq!(deliver_key.namespace.0, "message-store");
         state
             .record_acceptance(&deliver_key, id.into(), cursor)
             .unwrap();
@@ -616,11 +618,11 @@ mod tests {
         let before = tracking();
         let mut committed = before.clone();
         let key = committed.queue_deliver(|_| ()).unwrap();
-        assert_eq!(before.next_counter, 0);
+        assert_eq!(before.next_counter, Counter(0));
         assert!(before.outbox.is_empty());
         assert_eq!(key.namespace, committed.namespace);
-        assert_eq!(key.counter, 0);
-        assert_eq!(committed.next_counter, 1);
+        assert_eq!(key.counter, Counter(0));
+        assert_eq!(committed.next_counter, Counter(1));
         assert_eq!(committed.outbox[0].deliver_key, key);
     }
 

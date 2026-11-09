@@ -4,13 +4,13 @@ use crate::{
     configuration::SeedsConfiguration,
     delivery_consumer::{DeliveryConsumer, DeliveryConsumerError, OpensDeliveryConsumer},
     flow_edge::{CallsFlow, FlowEdge},
-    generated::memory::Standard,
+    generated::memory::{MetaConfigured, Standard},
     peer::ReadsProcess,
     store::{KeepsStandard, MessageStore, OpensStore, StoreError},
 };
 use message_defaults::{DefaultConfiguration, LaysOutDefaults};
 use message_library::Configuration;
-use signal_flow::{Address, Aspect, Model};
+use signal_flow::{Address, Aspect, Model, Topic};
 use std::sync::{Mutex, MutexGuard};
 
 pub struct MessageNexus {
@@ -39,17 +39,17 @@ impl OpensNexus for MessageNexus {
     fn open(defaults: &DefaultConfiguration) -> Result<Self, NexusError> {
         let seed = Standard {
             configuration: defaults.message_configuration(),
-            meta_configured: false,
+            meta_configured: MetaConfigured(false),
         };
         let mut store = MessageStore::open(&defaults.store_path(), seed)?;
         let standard = store.standard()?;
         let edge = FlowEdge {
-            socket_path: standard.configuration.flow.clone(),
+            socket_path: standard.configuration.flow.0.clone(),
         };
         let process = signal_flow::Process::this_process()?;
         let address = Address {
             aspect: Aspect::Field,
-            topic: "message".into(),
+            topic: Topic("message".into()),
             model: Model::Astra,
         };
         edge.bind(address, process).map_err(NexusError::Flow)?;
@@ -81,7 +81,7 @@ impl HoldsNexusState for MessageNexus {
 
     fn flow_edge(&self) -> Result<FlowEdge, StoreError> {
         Ok(FlowEdge {
-            socket_path: self.store().standard()?.configuration.flow,
+            socket_path: self.store().standard()?.configuration.flow.0,
         })
     }
 }

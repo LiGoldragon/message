@@ -3,7 +3,7 @@ members  = ["crates/message-defaults", "crates/message-nexus", "crates/message",
 resolver = "3"
 
 [workspace.package]
-version      = "0.22.1"
+version      = "0.23.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -12,11 +12,18 @@ publish      = false
 
 [workspace.dependencies]
 message-defaults    = { path = "crates/message-defaults" }
-datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "eabead4" }
-protos              = { git = "https://github.com/LiGoldragon/protos", rev = "3c7ade3" }
-signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "998c824c98a1e2f5e32f9e3a69bf09d3a29aff6b" }
-meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "4d81b6481292f9212065a83c30f29640de60505e" }
-signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "3d0a4cdd0364a30e5586eac7db59917faca5072f" }
-meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "27d06b7b4995ad275c2c2c85dd0ffb5499482dd7" }
+datom-codec         = { git = "https://github.com/LiGoldragon/datom-codec", rev = "09a0526" }
+protos              = { git = "https://github.com/LiGoldragon/protos", rev = "c93b598" }
+signal-message      = { git = "https://github.com/LiGoldragon/signal-message", rev = "2fed750" }
+meta-signal-message = { git = "https://github.com/LiGoldragon/meta-signal-message", rev = "01d5553" }
+signal-flow         = { git = "https://github.com/LiGoldragon/signal-flow", rev = "6881724" }
+meta-signal-flow    = { git = "https://github.com/LiGoldragon/meta-signal-flow", rev = "a90a889" }
+flow-ethos          = { git = "https://github.com/LiGoldragon/flow", rev = "d1effd4b", default-features = false }
 rkyv                = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 getrandom           = "0.4"
+
+# sema-engine names the Sema kernel by its old repository URL, which no
+# longer holds commit 51d7927. Resolve that edge to the same commit in the
+# renamed repository, as Flow does, so both take one sema package.
+[patch."https://github.com/LiGoldragon/sema.git"]
+sema = { git = "https://github.com/LiGoldragon/memory", rev = "51d7927c872f0df12791bad8d39a4db6433b01a1" }

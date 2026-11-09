@@ -53,7 +53,7 @@ checksum = "46d07918caa9eeaaf06b7873925c53a61daac173539b4f7715090745e44e4e69"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -64,9 +64,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cc"
-version = "1.5.1"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f360145194ee8e21db5ee7f3fcd4fe52210864c75c985dae33218202c8bbe040"
+checksum = "a3eb0f42d6c360dc3f8a821f6bf2fdea7f72bfd36b3076eb0e6d1e9e0752fff4"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -74,9 +74,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.5"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "constant_time_eq"
@@ -95,38 +95,18 @@ dependencies = [
 
 [[package]]
 name = "datom-codec"
-version = "0.32.2"
-source = "git+https://github.com/LiGoldragon/datom-codec?rev=4dff16b4f7412febc3b71aac8b49680cd20988cb#4dff16b4f7412febc3b71aac8b49680cd20988cb"
+version = "0.33.1"
+source = "git+https://github.com/LiGoldragon/datom-codec?rev=09a0526#09a0526949b043f921b6d3ce115b7f455291f2e2"
 dependencies = [
- "datom-codec-derive 0.32.0",
- "protos 0.32.2",
+ "datom-codec-derive",
+ "protos",
  "rkyv",
-]
-
-[[package]]
-name = "datom-codec"
-version = "0.33.0"
-source = "git+https://github.com/LiGoldragon/datom-codec?rev=eabead4#eabead48b31e8d4f429d7fb156dd18548bbd79c1"
-dependencies = [
- "datom-codec-derive 0.32.3",
- "protos 0.33.0",
- "rkyv",
-]
-
-[[package]]
-name = "datom-codec-derive"
-version = "0.32.0"
-source = "git+https://github.com/LiGoldragon/datom-codec?rev=4dff16b4f7412febc3b71aac8b49680cd20988cb#4dff16b4f7412febc3b71aac8b49680cd20988cb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
 name = "datom-codec-derive"
 version = "0.32.3"
-source = "git+https://github.com/LiGoldragon/datom-codec?rev=eabead4#eabead48b31e8d4f429d7fb156dd18548bbd79c1"
+source = "git+https://github.com/LiGoldragon/datom-codec?rev=09a0526#09a0526949b043f921b6d3ce115b7f455291f2e2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -151,44 +131,16 @@ dependencies = [
 
 [[package]]
 name = "ethos-zero"
-version = "16.0.0"
-source = "git+https://github.com/LiGoldragon/ethos-zero?rev=c2653dd82adbdb1f1f2f654405c6620e0d06fd58#c2653dd82adbdb1f1f2f654405c6620e0d06fd58"
+version = "22.0.0"
+source = "git+https://github.com/LiGoldragon/ethos-zero?rev=1976e45#1976e45fe1edfd5676cb33919dba1ec20c785a02"
 dependencies = [
- "datom-codec 0.32.2",
+ "datom-codec",
  "prettyplease",
  "proc-macro2",
- "protos 0.32.2",
+ "protos",
  "quote",
  "rkyv",
- "syn 3.0.9",
-]
-
-[[package]]
-name = "ethos-zero"
-version = "17.0.0"
-source = "git+https://github.com/LiGoldragon/ethos-zero?rev=07714b0171802787bea1eefe4caa2d826d9c4030#07714b0171802787bea1eefe4caa2d826d9c4030"
-dependencies = [
- "datom-codec 0.32.2",
- "prettyplease",
- "proc-macro2",
- "protos 0.32.2",
- "quote",
- "rkyv",
- "syn 3.0.9",
-]
-
-[[package]]
-name = "ethos-zero"
-version = "19.2.0"
-source = "git+https://github.com/LiGoldragon/ethos-zero?rev=5a5daca#5a5daca315ab24460ccbcd5038130c453e853e6e"
-dependencies = [
- "datom-codec 0.33.0",
- "prettyplease",
- "proc-macro2",
- "protos 0.33.0",
- "quote",
- "rkyv",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -199,18 +151,18 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.14"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 
 [[package]]
 name = "flow-ethos"
 version = "0.53.3"
-source = "git+https://github.com/LiGoldragon/flow?rev=78d7983984998727151048fae9384125d5d57bbb#78d7983984998727151048fae9384125d5d57bbb"
+source = "git+https://github.com/LiGoldragon/flow?rev=d1effd4b#d1effd4b53ba895f08949ea5cf32f91f63f909bb"
 dependencies = [
- "datom-codec 0.33.0",
- "ethos-zero 17.0.0",
- "protos 0.33.0",
+ "datom-codec",
+ "ethos-zero",
+ "protos",
  "rkyv",
 ]
 
@@ -267,9 +219,9 @@ dependencies = [
 
 [[package]]
 name = "itoa"
-version = "1.0.18"
+version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
 name = "js-sys"
@@ -302,11 +254,11 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "message"
-version = "0.22.1"
+version = "0.23.0"
 dependencies = [
- "datom-codec 0.33.0",
+ "datom-codec",
  "message-defaults",
- "protos 0.33.0",
+ "protos",
  "rkyv",
  "signal-flow",
  "signal-message",
@@ -314,15 +266,15 @@ dependencies = [
 
 [[package]]
 name = "message-defaults"
-version = "0.22.1"
+version = "0.23.0"
 
 [[package]]
 name = "message-mcp-send"
-version = "0.22.1"
+version = "0.23.0"
 dependencies = [
- "datom-codec 0.33.0",
+ "datom-codec",
  "message-defaults",
- "protos 0.33.0",
+ "protos",
  "rkyv",
  "rustix",
  "serde_json",
@@ -333,21 +285,22 @@ dependencies = [
 
 [[package]]
 name = "message-meta"
-version = "0.22.1"
+version = "0.23.0"
 dependencies = [
- "datom-codec 0.33.0",
+ "datom-codec",
  "message-defaults",
  "meta-signal-message",
- "protos 0.33.0",
+ "protos",
  "rkyv",
 ]
 
 [[package]]
 name = "message-nexus"
-version = "0.22.1"
+version = "0.23.0"
 dependencies = [
- "datom-codec 0.33.0",
- "ethos-zero 16.0.0",
+ "datom-codec",
+ "ethos-zero",
+ "flow-ethos",
  "getrandom",
  "libc",
  "message-defaults",
@@ -365,10 +318,10 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-flow"
-version = "72.0.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=27d06b7b4995ad275c2c2c85dd0ffb5499482dd7#27d06b7b4995ad275c2c2c85dd0ffb5499482dd7"
+version = "73.0.1"
+source = "git+https://github.com/LiGoldragon/meta-signal-flow?rev=a90a889#a90a889af74d2582ef1b9f36cda73627f975a4a6"
 dependencies = [
- "ethos-zero 17.0.0",
+ "ethos-zero",
  "flow-ethos",
  "rkyv",
  "signal",
@@ -377,12 +330,12 @@ dependencies = [
 
 [[package]]
 name = "meta-signal-message"
-version = "3.0.1"
-source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=4d81b6481292f9212065a83c30f29640de60505e#4d81b6481292f9212065a83c30f29640de60505e"
+version = "4.0.0"
+source = "git+https://github.com/LiGoldragon/meta-signal-message?rev=01d5553#01d5553290428b093552be10cfde21c69ba7054e"
 dependencies = [
- "datom-codec 0.33.0",
- "ethos-zero 19.2.0",
- "protos 0.33.0",
+ "datom-codec",
+ "ethos-zero",
+ "protos",
  "rkyv",
  "signal",
  "signal-message",
@@ -427,7 +380,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
 dependencies = [
  "proc-macro2",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -441,16 +394,8 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "0.32.2"
-source = "git+https://github.com/LiGoldragon/protos?rev=15b41da8f2579e73ead59bc0c2b97529b8ac32d3#15b41da8f2579e73ead59bc0c2b97529b8ac32d3"
-dependencies = [
- "rkyv",
-]
-
-[[package]]
-name = "protos"
 version = "0.33.0"
-source = "git+https://github.com/LiGoldragon/protos?rev=3c7ade3#3c7ade34010cec6cec153ae694ee335f7fea0193"
+source = "git+https://github.com/LiGoldragon/protos?rev=c93b598#c93b598025984f8a73e70aa18b8e8a6fdfdfdfd8"
 dependencies = [
  "rkyv",
 ]
@@ -472,7 +417,7 @@ checksum = "1c8d9ca532f185d5d4db7a7c9d51420b452168ea1c2b913953281bd6fe1fcbd0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -501,9 +446,9 @@ dependencies = [
 
 [[package]]
 name = "redb"
-version = "4.1.0"
+version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e925444704b5f17d32bf42f5b6e2df050bceebc3dcd6e71cc73dafe8092e839"
+checksum = "fb338a6c67830a61bed824b78c2bb034ab1ff401a20616bd7957524f4fdc2f22"
 dependencies = [
  "libc",
 ]
@@ -544,14 +489,14 @@ checksum = "1c25ef604ac7dd839d44d64648952ea23c97866f124ff671b0ed2cf3ad9bb06e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
 name = "rustix"
-version = "1.1.5"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d"
+checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
 dependencies = [
  "bitflags",
  "errno",
@@ -569,7 +514,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 [[package]]
 name = "sema"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/sema.git?rev=51d7927c872f0df12791bad8d39a4db6433b01a1#51d7927c872f0df12791bad8d39a4db6433b01a1"
+source = "git+https://github.com/LiGoldragon/memory?rev=51d7927c872f0df12791bad8d39a4db6433b01a1#51d7927c872f0df12791bad8d39a4db6433b01a1"
 dependencies = [
  "redb",
  "rkyv",
@@ -578,8 +523,8 @@ dependencies = [
 
 [[package]]
 name = "sema-engine"
-version = "0.18.0"
-source = "git+https://github.com/LiGoldragon/sema-engine?rev=9884905ff9c660ad97a35c524e42532d5c7bac90#9884905ff9c660ad97a35c524e42532d5c7bac90"
+version = "0.19.0"
+source = "git+https://github.com/LiGoldragon/sema-engine?rev=6a95a0925c9e6a6a144037ffdbad8c7d3cc126f2#6a95a0925c9e6a6a144037ffdbad8c7d3cc126f2"
 dependencies = [
  "blake3",
  "rkyv",
@@ -614,7 +559,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -638,37 +583,37 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "signal"
-version = "10.3.0"
-source = "git+https://github.com/LiGoldragon/signal?rev=7afb68bcd19ce774f47d11c5e69f6e10054f78de#7afb68bcd19ce774f47d11c5e69f6e10054f78de"
+version = "11.0.0"
+source = "git+https://github.com/LiGoldragon/signal?rev=6d4eb74#6d4eb74a238ea4a6149bd12c42a8c06aec01b154"
 dependencies = [
- "datom-codec 0.33.0",
- "ethos-zero 19.2.0",
- "protos 0.33.0",
+ "datom-codec",
+ "ethos-zero",
+ "protos",
  "rkyv",
  "thiserror",
 ]
 
 [[package]]
 name = "signal-flow"
-version = "57.0.0"
-source = "git+https://github.com/LiGoldragon/signal-flow?rev=3d0a4cdd0364a30e5586eac7db59917faca5072f#3d0a4cdd0364a30e5586eac7db59917faca5072f"
+version = "58.0.1"
+source = "git+https://github.com/LiGoldragon/signal-flow?rev=6881724#6881724d1752058195a770ab8244763151904541"
 dependencies = [
- "datom-codec 0.33.0",
- "ethos-zero 17.0.0",
+ "datom-codec",
+ "ethos-zero",
  "flow-ethos",
- "protos 0.33.0",
+ "protos",
  "rkyv",
  "signal",
 ]
 
 [[package]]
 name = "signal-message"
-version = "21.0.1"
-source = "git+https://github.com/LiGoldragon/signal-message?rev=998c824c98a1e2f5e32f9e3a69bf09d3a29aff6b#998c824c98a1e2f5e32f9e3a69bf09d3a29aff6b"
+version = "22.0.0"
+source = "git+https://github.com/LiGoldragon/signal-message?rev=2fed750#2fed7500c915befc8fc42359771e8a27d43a451e"
 dependencies = [
- "datom-codec 0.33.0",
- "ethos-zero 17.0.0",
- "protos 0.33.0",
+ "datom-codec",
+ "ethos-zero",
+ "protos",
  "rkyv",
  "signal",
  "signal-flow",
@@ -708,9 +653,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.9"
+version = "3.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
+checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -732,35 +677,44 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.20"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
+checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.20"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
+checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.9",
+ "syn 3.0.5",
 ]
 
 [[package]]
 name = "tinyvec"
-version = "1.13.3"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+checksum = "4cf0ded5c4e56918d8f8a339e1bb67d038d3bc6d144ac407904015ba2e4cde9b"
+dependencies = [
+ "tinyvec_macros",
+]
+
+[[package]]
+name = "tinyvec_macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.26"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "uuid"
@@ -804,7 +758,7 @@ dependencies = [
  "bumpalo",
  "proc-macro2",
  "quote",
- "syn 3.0.9",
+ "syn 3.0.5",
  "wasm-bindgen-shared",
 ]
 

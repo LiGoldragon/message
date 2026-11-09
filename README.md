@@ -41,7 +41,9 @@ typed delivery by its DeliveryId, so a repeat after a crash types nothing. Only
 `Redeliver`, out of `Uncertain`, opens a new attempt. A restarted Nexus resumes
 every recipient still `Submitted` or `Parked`.
 
-Run `nix flake check -L` for the complete proof matrix.
+`checks.<system>.default` is the complete proof matrix: every member's tests,
+fmt, clippy, the trait laws, the source constraints and the build base's
+Cargo.nix, version-set and feature-set checks.
 
 
 ## Codex MCP sender

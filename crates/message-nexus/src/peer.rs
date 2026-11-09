@@ -1,5 +1,6 @@
 //! Reads Flow's process identity from the connection peer.
 
+use flow_ethos::{Pid, Started};
 use signal_flow::Process;
 use std::{fs, io, os::unix::net::UnixStream};
 
@@ -20,8 +21,8 @@ impl ReadsProcess for Process {
             .and_then(|field| field.parse::<i64>().ok())
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing process start"))?;
         Ok(Process {
-            pid: process_id,
-            started,
+            pid: Pid(process_id),
+            started: Started(started),
         })
     }
 

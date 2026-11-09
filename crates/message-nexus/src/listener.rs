@@ -86,8 +86,8 @@ impl RunsDeliveryConsumer for MessageNexus {
 
 impl ListensOnSockets for MessageNexus {
     fn serve(self: Arc<Self>) -> io::Result<()> {
-        let ordinary = Socket::Ordinary.bind(&self.bound_configuration().ordinary)?;
-        let meta = Socket::Meta.bind(&self.bound_configuration().meta)?;
+        let ordinary = Socket::Ordinary.bind(&self.bound_configuration().ordinary.0)?;
+        let meta = Socket::Meta.bind(&self.bound_configuration().meta.0)?;
         // The executable blocks these signals before creating any threads.
         let raw = unsafe {
             let mut mask: libc::sigset_t = std::mem::zeroed();
@@ -275,7 +275,7 @@ impl AnswersConnection for MessageNexus {
                 &mut stream,
                 process,
                 request.send_request,
-                Some(request.native_session_id),
+                Some(request.native_session_id.0),
             ),
             Query::ObserveSends(cursor) => {
                 self.answer_observation(&mut stream, process, None, cursor)
@@ -283,7 +283,7 @@ impl AnswersConnection for MessageNexus {
             Query::ObserveThread(request) => self.answer_observation(
                 &mut stream,
                 process,
-                Some(request.native_session_id),
+                Some(request.native_session_id.0),
                 request.delivery_cursor_option,
             ),
             query => stream.write_frame(&self.serve_query(process, query)),
@@ -308,7 +308,7 @@ impl AnswersConnection for MessageNexus {
                     Ok(mut subscription) => self.forward_subscription(
                         stream,
                         &mut subscription,
-                        Some(accepted.request_id),
+                        Some(accepted.request_id.0),
                     ),
                     Err(response) => stream.write_frame(response.as_ref()),
                 }
@@ -376,7 +376,7 @@ impl AnswersConnection for MessageNexus {
                                 .visible_delivery_snapshot_vector
                                 .iter()
                                 .any(|item| {
-                                    item.request_id.as_str() == id
+                                    item.request_id.0.as_str() == id
                                         && item.visible_delivery_state.is_terminal()
                                 })
                         });
@@ -384,7 +384,8 @@ impl AnswersConnection for MessageNexus {
                     }
                     FlowResponse::SendChanged(snapshot) => {
                         last_cursor = Some(snapshot.delivery_cursor);
-                        let finished = terminal_id.as_deref() == Some(snapshot.request_id.as_str())
+                        let finished = terminal_id.as_deref()
+                            == Some(snapshot.request_id.0.as_str())
                             && snapshot.visible_delivery_state.is_terminal();
                         (Response::SendChanged(snapshot), finished)
                     }
@@ -458,15 +459,15 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("message.sema");
         let configuration = Configuration {
-            ordinary: "/run/message.sock".into(),
-            meta: "/run/message-meta.sock".into(),
-            flow: "/run/flow.sock".into(),
+            ordinary: crate::message_library::Ordinary("/run/message.sock".into()),
+            meta: crate::message_library::Meta("/run/message-meta.sock".into()),
+            flow: crate::message_library::Flow("/run/flow.sock".into()),
         };
         let store = crate::store::MessageStore::open(
             &path,
             Standard {
                 configuration: configuration.clone(),
-                meta_configured: false,
+                meta_configured: crate::generated::memory::MetaConfigured(false),
             },
         )
         .unwrap();
@@ -486,12 +487,12 @@ mod tests {
         let worker = std::thread::spawn(move || worker_nexus.run_delivery_consumer());
         let address = Address {
             aspect: Aspect::Mind,
-            topic: "flow".into(),
+            topic: signal_flow::Topic("flow".into()),
             model: Model::Sol,
         };
         peer.write_frame(&FlowResponse::SendChanged(VisibleDeliverySnapshot {
-            request_id: "outside".into(),
-            delivery_cursor: 1,
+            request_id: signal_flow::RequestId("outside".into()),
+            delivery_cursor: signal_flow::DeliveryCursor(1),
             visible_sender: VisibleSender::Sender(address.clone()),
             address,
             visible_delivery_state: VisibleDeliveryState::Delivered,
@@ -520,11 +521,11 @@ mod tests {
             &path,
             Standard {
                 configuration: Configuration {
-                    ordinary: "/run/message.sock".into(),
-                    meta: "/run/message-meta.sock".into(),
-                    flow: "/run/flow.sock".into(),
+                    ordinary: crate::message_library::Ordinary("/run/message.sock".into()),
+                    meta: crate::message_library::Meta("/run/message-meta.sock".into()),
+                    flow: crate::message_library::Flow("/run/flow.sock".into()),
                 },
-                meta_configured: false,
+                meta_configured: crate::generated::memory::MetaConfigured(false),
             },
         )
         .unwrap();

@@ -1,10 +1,12 @@
 //! A scripted Flow that records the typed request received by Deliver.
 
+use flow_ethos::Until;
 use message_nexus::frame::FramedStream;
 use signal_flow::{
-    Address, Aspect, Bind_Data, Deliver_Data, FlowId, Lock, Lock_Data, Model, Process, Query,
-    Refusal, Response, VisibleDeliverySnapshot, VisibleDeliveryState, VisibleSendAcceptance,
-    VisibleSendObservation, VisibleSender,
+    Address, Aspect, Bind_Data, Deliver_Data, DeliveryCursor, FlowId, Lock, Lock_Data, Model,
+    ObservedAt, Process, Query, Refusal, RequestId, Response, StoreIdentity, Topic,
+    VisibleDeliverySnapshot, VisibleDeliveryState, VisibleSendAcceptance, VisibleSendObservation,
+    VisibleSender,
 };
 use std::{
     io::Read,
@@ -198,13 +200,13 @@ impl FakeFlow {
                 .last()
                 .expect("a Message delivery exists before archive");
             let snapshot = VisibleDeliverySnapshot {
-                request_id: "fake-request".into(),
-                delivery_cursor: 3,
-                visible_sender: VisibleSender::Sender(admitted.lock.sender.clone()),
-                address: admitted.lock.address.clone(),
+                request_id: RequestId("fake-request".into()),
+                delivery_cursor: DeliveryCursor(3),
+                visible_sender: VisibleSender::Sender(admitted.lock.first_address.clone()),
+                address: admitted.lock.second_address.clone(),
                 visible_delivery_state: VisibleDeliveryState::Archived,
             };
-            state.delivery_cursor = snapshot.delivery_cursor;
+            state.delivery_cursor = snapshot.delivery_cursor.0;
             state.delivery_snapshots.push(snapshot.clone());
             (snapshot, state.delivery_observer.take())
         };
@@ -235,7 +237,7 @@ impl FakeFlow {
     fn sender(&self) -> Address {
         Address {
             aspect: Aspect::Mind,
-            topic: "flow".into(),
+            topic: Topic("flow".into()),
             model: Model::Sol,
         }
     }
@@ -249,7 +251,8 @@ impl FakeFlow {
             .last()
             .expect("Message bound before a delivery fault")
             .1
-            .pid;
+            .pid
+            .0;
         // SAFETY: this is the child Message process which bound to this test Flow.
         assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGSTOP) }, 0);
         let (reached, changed) = &*self.fault_reached;
@@ -273,7 +276,7 @@ impl FakeFlow {
         let response = match query {
             Query::Bind(Bind_Data { address, process }) => {
                 self.state.lock().unwrap().bound.push((address, process));
-                Response::Bound(FlowId::from("message-flow"))
+                Response::Bound(FlowId("message-flow".into()))
             }
             Query::Identify(_) => Response::Identified(self.sender()),
             Query::IdentifyThread(request) => {
@@ -282,7 +285,7 @@ impl FakeFlow {
                     .unwrap()
                     .identified_threads
                     .push(request.clone());
-                match request.native_session_id.as_str() {
+                match request.native_session_id.0.as_str() {
                     "not-configured" => Response::Refused(Refusal::NotConfigured),
                     "not-send-server" => Response::Refused(Refusal::NotSendServer(request.process)),
                     "unknown" => {
@@ -290,25 +293,28 @@ impl FakeFlow {
                             seat_pane_option: None,
                             pane_label_option: None,
                             native_session_id_option: Some(request.native_session_id),
-                            observed_at: 0,
+                            observed_at: ObservedAt(0),
                             process: request.process,
                         }))
                     }
                     _ => Response::Identified(self.sender()),
                 }
             }
-            Query::Lock(Lock_Data { sender, recipient }) => Response::Locked(Lock {
-                sender,
-                address: recipient,
-                until: i64::MAX,
+            Query::Lock(Lock_Data {
+                first_address,
+                second_address,
+            }) => Response::Locked(Lock {
+                first_address,
+                second_address,
+                until: Until(i64::MAX),
             }),
             Query::Deliver(delivery) => {
                 let key = delivery.deliver_key.clone();
                 let snapshot = VisibleDeliverySnapshot {
-                    request_id: "fake-request".into(),
-                    delivery_cursor: 2,
-                    visible_sender: VisibleSender::Sender(delivery.lock.sender.clone()),
-                    address: delivery.lock.address.clone(),
+                    request_id: RequestId("fake-request".into()),
+                    delivery_cursor: DeliveryCursor(2),
+                    visible_sender: VisibleSender::Sender(delivery.lock.first_address.clone()),
+                    address: delivery.lock.second_address.clone(),
                     visible_delivery_state: VisibleDeliveryState::Delivered,
                 };
                 let mut state = self.state.lock().unwrap();
@@ -318,8 +324,8 @@ impl FakeFlow {
                     withhold_delivery_answer = true;
                 }
                 let acceptance = VisibleSendAcceptance {
-                    request_id: "fake-request".into(),
-                    delivery_cursor: 1,
+                    request_id: RequestId("fake-request".into()),
+                    delivery_cursor: DeliveryCursor(1),
                     visible_delivery_state: VisibleDeliveryState::Queued,
                 };
                 if let Some(admitted) = state
@@ -334,7 +340,7 @@ impl FakeFlow {
                     }
                 } else {
                     state.delivered.push(delivery);
-                    state.delivery_cursor = snapshot.delivery_cursor;
+                    state.delivery_cursor = snapshot.delivery_cursor.0;
                     state.delivery_snapshots.push(snapshot.clone());
                     delivery_change = Some(snapshot);
                     match state.fault {
@@ -364,11 +370,12 @@ impl FakeFlow {
                 Response::Acknowledged
             }
             Query::ObserveSender(_) => Response::SendsObserved(VisibleSendObservation {
-                store_identity: "fake-store".into(),
-                delivery_cursor: 1,
+                store_identity: StoreIdentity("fake-store".into()),
+                delivery_cursor: DeliveryCursor(1),
                 visible_delivery_snapshot_vector: vec![],
             }),
             Query::ObserveDeliveries(cursor) => {
+                let cursor = cursor.map(|cursor| cursor.0);
                 let mut state = self.state.lock().unwrap();
                 state.delivery_observation_cursors.push(cursor);
                 if state.fault == Some(FaultBoundary::HeldBeforeCursor)
@@ -387,13 +394,13 @@ impl FakeFlow {
                 } else {
                     register_delivery_observer = true;
                     Response::SendsObserved(VisibleSendObservation {
-                        store_identity: "fake-store".into(),
-                        delivery_cursor: state.delivery_cursor,
+                        store_identity: StoreIdentity("fake-store".into()),
+                        delivery_cursor: DeliveryCursor(state.delivery_cursor),
                         visible_delivery_snapshot_vector: state
                             .delivery_snapshots
                             .iter()
                             .filter(|snapshot| {
-                                cursor.is_none_or(|cursor| snapshot.delivery_cursor > cursor)
+                                cursor.is_none_or(|cursor| snapshot.delivery_cursor.0 > cursor)
                             })
                             .cloned()
                             .collect(),

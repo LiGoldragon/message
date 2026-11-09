@@ -66,13 +66,13 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
             binding.address,
             Address {
                 aspect: Aspect::Field,
-                topic: "message".into(),
+                topic: signal_flow::Topic("message".into()),
                 model: Model::Astra,
             }
         );
         startup
-            .write_frame(&signal_flow::Response::Bound(signal_flow::FlowId::from(
-                "message-shutdown-fixture",
+            .write_frame(&signal_flow::Response::Bound(signal_flow::FlowId(
+                "message-shutdown-fixture".into(),
             )))
             .unwrap();
         drop(startup);
@@ -96,8 +96,8 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
         delivery_stream
             .write_frame(&signal_flow::Response::SendsObserved(
                 signal_flow::VisibleSendObservation {
-                    store_identity: "shutdown-store".into(),
-                    delivery_cursor: 0,
+                    store_identity: signal_flow::StoreIdentity("shutdown-store".into()),
+                    delivery_cursor: signal_flow::DeliveryCursor(0),
                     visible_delivery_snapshot_vector: vec![],
                 },
             ))
@@ -119,9 +119,9 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
         let _flow_connection = if iteration == 0 {
             connection
                 .write_frame(&Query::Send(SendRequest {
-                    recipient: Address {
+                    address: Address {
                         aspect: Aspect::Mind,
-                        topic: "shutdown-test".into(),
+                        topic: signal_flow::Topic("shutdown-test".into()),
                         model: Model::Sol,
                     },
                     sendable_message: SendableMessage::MiddleAbrupt(SendableRequest::Question(

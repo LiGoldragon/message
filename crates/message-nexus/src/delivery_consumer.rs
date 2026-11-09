@@ -8,7 +8,7 @@ use crate::{
     request_tracking::{ClassifiesOrdered, OrderedClassifier, TracksRequests},
     store::{KeepsRequestTracking, MessageStore, StoreError},
 };
-use signal_flow::{Response, VisibleDeliverySnapshot, VisibleSendObservation};
+use signal_flow::{DeliveryCursor, Response, VisibleDeliverySnapshot, VisibleSendObservation};
 use std::{
     net::Shutdown,
     os::unix::net::UnixStream,
@@ -106,7 +106,7 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
             .opening_cursor()
             .map_err(DeliveryConsumerError::Tracking)?;
         let mut subscription = edge
-            .observe_deliveries(cursor)
+            .observe_deliveries(cursor.map(DeliveryCursor))
             .map_err(DeliveryConsumerError::Flow)?;
         let Response::SendsObserved(opening) =
             subscription.next().map_err(DeliveryConsumerError::Flow)?
@@ -120,10 +120,10 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
             .request_tracking()?
             .store_identity
             .as_ref()
-            .is_some_and(|identity| identity != &opening.store_identity);
+            .is_some_and(|identity| identity != &opening.store_identity.0);
         let (subscription, opening) = if identity_changed {
             let mut tracking = store.request_tracking()?;
-            tracking.observe_store(opening.store_identity);
+            tracking.observe_store(opening.store_identity.0);
             store.replace_request_tracking(tracking)?;
             let mut replacement = edge
                 .observe_deliveries(None)
@@ -147,7 +147,7 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
             subscription: Mutex::new(subscription),
             interrupt: Mutex::new(interrupt),
             classifier: Mutex::new(OrderedClassifier::default()),
-            read_highwater: Mutex::new(opening.delivery_cursor),
+            read_highwater: Mutex::new(opening.delivery_cursor.0),
             stopping: AtomicBool::new(false),
             reconnect_wait: Mutex::new(()),
             reconnect_wake: Condvar::new(),
@@ -183,7 +183,7 @@ impl ConsumesDeliveries for DeliveryConsumer {
             .opening_cursor()
             .map_err(DeliveryConsumerError::Tracking)?;
         let mut replacement = edge
-            .observe_deliveries(cursor)
+            .observe_deliveries(cursor.map(DeliveryCursor))
             .map_err(DeliveryConsumerError::Flow)?;
         let Response::SendsObserved(mut opening) =
             replacement.next().map_err(DeliveryConsumerError::Flow)?
@@ -197,10 +197,10 @@ impl ConsumesDeliveries for DeliveryConsumer {
             .request_tracking()?
             .store_identity
             .as_ref()
-            .is_some_and(|identity| identity != &opening.store_identity);
+            .is_some_and(|identity| identity != &opening.store_identity.0);
         if identity_changed {
             let mut tracking = store.request_tracking()?;
-            tracking.observe_store(opening.store_identity);
+            tracking.observe_store(opening.store_identity.0);
             store.replace_request_tracking(tracking)?;
             replacement = edge
                 .observe_deliveries(None)
@@ -284,12 +284,12 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
         observation: VisibleSendObservation,
     ) -> Result<(), DeliveryConsumerError> {
         let mut tracking = store.request_tracking()?;
-        tracking.observe_store(observation.store_identity);
+        tracking.observe_store(observation.store_identity.0);
         store.replace_request_tracking(tracking)?;
         *self
             .read_highwater
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = observation.delivery_cursor;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = observation.delivery_cursor.0;
         let mut classifier = self
             .classifier
             .lock()
@@ -309,7 +309,7 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
         *self
             .read_highwater
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = snapshot.delivery_cursor;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = snapshot.delivery_cursor.0;
         self.classifier
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -371,7 +371,11 @@ impl AppliesDeliveryObservation for DeliveryConsumer {
                 Ok(FlowSendReply::Queued(acceptance)) => {
                     let mut tracking = store.request_tracking()?;
                     tracking
-                        .record_acceptance(&key, acceptance.request_id, acceptance.delivery_cursor)
+                        .record_acceptance(
+                            &key,
+                            acceptance.request_id.0,
+                            acceptance.delivery_cursor.0,
+                        )
                         .map_err(DeliveryConsumerError::Tracking)?;
                     store.replace_request_tracking(tracking)?;
                 }
@@ -406,11 +410,11 @@ mod tests {
     fn seed() -> Standard {
         Standard {
             configuration: Configuration {
-                ordinary: "/run/message.sock".into(),
-                meta: "/run/message-meta.sock".into(),
-                flow: "/run/flow.sock".into(),
+                ordinary: crate::message_library::Ordinary("/run/message.sock".into()),
+                meta: crate::message_library::Meta("/run/message-meta.sock".into()),
+                flow: crate::message_library::Flow("/run/flow.sock".into()),
             },
-            meta_configured: false,
+            meta_configured: crate::generated::memory::MetaConfigured(false),
         }
     }
 
@@ -430,12 +434,12 @@ mod tests {
         store.replace_request_tracking(tracking).unwrap();
         let address = Address {
             aspect: Aspect::Mind,
-            topic: "flow".into(),
+            topic: signal_flow::Topic("flow".into()),
             model: Model::Sol,
         };
         let snapshot = VisibleDeliverySnapshot {
-            request_id: "outside".into(),
-            delivery_cursor: 1,
+            request_id: signal_flow::RequestId("outside".into()),
+            delivery_cursor: signal_flow::DeliveryCursor(1),
             visible_sender: VisibleSender::Sender(address.clone()),
             address,
             visible_delivery_state: VisibleDeliveryState::Delivered,

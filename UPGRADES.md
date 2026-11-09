@@ -1,5 +1,33 @@
 # UPGRADES
 
+## 0.22.1 → 0.23.0 — ethos-zero 22, signal-flow 58, on build-base 404cf8d
+
+Pins signal-flow 58.0.1 (`6881724`), meta-signal-flow 73.0.1 (`a90a889`),
+signal-message 22.0.0 (`2fed750`), meta-signal-message 4.0.0 (`01d5553`),
+datom-codec `09a0526`, protos `c93b598` and the Nexus's generator
+ethos-zero 22.0.0 (`1976e45`); signal 11.0.0 (`6d4eb74`) and flow-ethos
+`d1effd4b` come through signal-flow, and the Nexus names flow-ethos at the
+same revision for the `Pid`, `Started` and `Until` constructors.
+sema-engine moves to `6a95a09` (0.19.0), its Sema kernel resolved to the
+memory repository at `51d7927` as Flow resolves it. Every datom text form
+and every durable store layout is unchanged; activate this package with the
+Flow built on signal-flow 58.0.1.
+
+- ethos-zero 22 makes each one-type head a newtype: `MetaConfigured`
+  wraps `bool`, and the contracts' `Configuration` fields, `RequestId`,
+  `DeliveryCursor`, `StoreIdentity`, `NativeSessionId`, `Topic`,
+  `Namespace` and `Counter` are newtypes; Message's own ledger keeps its
+  text and integer fields and unwraps them at the Flow boundary.
+- Flow's `Sender` and `Recipient` aliases are gone: the Nexus operation
+  `Lock` holds two `Address`es (`first_address`, `second_address`), as
+  Flow's `Lock` does, and a `SendRequest` holds its recipient as
+  `address`. The imported `Lock` is written `:signal_flow:Lock` where a
+  variant is named `Lock`.
+- The flake is in the build-base form with a committed `Cargo.nix`: each
+  member's tests are its own check, and fmt, clippy, the trait laws and
+  the source constraints join `checks.default`; third-party crates are at
+  build-base's version set.
+
 ## 0.22.0 → 0.22.1 — Flow 0.53.3 peer: signal-flow 57, meta-signal-flow 72
 
 Pins signal-flow 57.0.0 (`3d0a4cd`) and meta-signal-flow 72.0.0

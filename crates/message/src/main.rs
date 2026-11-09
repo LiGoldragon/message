@@ -81,12 +81,12 @@ impl CallsMessageNexus for MessageClient {
                     accepted_id = Some(accepted.request_id.clone());
                     false
                 }
-                Response::SendsObserved(observation) => accepted_id.as_deref().is_some_and(|id| {
+                Response::SendsObserved(observation) => accepted_id.as_ref().is_some_and(|id| {
                     observation
                         .visible_delivery_snapshot_vector
                         .iter()
                         .any(|snapshot| {
-                            snapshot.request_id == id
+                            &snapshot.request_id == id
                                 && matches!(
                                     snapshot.visible_delivery_state,
                                     VisibleDeliveryState::Delivered
@@ -95,7 +95,7 @@ impl CallsMessageNexus for MessageClient {
                         })
                 }),
                 Response::SendChanged(snapshot) => {
-                    accepted_id.as_deref() == Some(snapshot.request_id.as_str())
+                    accepted_id.as_ref() == Some(&snapshot.request_id)
                         && matches!(
                             snapshot.visible_delivery_state,
                             VisibleDeliveryState::Delivered | VisibleDeliveryState::Failed(_)
@@ -139,7 +139,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{CallsMessageNexus, MessageClient};
-    use signal_flow::{Address, Aspect, Model, SendableMessage, SendableRequest};
+    use signal_flow::{Address, Aspect, Model, SendableMessage, SendableRequest, Topic};
     use signal_message::Query;
 
     #[test]
@@ -154,10 +154,10 @@ mod tests {
             panic!("Send datom must stay a Send query");
         };
         assert_eq!(
-            request.recipient,
+            request.address,
             Address {
                 aspect: Aspect::Mind,
-                topic: "flow".into(),
+                topic: Topic("flow".into()),
                 model: Model::Sol,
             }
         );

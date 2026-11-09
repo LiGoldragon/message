@@ -1,7 +1,7 @@
 //! The initial socket configuration, derived from the two anchors.
 
 use message_defaults::{DefaultConfiguration, LaysOutDefaults};
-use message_library::Configuration;
+use message_library::{Configuration, Flow, Meta, Ordinary};
 use std::path::Path;
 
 pub trait SeedsConfiguration {
@@ -21,9 +21,9 @@ impl CarriedAsText for Path {
 impl SeedsConfiguration for DefaultConfiguration {
     fn message_configuration(&self) -> Configuration {
         Configuration {
-            ordinary: self.ordinary_socket_path().carried(),
-            meta: self.meta_socket_path().carried(),
-            flow: self.flow_socket_path().carried(),
+            ordinary: Ordinary(self.ordinary_socket_path().carried()),
+            meta: Meta(self.meta_socket_path().carried()),
+            flow: Flow(self.flow_socket_path().carried()),
         }
     }
 }

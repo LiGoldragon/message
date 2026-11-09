@@ -29,11 +29,12 @@ datom-codec = { workspace = true, optional = true }
 signal-message.workspace      = true
 meta-signal-message.workspace = true
 signal-flow.workspace         = true
+flow-ethos.workspace          = true
 meta-signal-flow.workspace    = true
 rkyv.workspace                = true
 getrandom.workspace           = true
 rustix      = { version = "1", features = ["net", "time"] }
-sema-engine = { git = "https://github.com/LiGoldragon/sema-engine", rev = "9884905ff9c660ad97a35c524e42532d5c7bac90" }
+sema-engine = { git = "https://github.com/LiGoldragon/sema-engine", rev = "6a95a0925c9e6a6a144037ffdbad8c7d3cc126f2" }
 thiserror   = "2"
 redb = "4"
 
@@ -41,8 +42,12 @@ redb = "4"
 tempfile = "3"
 
 [build-dependencies]
-ethos-zero = { git = "https://github.com/LiGoldragon/ethos-zero", rev = "c2653dd82adbdb1f1f2f654405c6620e0d06fd58" }
+ethos-zero = { git = "https://github.com/LiGoldragon/ethos-zero", rev = "1976e45" }
 
 [lints.rust]
 unused    = { level = "warn", priority = -1 }
 dead_code = "warn"
+
+# The generated contract is committed byte for byte from its ethos source.
+[lints.clippy]
+large_enum_variant = "allow"

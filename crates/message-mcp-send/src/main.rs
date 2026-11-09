@@ -4,7 +4,7 @@ use datom_codec::{Actualizing, Budget, Datomizable, Potential};
 use message_defaults::{DefaultConfiguration, LaysOutDefaults, ReadsAnchors};
 use protos::{Compactable, Protosizable, ReaderBudget};
 use serde_json::{Value, json};
-use signal_flow::VisibleDeliveryState;
+use signal_flow::{DeliveryCursor, NativeSessionId, VisibleDeliveryState};
 use signal_message::{Query, Response, SendThread_Data};
 use std::{
     collections::{HashMap, HashSet},
@@ -179,7 +179,7 @@ impl ServesMcpRequests for Adapter {
                 };
                 Ok(Query::SendThread(SendThread_Data {
                     send_request: request,
-                    native_session_id: thread.to_owned(),
+                    native_session_id: NativeSessionId(thread.to_owned()),
                 }))
             }
             "observe_sends" => {
@@ -191,8 +191,8 @@ impl ServesMcpRequests for Adapter {
                     .map(|value| value.as_i64().ok_or("cursor must be an integer"))
                     .transpose()?;
                 Ok(Query::ObserveThread(signal_message::ObserveThread_Data {
-                    delivery_cursor_option: cursor,
-                    native_session_id: thread.to_owned(),
+                    delivery_cursor_option: cursor.map(DeliveryCursor),
+                    native_session_id: NativeSessionId(thread.to_owned()),
                 }))
             }
             _ => Err("Unknown tool".into()),
@@ -298,7 +298,7 @@ impl IdentifiesTerminalResponse for Response {
                     .visible_delivery_snapshot_vector
                     .iter()
                     .any(|snapshot| {
-                        snapshot.request_id == id
+                        snapshot.request_id.0 == id
                             && matches!(
                                 snapshot.visible_delivery_state,
                                 VisibleDeliveryState::Delivered | VisibleDeliveryState::Failed(_)
@@ -306,7 +306,7 @@ impl IdentifiesTerminalResponse for Response {
                     })
             }),
             Response::SendChanged(snapshot) => {
-                accepted_id == Some(snapshot.request_id.as_str())
+                accepted_id == Some(snapshot.request_id.0.as_str())
                     && matches!(
                         snapshot.visible_delivery_state,
                         VisibleDeliveryState::Delivered | VisibleDeliveryState::Failed(_)
@@ -426,14 +426,14 @@ impl RunsMcpCall for CallRequest {
                 Ok(response) => {
                     match &response {
                         Response::SendAccepted(accepted) => {
-                            accepted_id = Some(accepted.request_id.clone());
-                            last_cursor = Some(accepted.delivery_cursor);
+                            accepted_id = Some(accepted.request_id.0.clone());
+                            last_cursor = Some(accepted.delivery_cursor.0);
                         }
                         Response::SendsObserved(observation) => {
-                            last_cursor = Some(observation.delivery_cursor)
+                            last_cursor = Some(observation.delivery_cursor.0)
                         }
                         Response::SendChanged(snapshot) => {
-                            last_cursor = Some(snapshot.delivery_cursor)
+                            last_cursor = Some(snapshot.delivery_cursor.0)
                         }
                         _ => {}
                     }
@@ -453,7 +453,7 @@ impl RunsMcpCall for CallRequest {
                                 | Response::Refused(_)
                                 | Response::ObservationInterrupted(_)
                         ) || matches!(&response, Response::SendChanged(snapshot) if matches!(snapshot.visible_delivery_state, VisibleDeliveryState::Failed(_)))
-                            || matches!(&response, Response::SendsObserved(observation) if observation.visible_delivery_snapshot_vector.iter().any(|snapshot| accepted_id.as_deref() == Some(snapshot.request_id.as_str()) && matches!(snapshot.visible_delivery_state, VisibleDeliveryState::Failed(_))));
+                            || matches!(&response, Response::SendsObserved(observation) if observation.visible_delivery_snapshot_vector.iter().any(|snapshot| accepted_id.as_deref() == Some(snapshot.request_id.0.as_str()) && matches!(snapshot.visible_delivery_state, VisibleDeliveryState::Failed(_))));
                         if matches!(response, Response::ObservationInterrupted(_)) {
                             let cursor = last_cursor
                                 .map_or_else(|| "none".to_owned(), |cursor| cursor.to_string());
@@ -696,7 +696,7 @@ mod tests {
         let Query::SendThread(request) = query else {
             panic!("thread send expected")
         };
-        assert_eq!(request.native_session_id, "recorded-thread");
+        assert_eq!(request.native_session_id.0, "recorded-thread");
         assert_eq!(
             request.send_request.sendable_message,
             signal_flow::SendableMessage::MiddleAbrupt(signal_flow::SendableRequest::Question(
@@ -711,8 +711,8 @@ mod tests {
         let Query::ObserveThread(request) = Adapter::thread_query(&params).unwrap() else {
             panic!("thread-scoped durable observation expected");
         };
-        assert_eq!(request.native_session_id, "recorded-thread");
-        assert_eq!(request.delivery_cursor_option, Some(7));
+        assert_eq!(request.native_session_id.0, "recorded-thread");
+        assert_eq!(request.delivery_cursor_option, Some(DeliveryCursor(7)));
     }
 
     #[derive(Clone)]
@@ -801,8 +801,8 @@ mod tests {
             write_frame(
                 &mut peer,
                 &Response::SendAccepted(VisibleSendAcceptance {
-                    request_id: "k7ph".into(),
-                    delivery_cursor: 7,
+                    request_id: signal_flow::RequestId("k7ph".into()),
+                    delivery_cursor: DeliveryCursor(7),
                     visible_delivery_state: VisibleDeliveryState::Queued,
                 }),
             );
@@ -926,21 +926,21 @@ mod tests {
             write_frame(
                 &mut peer,
                 &Response::SendAccepted(VisibleSendAcceptance {
-                    request_id: "k7ph".into(),
-                    delivery_cursor: 1,
+                    request_id: signal_flow::RequestId("k7ph".into()),
+                    delivery_cursor: DeliveryCursor(1),
                     visible_delivery_state: VisibleDeliveryState::Queued,
                 }),
             );
             let address = Address {
                 aspect: signal_flow::Aspect::Mind,
-                topic: "flow".into(),
+                topic: signal_flow::Topic("flow".into()),
                 model: Model::Sol,
             };
             write_frame(
                 &mut peer,
                 &Response::SendChanged(VisibleDeliverySnapshot {
-                    request_id: "k7ph".into(),
-                    delivery_cursor: 2,
+                    request_id: signal_flow::RequestId("k7ph".into()),
+                    delivery_cursor: DeliveryCursor(2),
                     visible_sender: VisibleSender::Sender(address.clone()),
                     address,
                     visible_delivery_state: VisibleDeliveryState::Delivered,

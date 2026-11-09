@@ -36,7 +36,7 @@ impl ConfiguresMessage for MessageNexus {
     ) -> Result<bool, ConfigureFailure> {
         let store = self.store();
         let current = store.standard()?;
-        if !meta && current.meta_configured {
+        if !meta && current.meta_configured.0 {
             return Err(ConfigureFailure::AlreadyConfigured);
         }
         let restart_required = current.configuration != configuration;
@@ -111,11 +111,11 @@ impl ServesMessages for MessageNexus {
             Ok(sender) => sender,
             Err(failure) => return Err(Box::new(failure.for_send(abrupt, false))),
         };
-        let lock = match edge.lock(sender, request.recipient.clone()) {
+        let lock = match edge.lock(sender, request.address.clone()) {
             Ok(lock) => lock,
             Err(failure) => return Err(Box::new(failure.for_send(abrupt, false))),
         };
-        if SystemTime::now().unix_seconds() >= lock.until {
+        if SystemTime::now().unix_seconds() >= lock.until.0 {
             return Err(Box::new(
                 EdgeFailure::Refused(Refusal::Lapsed).for_send(abrupt, false),
             ));
@@ -182,8 +182,8 @@ impl ServesMessages for MessageNexus {
             tracking
                 .record_acceptance(
                     &deliver_key,
-                    acceptance.request_id.clone(),
-                    acceptance.delivery_cursor,
+                    acceptance.request_id.0.clone(),
+                    acceptance.delivery_cursor.0,
                 )
                 .map_err(|error| {
                     Box::new(Response::Refused(SendRefusal::Store(format!(
@@ -340,21 +340,21 @@ impl ReadsUnixTime for SystemTime {
 mod tests {
     use super::ReportsMessageRefusal;
     use crate::flow_edge::EdgeFailure;
-    use signal_flow::SendPayloadSize;
+    use signal_flow::{ActualBytes, MaximumBytes, SendPayloadSize};
     use signal_message::SendRefusal;
 
     #[test]
     fn oversized_flow_refusal_keeps_its_typed_byte_counts() {
         let refusal = EdgeFailure::Refused(signal_flow::Refusal::Oversized(SendPayloadSize {
-            actual_bytes: 65_537,
-            maximum_bytes: 65_536,
+            actual_bytes: ActualBytes(65_537),
+            maximum_bytes: MaximumBytes(65_536),
         }))
         .for_message();
         assert_eq!(
             refusal,
             SendRefusal::Oversized(SendPayloadSize {
-                actual_bytes: 65_537,
-                maximum_bytes: 65_536,
+                actual_bytes: ActualBytes(65_537),
+                maximum_bytes: MaximumBytes(65_536),
             })
         );
     }

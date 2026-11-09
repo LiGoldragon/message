@@ -112,9 +112,9 @@ mod tests {
         let Query::Configure(configuration) = client
             .parse(&["Configure.{ /r/m.sock /r/mo.sock /r/f.sock }".into()])
             .expect("configure parses");
-        assert_eq!(configuration.ordinary, "/r/m.sock");
-        assert_eq!(configuration.meta, "/r/mo.sock");
-        assert_eq!(configuration.flow, "/r/f.sock");
+        assert_eq!(configuration.ordinary.0, "/r/m.sock");
+        assert_eq!(configuration.meta.0, "/r/mo.sock");
+        assert_eq!(configuration.flow.0, "/r/f.sock");
         assert!(client.parse(&["--send".into()]).is_err());
     }
 }

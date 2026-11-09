@@ -1,7 +1,7 @@
 //! Message's configuration and first-configuration state.
 
 use crate::{
-    generated::memory::Standard,
+    generated::memory::{MetaConfigured, Standard},
     message_library::Configuration,
     request_tracking::{MakesRequestTracking, RequestTracking},
 };
@@ -9,6 +9,7 @@ use sema_engine::{
     Engine, EngineOpen, EngineRecord, FamilyName, KeyedAssertion, KeyedMutation, QueryPlan,
     RecordKey, SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference,
 };
+use signal_flow::Namespace;
 use std::path::Path;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -124,7 +125,7 @@ impl OpensStore for MessageStore {
             store.engine.assert_keyed(KeyedAssertion::new(
                 store.request_tracking,
                 RecordKey::new(REQUEST_TRACKING_KEY),
-                DurableRequestTracking::new(namespace),
+                DurableRequestTracking::new(Namespace(namespace)),
             ))?;
         }
         Ok(store)
@@ -208,7 +209,7 @@ impl ChangesConfiguration for Standard {
     fn changed_configuration(&self, configuration: &Configuration, meta: bool) -> Standard {
         Standard {
             configuration: configuration.clone(),
-            meta_configured: self.meta_configured || meta,
+            meta_configured: MetaConfigured(self.meta_configured.0 || meta),
         }
     }
 }
@@ -384,11 +385,11 @@ mod recognition_tests {
     fn seed() -> Standard {
         Standard {
             configuration: Configuration {
-                ordinary: "/run/message.sock".into(),
-                meta: "/run/message-meta.sock".into(),
-                flow: "/run/flow.sock".into(),
+                ordinary: crate::message_library::Ordinary("/run/message.sock".into()),
+                meta: crate::message_library::Meta("/run/message-meta.sock".into()),
+                flow: crate::message_library::Flow("/run/flow.sock".into()),
             },
-            meta_configured: false,
+            meta_configured: crate::generated::memory::MetaConfigured(false),
         }
     }
     #[test]
@@ -398,7 +399,7 @@ mod recognition_tests {
         let store = MessageStore::open(&path, seed()).unwrap();
         let namespace = store.request_tracking().unwrap().namespace;
         let mut configured = store.standard().unwrap();
-        configured.meta_configured = true;
+        configured.meta_configured = crate::generated::memory::MetaConfigured(true);
         store.replace_standard(configured.clone()).unwrap();
         drop(store);
         let reopened = MessageStore::open(&path, seed()).unwrap();
@@ -412,6 +413,7 @@ mod recognition_tests {
             .request_tracking()
             .unwrap()
             .namespace
+            .0
     }
 
     #[test]
@@ -435,12 +437,12 @@ mod recognition_tests {
         store.replace_request_tracking(tracking).unwrap();
         let address = signal_flow::Address {
             aspect: signal_flow::Aspect::Mind,
-            topic: "flow".into(),
+            topic: signal_flow::Topic("flow".into()),
             model: signal_flow::Model::Sol,
         };
         let snapshot = signal_flow::VisibleDeliverySnapshot {
-            request_id: "outside".into(),
-            delivery_cursor: 1,
+            request_id: signal_flow::RequestId("outside".into()),
+            delivery_cursor: signal_flow::DeliveryCursor(1),
             visible_sender: signal_flow::VisibleSender::Sender(address.clone()),
             address,
             visible_delivery_state: signal_flow::VisibleDeliveryState::Delivered,
@@ -513,7 +515,7 @@ mod recognition_tests {
         }
         let store = MessageStore::open(&path, seed()).unwrap();
         let mut configured = store.standard().unwrap();
-        configured.meta_configured = true;
+        configured.meta_configured = crate::generated::memory::MetaConfigured(true);
         store.replace_standard(configured).unwrap();
         std::process::exit(0);
     }
@@ -548,7 +550,7 @@ mod recognition_tests {
             assert_eq!(std::fs::read(&path).unwrap(), before);
             if !foreign {
                 let reopened = MessageStore::open(&path, seed()).unwrap();
-                assert!(reopened.standard().unwrap().meta_configured);
+                assert!(reopened.standard().unwrap().meta_configured.0);
             }
         }
     }

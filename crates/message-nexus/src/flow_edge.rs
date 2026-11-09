@@ -3,8 +3,8 @@
 use crate::frame::FramedStream;
 use signal_flow::{
     Address, Bind_Data, Deliver_Data, DeliverKey, DeliveryCursor, FlowId, IdentifyThread_Data,
-    Lock, Lock_Data, ObserveSender_Data, Process, Query, Recipient, Refusal, Response,
-    SendableMessage, Sender, VisibleSendAcceptance,
+    Lock, Lock_Data, NativeSessionId, ObserveSender_Data, Process, Query, Refusal, Response,
+    SendableMessage, VisibleSendAcceptance,
 };
 use std::os::unix::net::UnixStream;
 
@@ -95,7 +95,7 @@ pub trait CallsFlow {
         process: Process,
         native_session_id: String,
     ) -> Result<Address, EdgeFailure>;
-    fn lock(&self, sender: Sender, recipient: Recipient) -> Result<Lock, EdgeFailure>;
+    fn lock(&self, sender: Address, recipient: Address) -> Result<Lock, EdgeFailure>;
     fn deliver(
         &self,
         lock: Lock,
@@ -141,7 +141,7 @@ impl CallsFlow for FlowEdge {
     ) -> Result<Address, EdgeFailure> {
         match self.exchange(&Query::IdentifyThread(IdentifyThread_Data {
             process: process.clone(),
-            native_session_id,
+            native_session_id: NativeSessionId(native_session_id),
         }))? {
             Response::Identified(address) => Ok(address),
             Response::Refused(Refusal::Unidentified(_)) => Err(EdgeFailure::Unidentified(process)),
@@ -150,8 +150,11 @@ impl CallsFlow for FlowEdge {
         }
     }
 
-    fn lock(&self, sender: Sender, recipient: Recipient) -> Result<Lock, EdgeFailure> {
-        match self.exchange(&Query::Lock(Lock_Data { sender, recipient }))? {
+    fn lock(&self, sender: Address, recipient: Address) -> Result<Lock, EdgeFailure> {
+        match self.exchange(&Query::Lock(Lock_Data {
+            first_address: sender,
+            second_address: recipient,
+        }))? {
             Response::Locked(lock) => Ok(lock),
             Response::Refused(refusal) => Err(EdgeFailure::Refused(refusal)),
             _ => Err(EdgeFailure::Unexpected),
@@ -199,7 +202,7 @@ impl CallsFlow for FlowEdge {
         stream
             .write_frame(&Query::ObserveSender(ObserveSender_Data {
                 process,
-                native_session_id_option: native_session_id,
+                native_session_id_option: native_session_id.map(NativeSessionId),
                 delivery_cursor_option: cursor,
             }))
             .map_err(|_| EdgeFailure::Unreachable)?;
