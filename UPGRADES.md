@@ -2,13 +2,14 @@
 
 ## 0.22.0 → 0.22.1 — Flow 0.53.3 peer: signal-flow 57, meta-signal-flow 72
 
-Pins signal-flow 57.0.0 (`8e56457`) and meta-signal-flow 72.0.0
-(`0ee6593`): a Stop carries its background work, a Refresh of a working
+Pins signal-flow 57.0.0 (`3d0a4cd`) and meta-signal-flow 72.0.0
+(`27d06b7`): a Stop carries its background work, a Refresh of a working
 flow answers `RefreshQueued`, a frame that decodes as no Query is
 answered `FrameRefused` and observed, `Observe.TurnEnds` streams turn
-ends, and the meta surface gains `Configure.HarnessHook` and
-`ObserveConfiguration`; Message sends none of these. signal-message 21.0.1
-(`a5e04b7`) and meta-signal-message 3.0.1 (`1ec9e00`) take the same
+ends, `Observe.Metaflows` streams the metaflows and each change, and the
+meta surface gains `Configure.HarnessHook` and `ObserveConfiguration`;
+Message sends none of these. signal-message 21.0.1 (`998c824`) and
+meta-signal-message 3.0.1 (`4d81b64`) take the same
 signal-flow, so the
 build holds one. Message ingress and durable store layouts are
 unchanged. Activate this package with Flow 0.53.3: the Flow root Query and
