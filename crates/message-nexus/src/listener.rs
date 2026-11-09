@@ -6,6 +6,7 @@ use crate::{
     frame::{FrameError, FramedStream},
     nexus::{HoldsNexusState, MessageNexus},
     peer::IdentifiesPeer,
+    placed_socket::{PlacedSocket, PlacesSocket},
     service::{ConfigureFailure, ConfiguresMessage, SendReply, ServesMessages},
 };
 use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
@@ -16,7 +17,7 @@ use std::{
     io::{self, Read},
     net::Shutdown,
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
-    os::unix::{fs::PermissionsExt, net::UnixListener, net::UnixStream},
+    os::unix::{net::UnixListener, net::UnixStream},
     path::Path,
     sync::Arc,
 };
@@ -222,17 +223,15 @@ trait ServesSocket {
 }
 
 impl ServesSocket for Socket {
+    /// The socket listening at its name, placed there only once it listens
+    /// (`placed_socket`): a peer waits for its name moved in and connects
+    /// at once.
     fn bind(self, path: &str) -> io::Result<UnixListener> {
         let path = Path::new(path);
         if let Some(directory) = path.parent() {
             fs::create_dir_all(directory)?;
         }
-        if path.exists() && UnixStream::connect(path).is_err() {
-            fs::remove_file(path)?;
-        }
-        let listener = UnixListener::bind(path)?;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-        Ok(listener)
+        PlacedSocket::at(path)?.claim()
     }
 }
 

@@ -14,6 +14,13 @@ build holds one. Message ingress and durable store layouts are
 unchanged. Activate this package with Flow 0.53.3: the Flow root Query and
 Response archives changed.
 
+Each socket appears at its name only once it listens, as every Nexus at a
+place does: it is bound under `.<name>.<pid>` beside its name, its mode set
+to 0600, made to listen, then renamed to its name (renameat2: into an absent
+name without replacing, over a stale socket in place). A socket that accepts
+at the name refuses the start. A peer waits for the name moved in
+(`IN_MOVED_TO`) and connects at once.
+
 ## 0.20.3 → 0.20.4 — Flow 0.39 peer
 
 Rebuilds every Message executable against the simplified Flow contracts

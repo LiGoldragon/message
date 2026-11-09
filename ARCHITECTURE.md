@@ -19,6 +19,9 @@ function and every method lives in a trait (`checks/`).
 - `service` — Send, Withdraw, Acknowledge, QueryReceipts, Redeliver,
   Configure.
 - `listener` — the two sockets and the meta gate.
+- `placed_socket` — each socket bound under `.<name>.<pid>`, mode 0600,
+  listening, then renamed to its name: it appears there only once it
+  listens, and a peer waits for its name moved in (`IN_MOVED_TO`).
 - `peer` — `SO_PEERCRED` plus the process start time, the identity Flow
   resolves.
 
