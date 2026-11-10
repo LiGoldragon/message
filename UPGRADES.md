@@ -1,3 +1,10 @@
+## 0.23.1: flow-ethos 5c61d666 (0.54.0) and the contracts on it
+
+flow-ethos moves from d1effd4b to flow main 5c61d666 (0.54.0), so message
+and Flow's own message-nexus build share one flow-ethos. signal-flow is 15790be,
+meta-signal-flow 5f90d4c, signal-message 2999252, meta-signal-message
+b9b6a5b. Behaviour and every datom form are unchanged.
+
 # UPGRADES
 
 ## 0.22.1 → 0.23.0 — ethos-zero 22, signal-flow 58, on build-base 404cf8d

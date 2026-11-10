@@ -569,13 +569,13 @@ rec {
       };
       "flow-ethos" = rec {
         crateName = "flow-ethos";
-        version = "0.53.3";
+        version = "0.54.0";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/LiGoldragon/flow";
-          rev = "d1effd4b53ba895f08949ea5cf32f91f63f909bb";
-          sha256 = "0mak7mrvq45fmppfgyzbb8r192jw3ivk1hdjrhmpsj2cpdvwi7yj";
+          rev = "5c61d66648a17a218147f3ec11dd995847c8303d";
+          sha256 = "00c2qq5kbxn6zlbb2b4pyrp862yjsck187i707d3gizffc90zq6d";
         };
         libName = "flow_ethos";
         dependencies = [
@@ -903,7 +903,7 @@ rec {
       };
       "message" = rec {
         crateName = "message";
-        version = "0.23.0";
+        version = "0.23.1";
         edition = "2024";
         crateBin = [
           {
@@ -946,7 +946,7 @@ rec {
       };
       "message-defaults" = rec {
         crateName = "message-defaults";
-        version = "0.23.0";
+        version = "0.23.1";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./crates/message-defaults; };
         libName = "message_defaults";
@@ -954,7 +954,7 @@ rec {
       };
       "message-mcp-send" = rec {
         crateName = "message-mcp-send";
-        version = "0.23.0";
+        version = "0.23.1";
         edition = "2024";
         crateBin = [
           {
@@ -1012,7 +1012,7 @@ rec {
       };
       "message-meta" = rec {
         crateName = "message-meta";
-        version = "0.23.0";
+        version = "0.23.1";
         edition = "2024";
         crateBin = [
           {
@@ -1051,7 +1051,7 @@ rec {
       };
       "message-nexus" = rec {
         crateName = "message-nexus";
-        version = "0.23.0";
+        version = "0.23.1";
         edition = "2024";
         crateBin = [
           {
@@ -1144,13 +1144,13 @@ rec {
       };
       "meta-signal-flow" = rec {
         crateName = "meta-signal-flow";
-        version = "73.0.2";
+        version = "73.0.3";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/LiGoldragon/meta-signal-flow";
-          rev = "8d8a22ed2cacd1e1173459f5e65b16abc855e930";
-          sha256 = "1cc5bphb0grw64qkkvf9lqqyk11db6rmrr8m3wslhngnym4jqnxa";
+          rev = "5f90d4ccd84391777815247192028b6a094f6759";
+          sha256 = "16jni9cb303fkq324f8zk00yxbbw5zkr5fzl7qjgdh2mf8jrvi7g";
         };
         libName = "meta_signal_flow";
         dependencies = [
@@ -1188,13 +1188,13 @@ rec {
       };
       "meta-signal-message" = rec {
         crateName = "meta-signal-message";
-        version = "4.0.0";
+        version = "4.0.1";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/LiGoldragon/meta-signal-message";
-          rev = "01d5553290428b093552be10cfde21c69ba7054e";
-          sha256 = "0pzqsvk2hiip2qz5nb2cahhdqnlk7g3vp7l2mdz5afq3nc1x3ahq";
+          rev = "b9b6a5b60c0e97ddc78244cfc9e99539619a1e4a";
+          sha256 = "0rv83lj55yx3g3c685fw67d5al2zhsyrbjsm5nscg3cbq5h5yqxw";
         };
         libName = "meta_signal_message";
         dependencies = [
@@ -2073,13 +2073,13 @@ rec {
       };
       "signal-flow" = rec {
         crateName = "signal-flow";
-        version = "58.0.1";
+        version = "58.0.2";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/LiGoldragon/signal-flow";
-          rev = "6881724d1752058195a770ab8244763151904541";
-          sha256 = "10ma0vqf3xsmk5bdyhypcn9g25b1svmyb6zbbdrwgx99kffh9mgz";
+          rev = "15790be9d6549e03912afa9603f9b4098622ba2e";
+          sha256 = "1imw199l2nqq0mn1dvvqcbaclkpb7q9xa17cb02f7v578wqzhzs2";
         };
         libName = "signal_flow";
         dependencies = [
@@ -2123,13 +2123,13 @@ rec {
       };
       "signal-message" = rec {
         crateName = "signal-message";
-        version = "22.0.0";
+        version = "22.0.1";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/LiGoldragon/signal-message";
-          rev = "2fed7500c915befc8fc42359771e8a27d43a451e";
-          sha256 = "1ynal4j1jz475gfvg1nlhdkd6fahr1xbj11db2b93m9apidwz8l5";
+          rev = "29992527e8da25b1f659c8827101f2a8b047f313";
+          sha256 = "0yccv3m4ki7mrf8xk83wdjg3g48wbnxj3iz0jaq1jqn67q68llz8";
         };
         libName = "signal_message";
         dependencies = [
