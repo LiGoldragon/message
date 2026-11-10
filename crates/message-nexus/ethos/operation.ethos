@@ -9,7 +9,7 @@ Operation
 [ Bind.{ Address                ; register the Message process
          Process }
   Identify.Process              ; name the caller's metaflow
-  Lock.{ Address                ; resolve Up relative to the sender,
+  Lock.{ Address                ; the sender, to which Up is resolved,
          Address }              ; then the recipient
   Deliver.{ :signal_flow:Lock   ; hand Flow the message under a durable key
             DeliverKey
