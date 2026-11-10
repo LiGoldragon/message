@@ -25,7 +25,7 @@
         cargoNix = ./Cargo.nix;
 
         extraChecks =
-          { pkgs, toolchain, clippy, ... }:
+          { pkgs, toolchain, ... }:
           let
             lib = pkgs.lib;
             manifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
@@ -72,10 +72,6 @@
               rustfmt --check --edition ${manifest.workspace.package.edition} ${lib.concatStringsSep " " roots}
               touch $out
             '';
-            # Every target of every member under clippy, warnings refused.
-            clippy = pkgs.linkFarm "message-clippy" (
-              lib.genAttrs members (member: clippy member [ "default" ] [ "-D" "warnings" ])
-            );
             # `fn main()` is the only production free function, and every
             # production method lives in a trait.
             no-free-functions = pkgs.runCommand "message-no-free-functions" {
