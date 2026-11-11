@@ -1,3 +1,14 @@
+## 0.24.0: Flow 0.54.3's contracts
+
+signal-flow 60.0.0 (`04a72fd`), meta-signal-flow 75.0.0 (`e192c0d`),
+flow-ethos 0.54.3 (`062ef9e1`), signal-message 23.0.0 (`6d82783`) and
+meta-signal-message 4.0.2 (`73b7a82`), so Message and Flow 0.54.3 speak
+one pair and share one flow-ethos. Message's own behaviour and datoms are
+unchanged. What moves under it: the living's words are
+`Living.{ Context Verbatim }` (Psyche and Psyches are gone), a snapshot's
+sender may be `Unbound`, and a Send of a Result or Done goes to the sender
+of the request it names whatever Address it writes.
+
 ## 0.23.1: flow-ethos 5c61d666 (0.54.0) and the contracts on it
 
 flow-ethos moves from d1effd4b to flow main 5c61d666 (0.54.0), so message
