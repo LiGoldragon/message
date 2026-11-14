@@ -10,7 +10,7 @@ use crate::{
     service::{ConfigureFailure, ConfiguresMessage, SendReply, ServesMessages},
 };
 use meta_signal_message::{Query as MetaQuery, Response as MetaResponse};
-use signal_flow::{Response as FlowResponse, VisibleDeliveryState};
+use signal_flow::{Output as FlowOutput, VisibleDeliveryState};
 use signal_message::{Query, Response};
 use std::{
     fs,
@@ -369,7 +369,7 @@ impl AnswersConnection for MessageNexus {
                     }
                 };
                 let (message_response, finished) = match response {
-                    FlowResponse::SendsObserved(observation) => {
+                    FlowOutput::SendsObserved(observation) => {
                         last_cursor = Some(observation.delivery_cursor);
                         let finished = terminal_id.as_deref().is_some_and(|id| {
                             observation
@@ -382,7 +382,7 @@ impl AnswersConnection for MessageNexus {
                         });
                         (Response::SendsObserved(observation), finished)
                     }
-                    FlowResponse::SendChanged(snapshot) => {
+                    FlowOutput::SendChanged(snapshot) => {
                         last_cursor = Some(snapshot.delivery_cursor);
                         let finished = terminal_id.as_deref()
                             == Some(snapshot.request_id.0.as_str())
@@ -490,7 +490,7 @@ mod tests {
             topic: signal_flow::Topic("flow".into()),
             model: Model::Sol,
         };
-        peer.write_frame(&FlowResponse::SendChanged(VisibleDeliverySnapshot {
+        peer.write_frame(&FlowOutput::SendChanged(VisibleDeliverySnapshot {
             request_id: signal_flow::RequestId("outside".into()),
             delivery_cursor: signal_flow::DeliveryCursor(1),
             visible_sender: VisibleSender::Sender(address.clone()),

@@ -154,8 +154,10 @@ impl ServesMessages for MessageNexus {
         ) {
             Ok(acceptance) => acceptance,
             Err(
-                failure
-                @ (EdgeFailure::Unreachable | EdgeFailure::Broken | EdgeFailure::Unexpected),
+                failure @ (EdgeFailure::Unreachable
+                | EdgeFailure::ContractMismatch
+                | EdgeFailure::Broken
+                | EdgeFailure::Unexpected),
             ) => {
                 let _ = edge.release(lock);
                 return Err(Box::new(failure.for_send(abrupt, true)));
@@ -253,7 +255,7 @@ impl ReportsMessageRefusal for EdgeFailure {
             Self::Refused(refusal) => {
                 return Response::Refused(EdgeFailure::Refused(refusal).for_message());
             }
-            Self::DeliverKeyReused => {
+            Self::DeliverKeyReused | Self::ContractMismatch => {
                 return Response::Refused(SendRefusal::FlowProtocolMismatch);
             }
             Self::Unidentified(process) => {
@@ -279,7 +281,7 @@ impl ReportsMessageRefusal for EdgeFailure {
                     SendRefusal::FlowUnreachable
                 })
             }
-            Self::DeliverKeyReused => SendRefusal::FlowProtocolMismatch,
+            Self::DeliverKeyReused | Self::ContractMismatch => SendRefusal::FlowProtocolMismatch,
             Self::Unidentified(process) => SendRefusal::Unidentified(process),
             Self::Unreachable | Self::Broken | Self::Unexpected => SendRefusal::FlowUnreachable,
         }

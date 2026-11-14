@@ -1,3 +1,23 @@
+## 0.25.0: Flow's contracts on ethos-zero 27
+
+signal-flow 63.0.0 (`4982eeb`), meta-signal-flow 79.0.0 (`cdb4e7d`),
+signal-message 24.0.0 (`97bb3a8`) and meta-signal-message 4.0.3
+(`b245d11`), all on branch ethos27-e3a7d1, and ethos-zero 27.0.0
+(`8c95310`) for message-nexus's own ethos, which generates byte-identical
+Rust. This Message speaks to the Flow built on those contracts (Flow 0.55.0's
+changes and the ethos-zero 27 rename, branch ethos27-e3a7d1) and to no
+earlier Flow. Message's own socket, its contract digest and its datoms are
+unchanged.
+
+- Every connection to Flow's ordinary socket greets first with signal-flow's
+  digest and reads the receipt before its Input; a refused greeting is
+  `FlowProtocolMismatch` to a sender.
+- signal-flow's `Query` and `Response` are `Input` and `Output`.
+- IdentifyThread is answered `ThreadIdentified`, where it was `Identified`.
+- The delivery observation (ObserveDeliveries) opens with
+  `DeliveriesObserved`, where it opened with `SendsObserved`; SendChanged
+  follows as before.
+
 ## 0.24.0: Flow 0.54.3's contracts
 
 signal-flow 60.0.0 (`04a72fd`), meta-signal-flow 75.0.0 (`e192c0d`),

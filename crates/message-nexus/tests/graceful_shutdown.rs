@@ -8,6 +8,20 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The scripted Flow answers each connection's greeting as Flow does.
+trait AnswersFlowGreeting {
+    fn answer_greeting(&mut self);
+}
+
+impl AnswersFlowGreeting for UnixStream {
+    fn answer_greeting(&mut self) {
+        use signal_flow::Contracted;
+        let greeting = self.read_frame::<signal_flow::Handshake>().unwrap();
+        self.write_frame(&signal_flow::Input::receipt(&greeting))
+            .unwrap();
+    }
+}
+
 struct ChildGuard(Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
@@ -58,7 +72,8 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
         startup
             .set_write_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        let signal_flow::Query::Bind(binding) = startup.read_frame::<signal_flow::Query>().unwrap()
+        startup.answer_greeting();
+        let signal_flow::Input::Bind(binding) = startup.read_frame::<signal_flow::Input>().unwrap()
         else {
             panic!("Message startup must send Bind");
         };
@@ -71,7 +86,7 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
             }
         );
         startup
-            .write_frame(&signal_flow::Response::Bound(signal_flow::FlowId(
+            .write_frame(&signal_flow::Output::Bound(signal_flow::FlowId(
                 "message-shutdown-fixture".into(),
             )))
             .unwrap();
@@ -89,12 +104,13 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
             );
             std::thread::sleep(Duration::from_millis(10));
         };
+        delivery_stream.answer_greeting();
         assert!(matches!(
-            delivery_stream.read_frame::<signal_flow::Query>().unwrap(),
-            signal_flow::Query::ObserveDeliveries(_)
+            delivery_stream.read_frame::<signal_flow::Input>().unwrap(),
+            signal_flow::Input::ObserveDeliveries(_)
         ));
         delivery_stream
-            .write_frame(&signal_flow::Response::SendsObserved(
+            .write_frame(&signal_flow::Output::DeliveriesObserved(
                 signal_flow::VisibleSendObservation {
                     store_identity: signal_flow::StoreIdentity("shutdown-store".into()),
                     delivery_cursor: signal_flow::DeliveryCursor(0),
@@ -142,9 +158,10 @@ fn sigterm_closes_the_store_even_with_an_idle_connected_client() {
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
+            stream.answer_greeting();
             assert!(matches!(
-                stream.read_frame::<signal_flow::Query>().unwrap(),
-                signal_flow::Query::Identify(_)
+                stream.read_frame::<signal_flow::Input>().unwrap(),
+                signal_flow::Input::Identify(_)
             ));
             Some(stream)
         } else {

@@ -8,7 +8,7 @@ use crate::{
     request_tracking::{ClassifiesOrdered, OrderedClassifier, TracksRequests},
     store::{KeepsRequestTracking, MessageStore, StoreError},
 };
-use signal_flow::{DeliveryCursor, Response, VisibleDeliverySnapshot, VisibleSendObservation};
+use signal_flow::{DeliveryCursor, Output, VisibleDeliverySnapshot, VisibleSendObservation};
 use std::{
     net::Shutdown,
     os::unix::net::UnixStream,
@@ -108,7 +108,7 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
         let mut subscription = edge
             .observe_deliveries(cursor.map(DeliveryCursor))
             .map_err(DeliveryConsumerError::Flow)?;
-        let Response::SendsObserved(opening) =
+        let Output::DeliveriesObserved(opening) =
             subscription.next().map_err(DeliveryConsumerError::Flow)?
         else {
             return Err(DeliveryConsumerError::Opening);
@@ -128,7 +128,7 @@ impl OpensDeliveryConsumer for DeliveryConsumer {
             let mut replacement = edge
                 .observe_deliveries(None)
                 .map_err(DeliveryConsumerError::Flow)?;
-            let Response::SendsObserved(reopened) =
+            let Output::DeliveriesObserved(reopened) =
                 replacement.next().map_err(DeliveryConsumerError::Flow)?
             else {
                 return Err(DeliveryConsumerError::Opening);
@@ -168,7 +168,7 @@ impl ConsumesDeliveries for DeliveryConsumer {
             .next()
             .map_err(DeliveryConsumerError::Flow)?;
         match response {
-            Response::SendChanged(snapshot) => Ok(snapshot),
+            Output::SendChanged(snapshot) => Ok(snapshot),
             _ => Err(DeliveryConsumerError::Opening),
         }
     }
@@ -185,7 +185,7 @@ impl ConsumesDeliveries for DeliveryConsumer {
         let mut replacement = edge
             .observe_deliveries(cursor.map(DeliveryCursor))
             .map_err(DeliveryConsumerError::Flow)?;
-        let Response::SendsObserved(mut opening) =
+        let Output::DeliveriesObserved(mut opening) =
             replacement.next().map_err(DeliveryConsumerError::Flow)?
         else {
             return Err(DeliveryConsumerError::Opening);
@@ -205,7 +205,7 @@ impl ConsumesDeliveries for DeliveryConsumer {
             replacement = edge
                 .observe_deliveries(None)
                 .map_err(DeliveryConsumerError::Flow)?;
-            let Response::SendsObserved(reopened) =
+            let Output::DeliveriesObserved(reopened) =
                 replacement.next().map_err(DeliveryConsumerError::Flow)?
             else {
                 return Err(DeliveryConsumerError::Opening);

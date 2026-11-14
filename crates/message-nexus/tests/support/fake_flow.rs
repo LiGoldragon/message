@@ -3,8 +3,8 @@
 use flow_ethos::Until;
 use message_nexus::frame::FramedStream;
 use signal_flow::{
-    Address, Aspect, Bind_Data, Deliver_Data, DeliveryCursor, FlowId, Lock, Lock_Data, Model,
-    ObservedAt, Process, Query, Refusal, RequestId, Response, StoreIdentity, Topic,
+    Address, Aspect, Bind_Data, Contracted, Deliver_Data, DeliveryCursor, FlowId, Handshake, Input,
+    Lock, Lock_Data, Model, ObservedAt, Output, Process, Refusal, RequestId, StoreIdentity, Topic,
     VisibleDeliverySnapshot, VisibleDeliveryState, VisibleSendAcceptance, VisibleSendObservation,
     VisibleSender,
 };
@@ -212,7 +212,7 @@ impl FakeFlow {
         };
         self.stop_message_and_signal();
         if let Some(mut observer) = observer {
-            let _ = observer.write_frame(&Response::SendChanged(snapshot));
+            let _ = observer.write_frame(&Output::SendChanged(snapshot));
         }
     }
 
@@ -261,11 +261,18 @@ impl FakeFlow {
     }
 
     fn answer(&self, mut stream: UnixStream) {
-        let Ok(query) = stream.read_frame::<Query>() else {
+        // Every connection greets first, as Flow requires.
+        let Ok(greeting) = stream.read_frame::<Handshake>() else {
             return;
         };
-        let observing_sender = matches!(&query, Query::ObserveSender(_));
-        let observing_deliveries = matches!(&query, Query::ObserveDeliveries(_));
+        if stream.write_frame(&Input::receipt(&greeting)).is_err() {
+            return;
+        }
+        let Ok(query) = stream.read_frame::<Input>() else {
+            return;
+        };
+        let observing_sender = matches!(&query, Input::ObserveSender(_));
+        let observing_deliveries = matches!(&query, Input::ObserveDeliveries(_));
         let mut delivery_change = None;
         let mut register_delivery_observer = false;
         let mut answer_before_ledger = false;
@@ -274,22 +281,22 @@ impl FakeFlow {
         let mut held_reconnect = false;
         let mut withhold_delivery_answer = false;
         let response = match query {
-            Query::Bind(Bind_Data { address, process }) => {
+            Input::Bind(Bind_Data { address, process }) => {
                 self.state.lock().unwrap().bound.push((address, process));
-                Response::Bound(FlowId("message-flow".into()))
+                Output::Bound(FlowId("message-flow".into()))
             }
-            Query::Identify(_) => Response::Identified(self.sender()),
-            Query::IdentifyThread(request) => {
+            Input::Identify(_) => Output::Identified(self.sender()),
+            Input::IdentifyThread(request) => {
                 self.state
                     .lock()
                     .unwrap()
                     .identified_threads
                     .push(request.clone());
                 match request.native_session_id.0.as_str() {
-                    "not-configured" => Response::Refused(Refusal::NotConfigured),
-                    "not-send-server" => Response::Refused(Refusal::NotSendServer(request.process)),
+                    "not-configured" => Output::Refused(Refusal::NotConfigured),
+                    "not-send-server" => Output::Refused(Refusal::NotSendServer(request.process)),
                     "unknown" => {
-                        Response::Refused(Refusal::Unidentified(signal_flow::SeatEvidence {
+                        Output::Refused(Refusal::Unidentified(signal_flow::SeatEvidence {
                             seat_pane_option: None,
                             pane_label_option: None,
                             native_session_id_option: Some(request.native_session_id),
@@ -297,18 +304,18 @@ impl FakeFlow {
                             process: request.process,
                         }))
                     }
-                    _ => Response::Identified(self.sender()),
+                    _ => Output::ThreadIdentified(self.sender()),
                 }
             }
-            Query::Lock(Lock_Data {
+            Input::Lock(Lock_Data {
                 first_address,
                 second_address,
-            }) => Response::Locked(Lock {
+            }) => Output::Locked(Lock {
                 first_address,
                 second_address,
                 until: Until(i64::MAX),
             }),
-            Query::Deliver(delivery) => {
+            Input::Deliver(delivery) => {
                 let key = delivery.deliver_key.clone();
                 let snapshot = VisibleDeliverySnapshot {
                     request_id: RequestId("fake-request".into()),
@@ -334,9 +341,9 @@ impl FakeFlow {
                     .find(|admitted| admitted.deliver_key == key)
                 {
                     if admitted == &delivery {
-                        Response::SendAccepted(acceptance)
+                        Output::SendAccepted(acceptance)
                     } else {
-                        Response::DeliverKeyReused
+                        Output::DeliverKeyReused
                     }
                 } else {
                     state.delivered.push(delivery);
@@ -353,10 +360,10 @@ impl FakeFlow {
                         }
                         _ => {}
                     }
-                    Response::SendAccepted(acceptance)
+                    Output::SendAccepted(acceptance)
                 }
             }
-            Query::Acknowledge(deliver_keys) => {
+            Input::Acknowledge(deliver_keys) => {
                 let mut state = self.state.lock().unwrap();
                 if state.fault == Some(FaultBoundary::LedgerBeforeAcknowledge) {
                     state.fault = None;
@@ -367,14 +374,14 @@ impl FakeFlow {
                     *count.lock().unwrap() += 1;
                     changed.notify_all();
                 }
-                Response::Acknowledged
+                Output::Acknowledged
             }
-            Query::ObserveSender(_) => Response::SendsObserved(VisibleSendObservation {
+            Input::ObserveSender(_) => Output::SendsObserved(VisibleSendObservation {
                 store_identity: StoreIdentity("fake-store".into()),
                 delivery_cursor: DeliveryCursor(1),
                 visible_delivery_snapshot_vector: vec![],
             }),
-            Query::ObserveDeliveries(cursor) => {
+            Input::ObserveDeliveries(cursor) => {
                 let cursor = cursor.map(|cursor| cursor.0);
                 let mut state = self.state.lock().unwrap();
                 state.delivery_observation_cursors.push(cursor);
@@ -390,10 +397,10 @@ impl FakeFlow {
                 changed.notify_all();
                 if state.unavailable_delivery_observations > 0 {
                     state.unavailable_delivery_observations -= 1;
-                    Response::Refused(Refusal::NotConfigured)
+                    Output::Refused(Refusal::NotConfigured)
                 } else {
                     register_delivery_observer = true;
-                    Response::SendsObserved(VisibleSendObservation {
+                    Output::DeliveriesObserved(VisibleSendObservation {
                         store_identity: StoreIdentity("fake-store".into()),
                         delivery_cursor: DeliveryCursor(state.delivery_cursor),
                         visible_delivery_snapshot_vector: state
@@ -407,13 +414,13 @@ impl FakeFlow {
                     })
                 }
             }
-            Query::Release(_) => Response::Released,
-            _ => Response::Refused(Refusal::NotConfigured),
+            Input::Release(_) => Output::Released,
+            _ => Output::Refused(Refusal::NotConfigured),
         };
         if hold_before_cursor && let Some(snapshot) = delivery_change.take() {
             if let Some(observer) = self.state.lock().unwrap().delivery_observer.take() {
                 let mut observer = observer;
-                let _ = observer.write_frame(&Response::SendChanged(snapshot));
+                let _ = observer.write_frame(&Output::SendChanged(snapshot));
                 let _ = observer.shutdown(Shutdown::Both);
             }
             let (reached, changed) = &*self.fault_reached;
@@ -440,7 +447,7 @@ impl FakeFlow {
         if let Some(snapshot) = delivery_change
             && let Some(observer) = self.state.lock().unwrap().delivery_observer.as_mut()
         {
-            let _ = observer.write_frame(&Response::SendChanged(snapshot));
+            let _ = observer.write_frame(&Output::SendChanged(snapshot));
             let (count, changed) = &*self.delivery_changes_sent;
             *count.lock().unwrap() += 1;
             changed.notify_all();
