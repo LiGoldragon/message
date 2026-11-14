@@ -1,7 +1,7 @@
 [package]
 name        = "message-defaults"
 description = "The one home of Message's default layout, anchored on HOME and XDG_RUNTIME_DIR."
-version.workspace      = true
+version = "0.25.0"
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
