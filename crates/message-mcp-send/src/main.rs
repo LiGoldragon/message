@@ -982,3 +982,5 @@ mod tests {
         assert!(output.contains("Delivered"));
     }
 }
+
+// Mutation witness: this leaf member content alone changed.
